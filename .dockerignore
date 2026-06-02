@@ -1,0 +1,5 @@
+app/_build/
+app/deps/
+app/cover/
+app/assets/node_modules/
+.git/

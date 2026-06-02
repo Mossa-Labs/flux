@@ -1,0 +1,71 @@
+# syntax=docker/dockerfile:1
+#
+# Community release image — ghcr.io/mossa-labs/flux/community
+# Production build of the public Apache-2.0 Flux (Community Edition). No Pro/EE
+# code: in-memory queue, Basic AI, HTTP/Postgres sinks; S3/RabbitMQ resolve to
+# upgrade-prompt stubs.
+#
+# Build (context = app/):
+#   docker build -f app/Dockerfile.release -t ghcr.io/mossa-labs/flux/community:latest app/
+#
+# The plain `app/Dockerfile` remains the local-dev container (runs phx.server).
+# NOTE: this release image is not built/verified in this change.
+
+ARG ELIXIR_VERSION=1.19.4
+ARG OTP_VERSION=28.2
+ARG UBUNTU_VERSION=noble-20251013
+ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-ubuntu-${UBUNTU_VERSION}"
+ARG RUNNER_IMAGE="ubuntu:${UBUNTU_VERSION}"
+
+# ---- build ----
+FROM ${BUILDER_IMAGE} AS builder
+
+RUN apt-get update -y && apt-get install -y build-essential git nodejs npm \
+  && apt-get clean && rm -f /var/lib/apt/lists/*_*
+
+WORKDIR /app
+RUN mix local.hex --force && mix local.rebar --force
+
+ENV MIX_ENV=prod
+
+COPY mix.exs mix.lock ./
+RUN mix deps.get --only prod
+RUN mkdir config
+COPY config/config.exs config/prod.exs config/
+RUN mix deps.compile
+
+COPY priv priv
+COPY lib lib
+COPY assets assets
+# JS deps (uplot, React Flow) — assets/node_modules is gitignored, so install
+# in-image rather than relying on the host's copy.
+RUN npm --prefix assets ci
+# Compile first: Phoenix 1.8 colocated hooks are emitted under
+# _build/$MIX_ENV/phoenix-colocated during compile, and esbuild imports them.
+RUN mix compile
+RUN mix assets.deploy
+
+COPY config/runtime.exs config/
+RUN mix release
+
+# ---- runtime ----
+FROM ${RUNNER_IMAGE}
+
+RUN apt-get update -y \
+  && apt-get install -y libstdc++6 openssl libncurses6 locales ca-certificates \
+  && apt-get clean && rm -f /var/lib/apt/lists/*_*
+
+RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
+ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8
+
+WORKDIR /app
+RUN chown nobody /app
+ENV MIX_ENV=prod
+
+COPY --from=builder --chown=nobody:root /app/_build/prod/rel/flux ./
+
+USER nobody
+
+# Default release boot. (Run migrations via `bin/flux eval "Flux.Release.migrate"`
+# once a release module is added, or an init container.)
+CMD ["/app/bin/flux", "start"]

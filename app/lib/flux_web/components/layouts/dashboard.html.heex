@@ -1,0 +1,136 @@
+<div class="drawer lg:drawer-open font-sans antialiased text-base-content bg-base-100">
+  <input id="drawer-toggle" type="checkbox" class="drawer-toggle" />
+  
+<!-- Page Content -->
+  <div class="drawer-content flex flex-col min-h-screen">
+    <!-- Navbar -->
+    <div class="navbar bg-base-100/80 backdrop-blur-md sticky top-0 z-30 border-b border-base-200">
+      <div class="flex-none lg:hidden">
+        <label for="drawer-toggle" class="btn btn-square btn-ghost">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            class="inline-block w-6 h-6 stroke-current"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 6h16M4 12h16M4 18h16"
+            >
+            </path>
+          </svg>
+        </label>
+      </div>
+      <div class="flex-1 px-4"></div>
+      <div class="flex-none gap-2">
+        <div class="dropdown dropdown-end">
+          <label tabindex="0" class="btn btn-ghost btn-circle avatar placeholder">
+            <div class="bg-neutral text-neutral-content rounded-full w-10">
+              <span class="text-xs">UI</span>
+            </div>
+          </label>
+          <ul
+            tabindex="0"
+            class="mt-3 z-[1] p-2 shadow menu menu-sm dropdown-content bg-base-100 rounded-box w-52 border border-base-200"
+          >
+            <li><.link href={~p"/users/settings"}>Settings</.link></li>
+            <li><.link href={~p"/users/log-out"} method="delete">Logout</.link></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    
+<!-- Main Content -->
+    <main class="flex-1 py-6 pr-6 bg-base-50/50">
+      <div class="mx-auto max-w-7xl">
+        <.flash_group flash={@flash} />
+        {@inner_content}
+      </div>
+    </main>
+  </div>
+  
+<!-- Sidebar -->
+  <div class="drawer-side z-40">
+    <label for="drawer-toggle" class="drawer-overlay"></label>
+    <ul class="menu p-4 w-72 min-h-full bg-base-100 border-r border-base-200 text-base-content">
+      <!-- Brand -->
+      <li class="mb-6">
+        <div class="flex items-center gap-3 px-2">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white font-bold">
+            F
+          </div>
+          <span class="text-2xl font-black tracking-tighter text-base-content">FLUX</span>
+        </div>
+      </li>
+
+      <li class="menu-title">Platform</li>
+      <li>
+        <.link
+          navigate={~p"/dashboard"}
+          class={if assigns[:active_tab] == :dashboard, do: "active", else: ""}
+        >
+          <.icon name="hero-home" class="w-5 h-5" /> Overview
+        </.link>
+      </li>
+      <%= if @current_scope && Flux.Permissions.can?(@current_scope, :view_pipelines) do %>
+        <li>
+          <.link
+            navigate={~p"/pipelines"}
+            class={if assigns[:active_tab] == :pipelines, do: "active", else: ""}
+          >
+            <.icon name="hero-queue-list" class="w-5 h-5" /> Pipelines
+          </.link>
+        </li>
+      <% end %>
+      <%= if @current_scope && Flux.Permissions.can?(@current_scope, :view_sinks) do %>
+        <li>
+          <.link
+            navigate={~p"/sinks"}
+            class={if assigns[:active_tab] == :sinks, do: "active", else: ""}
+          >
+            <.icon name="hero-server-stack" class="w-5 h-5" /> Sinks
+          </.link>
+        </li>
+      <% end %>
+
+      <li class="menu-title mt-4">Intelligence</li>
+      <%= if @current_scope && Flux.Permissions.can?(@current_scope, :view_dashboard) do %>
+        <li>
+          <.link
+            navigate={~p"/intelligence/signals"}
+            class={if assigns[:active_tab] == :signals, do: "active", else: ""}
+          >
+            <.icon name="hero-bolt" class="w-5 h-5" /> Live Signals
+          </.link>
+        </li>
+      <% end %>
+      <li>
+        <a class="text-base-content/50 cursor-not-allowed">
+          <.icon name="hero-chart-bar" class="w-5 h-5" /> Analytics
+        </a>
+      </li>
+
+      <li class="menu-title mt-4">Settings</li>
+      <%= if @current_scope && Flux.Permissions.can?(@current_scope, :view_system_settings) do %>
+        <li>
+          <.link
+            navigate={~p"/system/settings"}
+            class={if assigns[:active_tab] == :system_settings, do: "active", else: ""}
+          >
+            <.icon name="hero-wrench-screwdriver" class="w-5 h-5" /> System Settings
+          </.link>
+        </li>
+      <% end %>
+      <li>
+        <.link
+          navigate={~p"/users/settings"}
+          class={if assigns[:active_tab] == :settings, do: "active", else: ""}
+        >
+          <.icon name="hero-cog-6-tooth" class="w-5 h-5" /> Settings
+        </.link>
+      </li>
+    </ul>
+  </div>
+</div>

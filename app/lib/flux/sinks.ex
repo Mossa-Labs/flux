@@ -1,0 +1,166 @@
+defmodule Flux.Sinks do
+  @moduledoc """
+  The Sinks context manages sink configurations.
+
+  Sinks are output destinations for pipeline data. This context provides
+  CRUD operations for managing sink configurations.
+  """
+
+  import Ecto.Query, warn: false
+  alias Flux.Repo
+  alias Flux.Sinks.Sink
+
+  @doc """
+  Returns the list of sinks for an organization.
+
+  ## Examples
+
+      iex> list_sinks(organization_id)
+      [%Sink{}, ...]
+
+  """
+  def list_sinks(organization_id) do
+    Sink
+    |> where([s], s.organization_id == ^organization_id)
+    |> order_by([s], desc: s.updated_at)
+    |> Repo.all()
+  end
+
+  @doc """
+  Returns the list of enabled sinks for an organization.
+  """
+  def list_enabled_sinks(organization_id) do
+    Sink
+    |> where([s], s.organization_id == ^organization_id and s.enabled == true)
+    |> order_by([s], asc: s.name)
+    |> Repo.all()
+  end
+
+  @doc """
+  Gets sinks by their IDs.
+
+  Returns only sinks that exist and are enabled.
+  """
+  def get_sinks_by_ids(ids) when is_list(ids) do
+    Sink
+    |> where([s], s.id in ^ids and s.enabled == true)
+    |> Repo.all()
+  end
+
+  @doc """
+  Gets a single sink.
+
+  Raises `Ecto.NoResultsError` if the Sink does not exist.
+
+  ## Examples
+
+      iex> get_sink!(123)
+      %Sink{}
+
+      iex> get_sink!(456)
+      ** (Ecto.NoResultsError)
+
+  """
+  def get_sink!(id), do: Repo.get!(Sink, id)
+
+  @doc """
+  Gets a single sink by id and organization.
+
+  Returns nil if not found.
+  """
+  def get_sink(id, organization_id) do
+    Sink
+    |> where([s], s.id == ^id and s.organization_id == ^organization_id)
+    |> Repo.one()
+  end
+
+  @doc """
+  Creates a sink.
+
+  ## Examples
+
+      iex> create_sink(%{field: value})
+      {:ok, %Sink{}}
+
+      iex> create_sink(%{field: bad_value})
+      {:error, %Ecto.Changeset{}}
+
+  """
+  def create_sink(attrs \\ %{}) do
+    %Sink{}
+    |> Sink.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Updates a sink.
+
+  ## Examples
+
+      iex> update_sink(sink, %{field: new_value})
+      {:ok, %Sink{}}
+
+      iex> update_sink(sink, %{field: bad_value})
+      {:error, %Ecto.Changeset{}}
+
+  """
+  def update_sink(%Sink{} = sink, attrs) do
+    sink
+    |> Sink.changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
+  Toggles the enabled status of a sink.
+  """
+  def toggle_enabled(%Sink{} = sink) do
+    update_sink(sink, %{enabled: !sink.enabled})
+  end
+
+  @doc """
+  Deletes a sink.
+
+  ## Examples
+
+      iex> delete_sink(sink)
+      {:ok, %Sink{}}
+
+      iex> delete_sink(sink)
+      {:error, %Ecto.Changeset{}}
+
+  """
+  def delete_sink(%Sink{} = sink) do
+    Repo.delete(sink)
+  end
+
+  @doc """
+  Returns an `%Ecto.Changeset{}` for tracking sink changes.
+
+  ## Examples
+
+      iex> change_sink(sink)
+      %Ecto.Changeset{data: %Sink{}}
+
+  """
+  def change_sink(%Sink{} = sink, attrs \\ %{}) do
+    Sink.changeset(sink, attrs)
+  end
+
+  @doc """
+  Returns the count of sinks for an organization.
+  """
+  def count(organization_id) do
+    Sink
+    |> where([s], s.organization_id == ^organization_id)
+    |> Repo.aggregate(:count)
+  end
+
+  @doc """
+  Tests the connection for a sink.
+
+  Returns `:ok` if the connection is successful.
+  """
+  def test_connection(%Sink{type: type, config: config}) do
+    Flux.Sink.test_connection(type, config)
+  end
+end
