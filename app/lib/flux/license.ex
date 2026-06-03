@@ -8,17 +8,13 @@ defmodule Flux.License do
 
   ## Pro/EE feature atoms
 
-  Use these atoms for consistent entitlement checks across the codebase:
-
-    * `:s3_sink` - S3/object storage sink
-    * `:rabbit_mq_queue` - RabbitMQ queue backend
-    * `:kafka_queue` - Kafka queue backend
-    * `:advanced_ai` - Advanced AI detector/scorer
-    * `:sso` - Single sign-on / SAML / OIDC
-    * `:audit_log` - Audit logging
-    * `:white_label` - White-label branding
-    * `:mfa` - Multi-factor authentication
+  The canonical tier→feature catalog lives in `Flux.License.Features`.
+  Providers only report a `tier/0`; entitlement is derived from that tier
+  against the catalog. Use `has_feature?/1` (or its alias `entitled?/1`) for
+  consistent checks across the codebase.
   """
+
+  alias Flux.License.Features
 
   @spec provider() :: module()
   def provider do
@@ -34,8 +30,27 @@ defmodule Flux.License do
   @spec fetch() :: {:ok, Flux.License.Provider.license()} | {:error, term()}
   def fetch, do: provider().fetch()
 
+  @doc """
+  Returns `true` when the current license tier entitles `feature`.
+
+  If the configured provider exports an `entitled?/1` override it is used;
+  otherwise entitlement is derived from `tier/0` against
+  `Flux.License.Features`.
+  """
+  @spec has_feature?(Flux.License.Provider.feature()) :: boolean()
+  def has_feature?(feature) when is_atom(feature) do
+    mod = provider()
+
+    if function_exported?(mod, :entitled?, 1) do
+      mod.entitled?(feature)
+    else
+      feature in Features.for_tier(tier())
+    end
+  end
+
+  @doc "Alias for `has_feature?/1`, kept for existing call sites."
   @spec entitled?(Flux.License.Provider.feature()) :: boolean()
-  def entitled?(feature) when is_atom(feature), do: provider().entitled?(feature)
+  def entitled?(feature) when is_atom(feature), do: has_feature?(feature)
 
   @spec tier() :: Flux.License.Provider.tier()
   def tier, do: provider().tier()

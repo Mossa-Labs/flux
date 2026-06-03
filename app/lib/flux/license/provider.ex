@@ -13,13 +13,23 @@ defmodule Flux.License.Provider do
   @type license :: %{
           optional(:tier) => tier(),
           optional(:features) => [feature()],
+          optional(:org) => String.t() | nil,
           optional(:valid_until) => DateTime.t() | nil,
+          optional(:node_count) => pos_integer() | nil,
           optional(atom()) => any()
         }
 
   @callback fetch() :: {:ok, license()} | {:error, term()}
 
+  @callback tier() :: tier()
+
+  @doc """
+  Optional per-feature override. When a provider does not implement this,
+  `Flux.License` derives entitlement from `tier/0` against
+  `Flux.License.Features`. Providers should prefer reporting an accurate
+  `tier/0` rather than overriding this.
+  """
   @callback entitled?(feature()) :: boolean()
 
-  @callback tier() :: tier()
+  @optional_callbacks entitled?: 1
 end
