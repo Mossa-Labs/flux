@@ -11,18 +11,16 @@ defmodule Flux.License.Providers.CommunityTest do
     assert {:ok, license} = Community.fetch()
     assert license.tier == :community
     assert license.features == []
+    assert license.valid_until == nil
+    assert license.node_count == nil
   end
 
-  test "entitled?/1 denies every Pro/EE feature" do
-    refute Community.entitled?(:s3_sink)
-    refute Community.entitled?(:rabbit_mq_queue)
-    refute Community.entitled?(:advanced_ai)
-    refute Community.entitled?(:sso)
-    refute Community.entitled?(:audit_log)
-  end
-
-  test "Flux.License facade delegates to the configured provider" do
+  test "Flux.License facade reports community tier and denies Pro/EE features" do
     assert Flux.License.tier() == :community
-    refute Flux.License.entitled?(:s3_sink)
+    refute Flux.License.has_feature?(:s3_sink)
+    refute Flux.License.has_feature?(:rabbit_mq_queue)
+    refute Flux.License.has_feature?(:advanced_ai)
+    refute Flux.License.has_feature?(:sso)
+    refute Flux.License.has_feature?(:audit_log)
   end
 end
