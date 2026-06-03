@@ -23,6 +23,10 @@ defmodule Flux.Registrations do
     {:ok, :registered}
   end
 
+  # Maps a queue type identifier to the license feature it requires. Types
+  # absent from this map (e.g. "memory") are always available.
+  @queue_features %{"rabbitmq" => :rabbit_mq_queue, "kafka" => :kafka_queue}
+
   defp register_community do
     :ok = register_sinks()
     :ok = register_queues()
@@ -67,8 +71,34 @@ defmodule Flux.Registrations do
     :ok
   end
 
-  defp seed_active_queue do
-    queue_type = Application.get_env(:flux, Flux.Queue)[:type] || "memory"
-    Flux.Queue.Registry.set_active(queue_type)
+  @doc """
+  Seeds the active queue adapter from `config :flux, Flux.Queue, type:`.
+
+  Entitlement-aware and idempotent: if the configured type requires a license
+  feature the current tier is not entitled to (e.g. `"rabbitmq"` on a
+  Community build), it logs a warning and falls back to `"memory"` so the app
+  still boots with a working queue. The commercial edition re-invokes this
+  after registering its real Pro adapters, at which point the entitled type is
+  honored.
+  """
+  @spec seed_active_queue() :: :ok | {:error, :unknown_type}
+  def seed_active_queue do
+    configured = Application.get_env(:flux, Flux.Queue)[:type] || "memory"
+    set_active_queue(configured, Map.get(@queue_features, configured))
+  end
+
+  defp set_active_queue(type, nil), do: Flux.Queue.Registry.set_active(type)
+
+  defp set_active_queue(type, feature) do
+    if Flux.License.has_feature?(feature) do
+      Flux.Queue.Registry.set_active(type)
+    else
+      Logger.warning(
+        "[Flux.Registrations] Queue type #{inspect(type)} requires #{inspect(feature)} " <>
+          "which the current license tier does not include. Falling back to \"memory\"."
+      )
+
+      Flux.Queue.Registry.set_active("memory")
+    end
   end
 end
