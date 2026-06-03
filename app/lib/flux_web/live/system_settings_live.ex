@@ -21,7 +21,7 @@ defmodule FluxWeb.SystemSettingsLive do
 
     if authorized do
       org_id = scope.organization_id
-      rbac_mode = Application.get_env(:flux, :rbac_mode, :team_centric)
+      rbac_mode = Flux.RBAC.mode()
       teams = if org_id, do: Structure.list_teams(scope), else: []
       members = load_members(scope, org_id, rbac_mode)
 
@@ -32,6 +32,7 @@ defmodule FluxWeb.SystemSettingsLive do
        |> assign(:authorized, true)
        |> assign(:org_id, org_id)
        |> assign(:rbac_mode, rbac_mode)
+       |> assign(:license, load_license())
        |> assign(:teams, teams)
        |> assign(:members, members)
        |> assign(:team_form, nil)
@@ -71,6 +72,13 @@ defmodule FluxWeb.SystemSettingsLive do
     end
   end
 
+  defp load_license do
+    case Flux.License.fetch() do
+      {:ok, license} -> Map.put(license, :tier, Flux.License.tier())
+      {:error, _} -> %{tier: Flux.License.tier(), org: nil, valid_until: nil, node_count: nil}
+    end
+  end
+
   defp load_members(_scope, nil, _), do: []
 
   defp load_members(scope, _org_id, :org_centric),
@@ -86,6 +94,7 @@ defmodule FluxWeb.SystemSettingsLive do
         <.authorized_content
           org_id={@org_id}
           current_scope={@current_scope}
+          license={@license}
           teams={@teams}
           members={@members}
           rbac_mode={@rbac_mode}
@@ -131,6 +140,8 @@ defmodule FluxWeb.SystemSettingsLive do
         <p class="text-base-content/60 mt-1">Manage teams and users for your organization</p>
       </div>
 
+      <.license_section license={@license} />
+
       <%= if @org_id do %>
         <.teams_section
           scope={@current_scope}
@@ -155,6 +166,61 @@ defmodule FluxWeb.SystemSettingsLive do
     </div>
     """
   end
+
+  defp license_section(assigns) do
+    ~H"""
+    <section class="card bg-base-100 shadow-sm border border-base-200">
+      <div class="card-body">
+        <div class="flex items-center justify-between">
+          <h2 class="card-title text-base font-bold">
+            <.icon name="hero-key" class="w-5 h-5" /> License
+          </h2>
+          <span class={[
+            "badge badge-lg font-semibold capitalize",
+            tier_badge_class(@license.tier)
+          ]}>
+            {@license.tier}
+          </span>
+        </div>
+
+        <dl class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <dt class="text-sm text-base-content/60">Organization</dt>
+            <dd class="font-medium">{license_value(Map.get(@license, :org))}</dd>
+          </div>
+          <div>
+            <dt class="text-sm text-base-content/60">Expires</dt>
+            <dd class="font-medium">{format_expiry(Map.get(@license, :valid_until))}</dd>
+          </div>
+          <div>
+            <dt class="text-sm text-base-content/60">Licensed nodes</dt>
+            <dd class="font-medium">{license_value(Map.get(@license, :node_count))}</dd>
+          </div>
+        </dl>
+
+        <p :if={@license.tier == :community} class="text-sm text-base-content/60 mt-2">
+          Running the Community tier.
+          <.link href="https://flux.dev/pricing" class="link link-primary">Upgrade</.link>
+          to unlock Pro and Enterprise features.
+        </p>
+      </div>
+    </section>
+    """
+  end
+
+  defp tier_badge_class(:enterprise), do: "badge-primary"
+  defp tier_badge_class(:pro), do: "badge-secondary"
+  defp tier_badge_class(_), do: "badge-ghost"
+
+  defp license_value(nil), do: "—"
+  defp license_value(value), do: to_string(value)
+
+  defp format_expiry(nil), do: "Never"
+
+  defp format_expiry(%DateTime{} = dt),
+    do: Calendar.strftime(dt, "%Y-%m-%d")
+
+  defp format_expiry(other), do: to_string(other)
 
   defp teams_section(assigns) do
     ~H"""
