@@ -5,22 +5,26 @@ defmodule FluxWeb.AnomalyLive.Index do
   alias Flux.AI.Scorer
   alias Flux.Pipeline.Manager
   alias Flux.Pipelines
+  alias FluxWeb.Components.UpgradePrompt
 
   @refresh_interval_ms 5_000
 
   @impl true
   def mount(_params, _session, socket) do
-    if connected?(socket) do
+    entitled? = Flux.License.has_feature?(:live_signals)
+
+    if entitled? and connected?(socket) do
       :timer.send_interval(@refresh_interval_ms, self(), :refresh)
     end
 
     org_id = socket.assigns.current_scope.organization_id
-    anomaly_data = build_anomaly_data(org_id)
+    anomaly_data = if entitled?, do: build_anomaly_data(org_id), else: []
 
     {:ok,
      socket
      |> assign(:active_tab, :signals)
      |> assign(:page_title, "Live Signals")
+     |> assign(:live_signals_entitled, entitled?)
      |> assign(:anomaly_data, anomaly_data)
      |> assign(:selected_pipeline_id, nil)
      |> assign(:selected_fields, [])}
@@ -72,8 +76,10 @@ defmodule FluxWeb.AnomalyLive.Index do
         <p class="text-base-content/60 mt-1">AI-powered anomaly detection across your pipelines</p>
       </div>
 
+      <UpgradePrompt.upgrade_prompt :if={!@live_signals_entitled} feature={:live_signals} />
+
       <%!-- Summary Bar --%>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div :if={@live_signals_entitled} class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div class="card bg-base-100 shadow-sm border border-base-200">
           <div class="card-body p-4 flex-row items-center gap-3">
             <div class={[
@@ -114,7 +120,7 @@ defmodule FluxWeb.AnomalyLive.Index do
       </div>
 
       <%!-- Pipeline Anomaly Table --%>
-      <div class="card bg-base-100 shadow-sm border border-base-200">
+      <div :if={@live_signals_entitled} class="card bg-base-100 shadow-sm border border-base-200">
         <div class="card-body p-0">
           <div
             :if={@anomaly_data == []}

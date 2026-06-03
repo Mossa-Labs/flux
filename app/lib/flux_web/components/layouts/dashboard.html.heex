@@ -96,7 +96,7 @@
       <% end %>
 
       <li class="menu-title mt-4">Intelligence</li>
-      <%= if @current_scope && Flux.Permissions.can?(@current_scope, :view_dashboard) do %>
+      <%= if @current_scope && Flux.Permissions.can?(@current_scope, :view_dashboard) && Flux.License.has_feature?(:live_signals) do %>
         <li>
           <.link
             navigate={~p"/intelligence/signals"}
