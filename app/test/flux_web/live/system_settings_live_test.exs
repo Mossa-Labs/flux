@@ -50,6 +50,14 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       assert html =~ "New Team"
     end
 
+    test "shows the License section with the current tier", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+
+      assert html =~ "License"
+      assert html =~ "community"
+      assert html =~ "Running the Community tier"
+    end
+
     test "shows Members section", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/system/settings")
 
