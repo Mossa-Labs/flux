@@ -1,10 +1,32 @@
 defmodule FluxWeb.AnomalyLive.IndexTest do
-  use FluxWeb.ConnCase, async: true
+  # async: false — the :live_signals gate swaps the global license provider.
+  use FluxWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
+  import Flux.LicenseHelpers
 
-  describe "authenticated access" do
+  describe "community tier (Live Signals not licensed)" do
     setup :register_and_log_in_user
+
+    test "shows the heading and an upgrade prompt instead of signal data", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/intelligence/signals")
+
+      assert html =~ "Live Signals"
+      assert html =~ "Live Signals monitoring"
+      assert html =~ "View pricing"
+      refute html =~ "Active anomalies"
+      refute html =~ "No active signals"
+    end
+  end
+
+  describe "licensed tier (:live_signals entitled)" do
+    setup :register_and_log_in_user
+
+    setup do
+      state = put_license_tier(:pro)
+      on_exit(fn -> reset_license(state) end)
+      :ok
+    end
 
     test "mounts and shows 'Live Signals' heading", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/intelligence/signals")
