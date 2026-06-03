@@ -35,7 +35,7 @@ defmodule Flux.Accounts.Scope do
   :team_centric from teams/team_members, with fallback when no teams).
   """
   def for_user(%User{} = user) do
-    case Application.get_env(:flux, :rbac_mode, :team_centric) do
+    case Flux.RBAC.mode() do
       :org_centric -> for_user_org_centric(user)
       :team_centric -> for_user_team_centric(user)
     end
@@ -53,7 +53,7 @@ defmodule Flux.Accounts.Scope do
   def user_can_log_in?(nil), do: false
 
   def user_can_log_in?(%User{} = user) do
-    case Application.get_env(:flux, :rbac_mode, :team_centric) do
+    case Flux.RBAC.mode() do
       :org_centric ->
         user_has_org_access?(user.id) or user_owns_org?(user.id)
 

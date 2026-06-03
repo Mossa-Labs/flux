@@ -87,7 +87,7 @@ defmodule Flux.Structure do
   end
 
   defp maybe_add_organization_owner(%Organization{id: org_id}, %Scope{user: user}) do
-    if Application.get_env(:flux, :rbac_mode, :team_centric) == :org_centric do
+    if Flux.RBAC.org_centric?() do
       case %OrganizationMember{}
            |> OrganizationMember.changeset(%{
              organization_id: org_id,
