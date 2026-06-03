@@ -73,7 +73,25 @@ defmodule Flux.Pipeline.Interpreter do
     Script.execute(data, %{"code" => code, "timeout_ms" => timeout})
   end
 
-  defp execute_step(data, %{"type" => "ai", "operation" => "anomaly_detect", "config" => config}) do
+  defp execute_step(data, %{"type" => "ai", "operation" => "anomaly_detect"} = step) do
+    if Flux.License.has_feature?(:advanced_ai) do
+      run_anomaly_detect(data, Map.get(step, "config", %{}))
+    else
+      # Community tier: skip anomaly detection and pass data through unchanged
+      # so unlicensed pipelines still run.
+      {:ok, data}
+    end
+  end
+
+  defp execute_step(_data, %{"type" => type}) do
+    {:error, "Unknown step type: #{type}"}
+  end
+
+  defp execute_step(_data, step) do
+    {:error, "Invalid step format: #{inspect(step)}"}
+  end
+
+  defp run_anomaly_detect(data, config) do
     fields = Map.get(config, "fields", [])
     threshold = Map.get(config, "threshold", 2.0)
     pipeline_id = Map.get(config, "pipeline_id")
@@ -89,13 +107,5 @@ defmodule Flux.Pipeline.Interpreter do
         Logger.warning("Anomaly detection failed: #{inspect(reason)}")
         {:ok, data}
     end
-  end
-
-  defp execute_step(_data, %{"type" => type}) do
-    {:error, "Unknown step type: #{type}"}
-  end
-
-  defp execute_step(_data, step) do
-    {:error, "Invalid step format: #{inspect(step)}"}
   end
 end
