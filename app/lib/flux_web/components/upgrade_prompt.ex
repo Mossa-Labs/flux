@@ -83,6 +83,7 @@ defmodule FluxWeb.Components.UpgradePrompt do
   defp feature_label(:live_signals), do: "Live Signals monitoring"
   defp feature_label(:cron_polling), do: "Scheduled (cron) polling"
   defp feature_label(:org_rbac), do: "Organization-centric RBAC"
+  defp feature_label(:api_key_scopes), do: "Fine-grained API key scopes"
   defp feature_label(:sso), do: "SSO / SAML / OIDC"
   defp feature_label(:audit_log), do: "Audit logging"
   defp feature_label(:white_label), do: "White-label branding"

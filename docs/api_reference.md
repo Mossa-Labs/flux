@@ -83,6 +83,11 @@ A key also carries OAuth-style **scopes**. Each endpoint requires one; a request
 missing it returns `403`. When scopes are omitted at creation they default to
 the role's full set (so a key behaves like its role until you restrict it).
 
+> **Restricting a key's scopes below its role is a Pro feature.** On Community,
+> keys always receive the full scope set for their role — scope enforcement still
+> runs, but every key carries its role's scopes, so it behaves exactly like
+> role-only authorization. Pro unlocks creating least-privilege keys.
+
 | Scope | Grants |
 |-------|--------|
 | `read:pipelines` | `GET /api/pipelines`, `GET /api/pipelines/:id` |
