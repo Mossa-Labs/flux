@@ -2,6 +2,8 @@ defmodule FluxWeb.SinkLive.Form do
   @moduledoc "LiveView for creating and editing sink configurations."
   use FluxWeb, :live_view
 
+  import FluxWeb.Authorization
+
   alias Flux.Sinks
   alias Flux.Sinks.Sink
   alias FluxWeb.Components.UpgradePrompt
@@ -259,18 +261,26 @@ defmodule FluxWeb.SinkLive.Form do
   end
 
   def handle_event("save", %{"sink" => params}, socket) do
-    if pro_locked?(socket.assigns.selected_type) do
-      {:noreply,
-       put_flash(socket, :error, "#{pro_label(socket.assigns.selected_type)} requires Flux Pro.")}
-    else
-      params = merge_config_params(params, socket.assigns.selected_type)
-      params = Map.put(params, "organization_id", socket.assigns.current_scope.organization_id)
+    permission = if socket.assigns.action == :new, do: :create_sink, else: :edit_sink
 
-      case socket.assigns.action do
-        :new -> create_sink(socket, params)
-        :edit -> update_sink(socket, params)
+    authorize(socket, permission, fn ->
+      if pro_locked?(socket.assigns.selected_type) do
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "#{pro_label(socket.assigns.selected_type)} requires Flux Pro."
+         )}
+      else
+        params = merge_config_params(params, socket.assigns.selected_type)
+        params = Map.put(params, "organization_id", socket.assigns.current_scope.organization_id)
+
+        case socket.assigns.action do
+          :new -> create_sink(socket, params)
+          :edit -> update_sink(socket, params)
+        end
       end
-    end
+    end)
   end
 
   defp create_sink(socket, params) do

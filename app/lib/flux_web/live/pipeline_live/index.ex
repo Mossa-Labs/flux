@@ -2,6 +2,8 @@ defmodule FluxWeb.PipelineLive.Index do
   @moduledoc "LiveView for listing and managing pipelines."
   use FluxWeb, :live_view
 
+  import FluxWeb.Authorization
+
   alias Flux.Pipelines
   alias Flux.Pipeline.Manager
 
@@ -32,7 +34,11 @@ defmodule FluxWeb.PipelineLive.Index do
           </h1>
           <p class="text-base-content/60 mt-1">Manage your data transformation pipelines</p>
         </div>
-        <.link navigate={~p"/pipelines/builder"} class="btn btn-primary">
+        <.link
+          :if={can?(@current_scope, :create_pipeline)}
+          navigate={~p"/pipelines/builder"}
+          class="btn btn-primary"
+        >
           <.icon name="hero-plus" class="w-5 h-5" /> New Pipeline
         </.link>
       </div>
@@ -50,7 +56,11 @@ defmodule FluxWeb.PipelineLive.Index do
             <p class="text-base-content/60 mt-2 max-w-md">
               Create your first pipeline to start transforming and routing data.
             </p>
-            <.link navigate={~p"/pipelines/builder"} class="btn btn-primary mt-6">
+            <.link
+              :if={can?(@current_scope, :create_pipeline)}
+              navigate={~p"/pipelines/builder"}
+              class="btn btn-primary mt-6"
+            >
               <.icon name="hero-plus" class="w-5 h-5" /> Create Pipeline
             </.link>
           </div>
@@ -189,58 +199,68 @@ defmodule FluxWeb.PipelineLive.Index do
 
   @impl true
   def handle_event("start", %{"id" => id}, socket) do
-    pipeline = Pipelines.get_pipeline!(id)
+    authorize(socket, :run_pipeline, fn ->
+      pipeline = Pipelines.get_pipeline!(id)
 
-    case Manager.start_pipeline(pipeline.id) do
-      {:ok, _pid} ->
-        {:ok, pipeline} = Pipelines.update_status(pipeline, "active")
-        {:noreply, stream_insert(socket, :pipelines, pipeline)}
+      case Manager.start_pipeline(pipeline.id) do
+        {:ok, _pid} ->
+          {:ok, pipeline} = Pipelines.update_status(pipeline, "active")
+          {:noreply, stream_insert(socket, :pipelines, pipeline)}
 
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Failed to start: #{inspect(reason)}")}
-    end
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Failed to start: #{inspect(reason)}")}
+      end
+    end)
   end
 
   def handle_event("pause", %{"id" => id}, socket) do
-    pipeline = Pipelines.get_pipeline!(id)
-    Manager.stop_pipeline(pipeline.id)
-    {:ok, pipeline} = Pipelines.update_status(pipeline, "paused")
-    {:noreply, stream_insert(socket, :pipelines, pipeline)}
+    authorize(socket, :run_pipeline, fn ->
+      pipeline = Pipelines.get_pipeline!(id)
+      Manager.stop_pipeline(pipeline.id)
+      {:ok, pipeline} = Pipelines.update_status(pipeline, "paused")
+      {:noreply, stream_insert(socket, :pipelines, pipeline)}
+    end)
   end
 
   def handle_event("resume", %{"id" => id}, socket) do
-    pipeline = Pipelines.get_pipeline!(id)
+    authorize(socket, :run_pipeline, fn ->
+      pipeline = Pipelines.get_pipeline!(id)
 
-    case Manager.start_pipeline(pipeline.id) do
-      {:ok, _pid} ->
-        {:ok, pipeline} = Pipelines.update_status(pipeline, "active")
-        {:noreply, stream_insert(socket, :pipelines, pipeline)}
+      case Manager.start_pipeline(pipeline.id) do
+        {:ok, _pid} ->
+          {:ok, pipeline} = Pipelines.update_status(pipeline, "active")
+          {:noreply, stream_insert(socket, :pipelines, pipeline)}
 
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Failed to resume: #{inspect(reason)}")}
-    end
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Failed to resume: #{inspect(reason)}")}
+      end
+    end)
   end
 
   def handle_event("stop", %{"id" => id}, socket) do
-    pipeline = Pipelines.get_pipeline!(id)
-    Manager.stop_pipeline(pipeline.id)
-    {:ok, pipeline} = Pipelines.update_status(pipeline, "stopped")
-    {:noreply, stream_insert(socket, :pipelines, pipeline)}
+    authorize(socket, :run_pipeline, fn ->
+      pipeline = Pipelines.get_pipeline!(id)
+      Manager.stop_pipeline(pipeline.id)
+      {:ok, pipeline} = Pipelines.update_status(pipeline, "stopped")
+      {:noreply, stream_insert(socket, :pipelines, pipeline)}
+    end)
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
-    pipeline = Pipelines.get_pipeline!(id)
+    authorize(socket, :delete_pipeline, fn ->
+      pipeline = Pipelines.get_pipeline!(id)
 
-    if pipeline.status == "active" do
-      Manager.stop_pipeline(pipeline.id)
-    end
+      if pipeline.status == "active" do
+        Manager.stop_pipeline(pipeline.id)
+      end
 
-    {:ok, _} = Pipelines.delete_pipeline(pipeline)
+      {:ok, _} = Pipelines.delete_pipeline(pipeline)
 
-    {:noreply,
-     socket
-     |> stream_delete(:pipelines, pipeline)
-     |> put_flash(:info, "Pipeline deleted")}
+      {:noreply,
+       socket
+       |> stream_delete(:pipelines, pipeline)
+       |> put_flash(:info, "Pipeline deleted")}
+    end)
   end
 
   @impl true
