@@ -29,6 +29,13 @@ Flux is a self-hosted, high-performance ETL/ELT platform for dynamic data pipeli
 - Run `mix precommit` when done with changes and fix any issues
 - Use `:req` (Req) for HTTP requests - avoid `:httpoison`, `:tesla`, `:httpc`
 
+## Source Control & Scope Guardrails
+
+These apply to **every** contributor — human or AI/LLM agent (Claude included).
+
+- **Never commit or push directly to `main`.** Always create a feature branch and land changes through a pull request. If you are on `main`, branch first; never `git commit`/`git push` against `main`, and never force-push it. (This was a real mistake once — do not repeat it.)
+- **Confirm where a feature belongs before you build it.** Each repository has a **"Repository Scope"** section defining what may live here. Before adding a feature — or any part of one — verify it belongs in *this* repository/edition. If it belongs in the other edition, **stop** and build it there. When the placement is not obvious, **ask rather than guess**: a wrong placement is costly to undo, and a public-repo placement is irreversible.
+
 ## Phoenix 1.8 Guidelines
 
 - **Always** begin LiveView templates with `<Layouts.app flash={@flash} ...>` wrapping all content
