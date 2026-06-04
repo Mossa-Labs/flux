@@ -6,7 +6,7 @@ defmodule Flux.Accounts do
   import Ecto.Query, warn: false
   alias Flux.Repo
 
-  alias Flux.Accounts.{User, UserToken, UserNotifier}
+  alias Flux.Accounts.{ApiKey, User, UserToken, UserNotifier}
 
   ## Database getters
 
@@ -279,6 +279,97 @@ defmodule Flux.Accounts do
   def delete_user_session_token(token) do
     Repo.delete_all(from(UserToken, where: [token: ^token, context: "session"]))
     :ok
+  end
+
+  ## API keys
+
+  @api_key_prefix "flux_pk_"
+  @api_key_random_len 32
+  @base62 ~c"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+  @doc """
+  Creates an API key for `organization_id`.
+
+  Returns `{:ok, plaintext, %ApiKey{}}` where `plaintext` (e.g.
+  `flux_pk_<32 chars>`) is shown exactly once — only its SHA-256 hash is
+  stored. `attrs` accepts `:name` (required), `:role`, and `:expires_at`.
+
+  TODO(api-key-scopes): accept fine-grained scopes instead of a single coarse
+  `:role` (backlog — see MOS-456 plan, Phase 5).
+  """
+  def create_api_key(organization_id, attrs) do
+    raw = generate_api_key()
+
+    programmatic = %{
+      organization_id: organization_id,
+      key_prefix: String.slice(raw, 0, byte_size(@api_key_prefix) + 8),
+      key_hash: hash_api_key(raw)
+    }
+
+    %ApiKey{}
+    |> ApiKey.create_changeset(attrs, programmatic)
+    |> Repo.insert()
+    |> case do
+      {:ok, api_key} -> {:ok, raw, api_key}
+      {:error, changeset} -> {:error, changeset}
+    end
+  end
+
+  @doc "Lists an organization's API keys, newest first."
+  def list_api_keys(organization_id) do
+    ApiKey
+    |> where([k], k.organization_id == ^organization_id)
+    |> order_by([k], desc: k.inserted_at)
+    |> Repo.all()
+  end
+
+  @doc "Revokes a key (soft-delete via `revoked_at`); idempotent."
+  def revoke_api_key(%ApiKey{} = api_key) do
+    api_key
+    |> Ecto.Changeset.change(revoked_at: DateTime.utc_now() |> DateTime.truncate(:second))
+    |> Repo.update()
+  end
+
+  def revoke_api_key(id) do
+    case Repo.get(ApiKey, id) do
+      nil -> {:error, :not_found}
+      api_key -> revoke_api_key(api_key)
+    end
+  end
+
+  @doc """
+  Authenticates a raw API key. Returns `{:ok, %ApiKey{}}` for an active key
+  (not revoked, not expired) or `{:error, :unauthorized}`.
+  """
+  def authenticate_api_key(raw) when is_binary(raw) do
+    case Repo.get_by(ApiKey, key_hash: hash_api_key(raw)) do
+      %ApiKey{} = key -> if ApiKey.active?(key), do: {:ok, key}, else: {:error, :unauthorized}
+      nil -> {:error, :unauthorized}
+    end
+  end
+
+  def authenticate_api_key(_), do: {:error, :unauthorized}
+
+  @doc "Records that a key was used (called off the request path)."
+  def touch_api_key(id) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    from(k in ApiKey, where: k.id == ^id) |> Repo.update_all(set: [last_used_at: now])
+    :ok
+  end
+
+  @doc "Hashes a raw API key (SHA-256, lowercase hex)."
+  def hash_api_key(raw) when is_binary(raw) do
+    :crypto.hash(:sha256, raw) |> Base.encode16(case: :lower)
+  end
+
+  defp generate_api_key do
+    random =
+      @api_key_random_len
+      |> :crypto.strong_rand_bytes()
+      |> :binary.bin_to_list()
+      |> Enum.map_join("", fn byte -> <<Enum.at(@base62, rem(byte, 62))>> end)
+
+    @api_key_prefix <> random
   end
 
   ## Token helper
