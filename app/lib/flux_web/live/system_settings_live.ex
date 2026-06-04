@@ -297,9 +297,19 @@ defmodule FluxWeb.SystemSettingsLive do
             label="Role"
             options={[{"Admin", "admin"}, {"Member", "member"}, {"Viewer", "viewer"}]}
           />
+          <.input
+            field={@api_key_form[:scopes]}
+            type="select"
+            multiple
+            label="Scopes"
+            options={scope_options()}
+          />
           <.input field={@api_key_form[:expires_at]} type="date" label="Expires (optional)" />
           <.button class="btn btn-primary">Create key</.button>
         </.form>
+        <p class="text-xs text-base-content/50 mt-1">
+          A key's access is the intersection of its role and its scopes.
+        </p>
 
         <div class="mt-4 overflow-x-auto">
           <table class="table table-sm">
@@ -308,6 +318,7 @@ defmodule FluxWeb.SystemSettingsLive do
                 <th>Name</th>
                 <th>Key</th>
                 <th>Role</th>
+                <th>Scopes</th>
                 <th>Last used</th>
                 <th>Status</th>
                 <th></th>
@@ -318,6 +329,14 @@ defmodule FluxWeb.SystemSettingsLive do
                 <td class="font-medium">{key.name}</td>
                 <td class="font-mono text-xs">{key.key_prefix}…</td>
                 <td class="capitalize">{key.role}</td>
+                <td class="text-xs">
+                  <span
+                    :for={scope <- Flux.Accounts.ApiKey.effective_scopes(key)}
+                    class="badge badge-ghost badge-xs mr-1 whitespace-nowrap"
+                  >
+                    {scope}
+                  </span>
+                </td>
                 <td class="text-sm text-base-content/60">{format_last_used(key.last_used_at)}</td>
                 <td>
                   <span class={["badge badge-sm", api_key_status_class(key)]}>
@@ -338,7 +357,7 @@ defmodule FluxWeb.SystemSettingsLive do
                 </td>
               </tr>
               <tr :if={@api_keys == []}>
-                <td colspan="6" class="text-center text-base-content/50 py-6">
+                <td colspan="7" class="text-center text-base-content/50 py-6">
                   No API keys yet.
                 </td>
               </tr>
@@ -382,12 +401,22 @@ defmodule FluxWeb.SystemSettingsLive do
   defp format_last_used(%DateTime{} = dt), do: Calendar.strftime(dt, "%Y-%m-%d %H:%M")
 
   defp new_api_key_form do
-    to_form(%{"name" => "", "role" => "admin", "expires_at" => ""}, as: :api_key)
+    to_form(
+      %{
+        "name" => "",
+        "role" => "admin",
+        "scopes" => Flux.Accounts.ApiKey.scopes(),
+        "expires_at" => ""
+      },
+      as: :api_key
+    )
   end
+
+  defp scope_options, do: Enum.map(Flux.Accounts.ApiKey.scopes(), &{&1, &1})
 
   defp api_key_attrs(params) do
     params
-    |> Map.take(["name", "role"])
+    |> Map.take(["name", "role", "scopes"])
     |> put_expires_at(Map.get(params, "expires_at"))
   end
 
