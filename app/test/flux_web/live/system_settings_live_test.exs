@@ -70,5 +70,42 @@ defmodule FluxWeb.SystemSettingsLiveTest do
 
       assert html =~ user.email
     end
+
+    test "shows the API Keys section", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+
+      assert html =~ "API Keys"
+      assert html =~ "No API keys yet."
+    end
+
+    test "creates an API key and reveals the plaintext once", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      html =
+        lv
+        |> form("#api-key-form", api_key: %{name: "Production CI", role: "viewer"})
+        |> render_submit()
+
+      assert html =~ "Copy this key now"
+      assert html =~ "flux_pk_"
+      assert html =~ "Production CI"
+      assert html =~ "viewer"
+    end
+
+    test "revokes an API key", %{conn: conn, user: user} do
+      org =
+        Flux.Structure.Organization
+        |> Ecto.Query.where([o], o.user_id == ^user.id)
+        |> Ecto.Query.limit(1)
+        |> Flux.Repo.one!()
+
+      {:ok, _raw, key} = Flux.Accounts.create_api_key(org.id, %{name: "to-revoke"})
+
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+      html = lv |> element("#api-key-#{key.id} button", "Revoke") |> render_click()
+
+      refute html =~ "Revoke"
+      assert Flux.Repo.reload(key).revoked_at != nil
+    end
   end
 end
