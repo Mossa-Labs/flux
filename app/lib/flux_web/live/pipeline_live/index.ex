@@ -199,9 +199,7 @@ defmodule FluxWeb.PipelineLive.Index do
 
   @impl true
   def handle_event("start", %{"id" => id}, socket) do
-    authorize(socket, :run_pipeline, fn ->
-      pipeline = Pipelines.get_pipeline!(id)
-
+    authorize_pipeline(socket, id, :run_pipeline, fn pipeline ->
       case Manager.start_pipeline(pipeline.id) do
         {:ok, _pid} ->
           {:ok, pipeline} = Pipelines.update_status(pipeline, "active")
@@ -214,8 +212,7 @@ defmodule FluxWeb.PipelineLive.Index do
   end
 
   def handle_event("pause", %{"id" => id}, socket) do
-    authorize(socket, :run_pipeline, fn ->
-      pipeline = Pipelines.get_pipeline!(id)
+    authorize_pipeline(socket, id, :run_pipeline, fn pipeline ->
       Manager.stop_pipeline(pipeline.id)
       {:ok, pipeline} = Pipelines.update_status(pipeline, "paused")
       {:noreply, stream_insert(socket, :pipelines, pipeline)}
@@ -223,9 +220,7 @@ defmodule FluxWeb.PipelineLive.Index do
   end
 
   def handle_event("resume", %{"id" => id}, socket) do
-    authorize(socket, :run_pipeline, fn ->
-      pipeline = Pipelines.get_pipeline!(id)
-
+    authorize_pipeline(socket, id, :run_pipeline, fn pipeline ->
       case Manager.start_pipeline(pipeline.id) do
         {:ok, _pid} ->
           {:ok, pipeline} = Pipelines.update_status(pipeline, "active")
@@ -238,8 +233,7 @@ defmodule FluxWeb.PipelineLive.Index do
   end
 
   def handle_event("stop", %{"id" => id}, socket) do
-    authorize(socket, :run_pipeline, fn ->
-      pipeline = Pipelines.get_pipeline!(id)
+    authorize_pipeline(socket, id, :run_pipeline, fn pipeline ->
       Manager.stop_pipeline(pipeline.id)
       {:ok, pipeline} = Pipelines.update_status(pipeline, "stopped")
       {:noreply, stream_insert(socket, :pipelines, pipeline)}
@@ -247,9 +241,7 @@ defmodule FluxWeb.PipelineLive.Index do
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
-    authorize(socket, :delete_pipeline, fn ->
-      pipeline = Pipelines.get_pipeline!(id)
-
+    authorize_pipeline(socket, id, :delete_pipeline, fn pipeline ->
       if pipeline.status == "active" do
         Manager.stop_pipeline(pipeline.id)
       end
@@ -260,6 +252,18 @@ defmodule FluxWeb.PipelineLive.Index do
        socket
        |> stream_delete(:pipelines, pipeline)
        |> put_flash(:info, "Pipeline deleted")}
+    end)
+  end
+
+  # Authorizes `action` for the current role, then loads the pipeline scoped to
+  # the current organization (so a crafted id from another org is treated as
+  # not-found). Calls `fun.(pipeline)` only when both checks pass.
+  defp authorize_pipeline(socket, id, action, fun) do
+    authorize(socket, action, fn ->
+      case Pipelines.get_pipeline(id, socket.assigns.current_scope.organization_id) do
+        nil -> {:noreply, put_flash(socket, :error, "Pipeline not found.")}
+        pipeline -> fun.(pipeline)
+      end
     end)
   end
 

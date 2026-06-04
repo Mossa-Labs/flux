@@ -1,8 +1,11 @@
 defmodule FluxWeb.AuthorizationTest do
   @moduledoc """
-  Web-layer authorization parity (MOS-524): the LiveView UI must enforce the
-  same `Flux.Permissions` rules as the REST API. A viewer-role user can read but
-  must not be able to mutate pipelines or sinks.
+  Web-layer authorization for pipelines and sinks. The LiveView UI must enforce
+  the same rules as the REST API:
+
+    * role gating (MOS-524) — a viewer-role user can read but not mutate;
+    * tenant isolation (MOS-528) — a crafted event id for another org's record
+      is treated as not-found, even for a permitted role.
   """
   use FluxWeb.ConnCase, async: true
 
@@ -112,6 +115,55 @@ defmodule FluxWeb.AuthorizationTest do
       |> render_click()
 
       refute Repo.reload(pipeline)
+    end
+  end
+
+  # Tenant isolation (MOS-528): even with a permitted role, a crafted event id
+  # for another organization's record must be treated as not-found.
+  describe "cross-organization isolation" do
+    setup :register_and_log_in_user
+
+    defp other_org do
+      Repo.insert!(%Organization{
+        name: "Other",
+        slug: "org-#{System.unique_integer([:positive])}"
+      })
+    end
+
+    test "cannot delete another org's pipeline via a crafted id", %{conn: conn} do
+      foreign = pipeline_fixture(other_org().id, %{name: "Theirs"})
+
+      {:ok, lv, _html} = live(conn, ~p"/pipelines")
+      render_click(lv, "delete", %{"id" => to_string(foreign.id)})
+
+      assert Repo.reload(foreign)
+    end
+
+    test "cannot start another org's pipeline via a crafted id", %{conn: conn} do
+      foreign = pipeline_fixture(other_org().id, %{name: "Theirs", status: "stopped"})
+
+      {:ok, lv, _html} = live(conn, ~p"/pipelines")
+      render_click(lv, "start", %{"id" => to_string(foreign.id)})
+
+      assert Repo.reload(foreign).status == "stopped"
+    end
+
+    test "cannot delete another org's sink via a crafted id", %{conn: conn} do
+      foreign = sink_fixture(other_org().id, %{name: "Theirs"})
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks")
+      render_click(lv, "delete", %{"id" => to_string(foreign.id)})
+
+      assert Repo.reload(foreign)
+    end
+
+    test "cannot toggle another org's sink via a crafted id", %{conn: conn} do
+      foreign = sink_fixture(other_org().id, %{name: "Theirs", enabled: true})
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks")
+      render_click(lv, "toggle", %{"id" => to_string(foreign.id)})
+
+      assert Repo.reload(foreign).enabled == true
     end
   end
 end
