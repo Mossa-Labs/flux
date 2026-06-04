@@ -63,16 +63,38 @@ All error responses return JSON:
 
 ## Authorization
 
-A key carries a **role** (`admin`, `member`, or `viewer`) chosen at creation.
-Endpoints are gated by role:
+A key's access is the **intersection of its role and its scopes** — both must
+allow a request, so scopes can narrow a key below its role but never widen it
+past it.
+
+### Role
+
+A key carries a **role** (`admin`, `member`, or `viewer`) chosen at creation:
 
 | Action | Minimum role |
 |--------|--------------|
 | List / read pipelines and sinks | `viewer` |
-| Start / stop a pipeline | `member` |
 | Create a pipeline | `member` |
+| Start / stop a pipeline | `member` |
 
-Requests that exceed the key's role return `403`.
+### Scopes
+
+A key also carries OAuth-style **scopes**. Each endpoint requires one; a request
+missing it returns `403`. When scopes are omitted at creation they default to
+the role's full set (so a key behaves like its role until you restrict it).
+
+| Scope | Grants |
+|-------|--------|
+| `read:pipelines` | `GET /api/pipelines`, `GET /api/pipelines/:id` |
+| `write:pipelines` | `POST /api/pipelines`, `…/start`, `…/stop` |
+| `read:sinks` | `GET /api/sinks` |
+| `write:sinks` | reserved for future sink-write endpoints |
+
+Example: an `admin`-role key scoped to only `read:pipelines` can list pipelines
+but is `403` on create and on `GET /api/sinks` — least-privilege automation.
+
+Any request that exceeds the key's role **or** lacks the endpoint's scope
+returns `403`.
 
 ---
 
