@@ -2,6 +2,8 @@ defmodule FluxWeb.PipelineLive.Builder do
   @moduledoc "LiveView for the visual pipeline builder with React Flow canvas."
   use FluxWeb, :live_view
 
+  import FluxWeb.Authorization
+
   alias Flux.Pipelines
   alias Flux.Pipelines.Pipeline
   alias Flux.Sinks
@@ -962,44 +964,48 @@ defmodule FluxWeb.PipelineLive.Builder do
   end
 
   def handle_event("save", _params, socket) do
-    # Extract source_queue from the IR for backward compat with the schema
-    source_queue = extract_source_queue(socket.assigns.initial_ir)
-    was_new = socket.assigns.action == :new
+    permission = if socket.assigns.action == :new, do: :create_pipeline, else: :edit_pipeline
 
-    sink_ids = extract_sink_ids(socket.assigns.initial_ir)
+    authorize(socket, permission, fn ->
+      # Extract source_queue from the IR for backward compat with the schema
+      source_queue = extract_source_queue(socket.assigns.initial_ir)
+      was_new = socket.assigns.action == :new
 
-    attrs = %{
-      name: socket.assigns.pipeline_name,
-      source_queue: source_queue || "default",
-      steps: socket.assigns.initial_ir,
-      sink_ids: sink_ids,
-      organization_id: socket.assigns.current_scope.organization_id
-    }
+      sink_ids = extract_sink_ids(socket.assigns.initial_ir)
 
-    result =
-      case socket.assigns.action do
-        :new -> Pipelines.create_pipeline(attrs)
-        :edit -> Pipelines.update_pipeline(socket.assigns.pipeline, attrs)
-      end
+      attrs = %{
+        name: socket.assigns.pipeline_name,
+        source_queue: source_queue || "default",
+        steps: socket.assigns.initial_ir,
+        sink_ids: sink_ids,
+        organization_id: socket.assigns.current_scope.organization_id
+      }
 
-    case result do
-      {:ok, pipeline} ->
-        socket =
-          socket
-          |> assign(:pipeline, pipeline)
-          |> assign(:action, :edit)
-          |> put_flash(:info, "Pipeline saved")
-
-        # Navigate to the edit URL so refreshing doesn't re-create
-        if was_new do
-          {:noreply, push_patch(socket, to: ~p"/pipelines/#{pipeline.id}/builder")}
-        else
-          {:noreply, socket}
+      result =
+        case socket.assigns.action do
+          :new -> Pipelines.create_pipeline(attrs)
+          :edit -> Pipelines.update_pipeline(socket.assigns.pipeline, attrs)
         end
 
-      {:error, changeset} ->
-        {:noreply, put_flash(socket, :error, format_save_errors(changeset))}
-    end
+      case result do
+        {:ok, pipeline} ->
+          socket =
+            socket
+            |> assign(:pipeline, pipeline)
+            |> assign(:action, :edit)
+            |> put_flash(:info, "Pipeline saved")
+
+          # Navigate to the edit URL so refreshing doesn't re-create
+          if was_new do
+            {:noreply, push_patch(socket, to: ~p"/pipelines/#{pipeline.id}/builder")}
+          else
+            {:noreply, socket}
+          end
+
+        {:error, changeset} ->
+          {:noreply, put_flash(socket, :error, format_save_errors(changeset))}
+      end
+    end)
   end
 
   def handle_event("update_ir", %{"ir" => ir_json}, socket) do

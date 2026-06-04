@@ -2,6 +2,8 @@ defmodule FluxWeb.SinkLive.Index do
   @moduledoc "LiveView for listing and managing sink destinations."
   use FluxWeb, :live_view
 
+  import FluxWeb.Authorization
+
   alias Flux.Sinks
 
   @impl true
@@ -27,7 +29,11 @@ defmodule FluxWeb.SinkLive.Index do
           </h1>
           <p class="text-base-content/60 mt-1">Configure output destinations for your pipelines</p>
         </div>
-        <.link navigate={~p"/sinks/new"} class="btn btn-primary">
+        <.link
+          :if={can?(@current_scope, :create_sink)}
+          navigate={~p"/sinks/new"}
+          class="btn btn-primary"
+        >
           <.icon name="hero-plus" class="w-5 h-5" /> New Sink
         </.link>
       </div>
@@ -45,7 +51,11 @@ defmodule FluxWeb.SinkLive.Index do
             <p class="text-base-content/60 mt-2 max-w-md">
               Create sinks to send your transformed data to external destinations like webhooks, S3, or databases.
             </p>
-            <.link navigate={~p"/sinks/new"} class="btn btn-primary mt-6">
+            <.link
+              :if={can?(@current_scope, :create_sink)}
+              navigate={~p"/sinks/new"}
+              class="btn btn-primary mt-6"
+            >
               <.icon name="hero-plus" class="w-5 h-5" /> Create Sink
             </.link>
           </div>
@@ -183,23 +193,27 @@ defmodule FluxWeb.SinkLive.Index do
   end
 
   def handle_event("toggle", %{"id" => id}, socket) do
-    sink = Sinks.get_sink!(id)
-    {:ok, sink} = Sinks.toggle_enabled(sink)
-    status = if sink.enabled, do: "enabled", else: "disabled"
+    authorize(socket, :edit_sink, fn ->
+      sink = Sinks.get_sink!(id)
+      {:ok, sink} = Sinks.toggle_enabled(sink)
+      status = if sink.enabled, do: "enabled", else: "disabled"
 
-    {:noreply,
-     socket
-     |> stream_insert(:sinks, sink)
-     |> put_flash(:info, "Sink #{status}")}
+      {:noreply,
+       socket
+       |> stream_insert(:sinks, sink)
+       |> put_flash(:info, "Sink #{status}")}
+    end)
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
-    sink = Sinks.get_sink!(id)
-    {:ok, _} = Sinks.delete_sink(sink)
+    authorize(socket, :delete_sink, fn ->
+      sink = Sinks.get_sink!(id)
+      {:ok, _} = Sinks.delete_sink(sink)
 
-    {:noreply,
-     socket
-     |> stream_delete(:sinks, sink)
-     |> put_flash(:info, "Sink deleted")}
+      {:noreply,
+       socket
+       |> stream_delete(:sinks, sink)
+       |> put_flash(:info, "Sink deleted")}
+    end)
   end
 end
