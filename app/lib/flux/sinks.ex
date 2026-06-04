@@ -10,6 +10,37 @@ defmodule Flux.Sinks do
   alias Flux.Repo
   alias Flux.Sinks.Sink
 
+  @redacted "[REDACTED]"
+  # Secret config paths masked before a sink leaves the system (e.g. API GETs).
+  @secret_top_keys ~w(password)
+  @secret_auth_keys ~w(token password username key)
+
+  @doc """
+  Returns a copy of a sink's `config` with known secret fields masked.
+
+  Covers HTTP auth (`auth.token|password|username|key`) and Postgres
+  (`password`). Safe to call on any sink config map.
+  """
+  def redact_config(config) when is_map(config) do
+    config
+    |> redact_keys(@secret_top_keys)
+    |> redact_auth()
+  end
+
+  def redact_config(other), do: other
+
+  defp redact_keys(map, keys) do
+    Enum.reduce(keys, map, fn key, acc ->
+      if Map.has_key?(acc, key), do: Map.put(acc, key, @redacted), else: acc
+    end)
+  end
+
+  defp redact_auth(%{"auth" => auth} = config) when is_map(auth) do
+    Map.put(config, "auth", redact_keys(auth, @secret_auth_keys))
+  end
+
+  defp redact_auth(config), do: config
+
   @doc """
   Returns the list of sinks for an organization.
 

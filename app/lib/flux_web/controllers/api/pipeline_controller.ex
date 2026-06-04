@@ -1,0 +1,87 @@
+defmodule FluxWeb.API.PipelineController do
+  @moduledoc """
+  REST API for pipelines. Every action is scoped to the organization of the
+  authenticated API key (`conn.assigns.current_scope`); mutations are gated by
+  `Flux.Permissions` via `FluxWeb.API.Authz`.
+  """
+  use FluxWeb, :controller
+
+  import FluxWeb.API.Authz, only: [authorize: 2]
+
+  alias Flux.Pipeline.{Manager, Metrics}
+  alias Flux.Pipelines
+
+  action_fallback FluxWeb.API.FallbackController
+
+  def index(conn, _params) do
+    pipelines = Pipelines.list_pipelines(org_id(conn))
+    render(conn, :index, pipelines: pipelines)
+  end
+
+  def show(conn, %{"id" => id}) do
+    with {:ok, pipeline} <- fetch(conn, id) do
+      metrics =
+        Map.get(Metrics.snapshot().per_pipeline, pipeline.id) || metrics_by_string(pipeline.id)
+
+      render(conn, :show, pipeline: pipeline, metrics: metrics)
+    end
+  end
+
+  def create(conn, params) do
+    with :ok <- authorize(conn, :create_pipeline),
+         attrs = Map.put(params, "organization_id", org_id(conn)),
+         {:ok, pipeline} <- Pipelines.create_pipeline(attrs) do
+      conn
+      |> put_status(:created)
+      |> render(:show, pipeline: pipeline, metrics: nil)
+    end
+  end
+
+  def start(conn, %{"id" => id}) do
+    with :ok <- authorize(conn, :run_pipeline),
+         {:ok, pipeline} <- fetch(conn, id) do
+      case Manager.start_pipeline(pipeline.id) do
+        {:ok, _pid} ->
+          {:ok, pipeline} = Pipelines.update_status(pipeline, "active")
+          render(conn, :status, pipeline: pipeline)
+
+        {:error, reason} ->
+          transition_error(conn, reason)
+      end
+    end
+  end
+
+  def stop(conn, %{"id" => id}) do
+    with :ok <- authorize(conn, :run_pipeline),
+         {:ok, pipeline} <- fetch(conn, id) do
+      case Manager.stop_pipeline(pipeline.id) do
+        :ok ->
+          {:ok, pipeline} = Pipelines.update_status(pipeline, "stopped")
+          render(conn, :status, pipeline: pipeline)
+
+        {:error, reason} ->
+          transition_error(conn, reason)
+      end
+    end
+  end
+
+  defp fetch(conn, id) do
+    case Pipelines.get_pipeline(id, org_id(conn)) do
+      nil -> {:error, :not_found}
+      pipeline -> {:ok, pipeline}
+    end
+  end
+
+  defp metrics_by_string(id), do: Map.get(Metrics.snapshot().per_pipeline, to_string(id))
+
+  defp transition_error(conn, reason) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "transition_failed", message: to_string_reason(reason)})
+  end
+
+  defp to_string_reason(reason) when is_binary(reason), do: reason
+  defp to_string_reason(reason), do: inspect(reason)
+
+  defp org_id(conn), do: conn.assigns.current_scope.organization_id
+end
