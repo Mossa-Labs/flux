@@ -29,11 +29,26 @@ defmodule FluxWeb.Router do
     get("/", PageController, :home)
   end
 
+  # Unauthenticated health probe (for load balancers).
+  scope "/", FluxWeb.API do
+    pipe_through(:api)
+
+    get("/health", HealthController, :show)
+  end
+
   # API routes with authentication
   scope "/api", FluxWeb.API do
     pipe_through(:api_authenticated)
 
     post("/webhooks/:source", WebhookController, :create)
+
+    get("/pipelines", PipelineController, :index)
+    post("/pipelines", PipelineController, :create)
+    get("/pipelines/:id", PipelineController, :show)
+    post("/pipelines/:id/start", PipelineController, :start)
+    post("/pipelines/:id/stop", PipelineController, :stop)
+
+    get("/sinks", SinkController, :index)
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
