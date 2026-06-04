@@ -5,12 +5,16 @@ defmodule FluxWeb.API.SinkController do
   """
   use FluxWeb, :controller
 
+  import FluxWeb.API.Authz, only: [require_scope: 2]
+
   alias Flux.Sinks
 
   action_fallback FluxWeb.API.FallbackController
 
   def index(conn, _params) do
-    sinks = Sinks.list_sinks(conn.assigns.current_scope.organization_id)
-    render(conn, :index, sinks: sinks)
+    with :ok <- require_scope(conn, "read:sinks") do
+      sinks = Sinks.list_sinks(conn.assigns.current_scope.organization_id)
+      render(conn, :index, sinks: sinks)
+    end
   end
 end

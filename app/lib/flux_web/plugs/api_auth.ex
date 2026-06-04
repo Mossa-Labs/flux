@@ -28,7 +28,7 @@ defmodule FluxWeb.Plugs.ApiAuth do
   require Logger
 
   alias Flux.Accounts
-  alias Flux.Accounts.{ApiKeyUsage, Scope}
+  alias Flux.Accounts.{ApiKey, ApiKeyUsage, Scope}
   alias Flux.Repo
   alias Flux.Structure.Organization
 
@@ -60,11 +60,13 @@ defmodule FluxWeb.Plugs.ApiAuth do
           organization_id: api_key.organization_id
         })
 
-        assign(conn, :current_scope, %Scope{
+        conn
+        |> assign(:current_scope, %Scope{
           user: nil,
           organization_id: api_key.organization_id,
           organization_role: api_key.role
         })
+        |> assign(:api_scopes, ApiKey.effective_scopes(api_key))
 
       {:error, :unauthorized} ->
         unauthorized(
@@ -100,11 +102,13 @@ defmodule FluxWeb.Plugs.ApiAuth do
       organization_id: org_id
     })
 
-    assign(conn, :current_scope, %Scope{
+    conn
+    |> assign(:current_scope, %Scope{
       user: nil,
       organization_id: org_id,
       organization_role: "owner"
     })
+    |> assign(:api_scopes, ApiKey.scopes())
   end
 
   defp get_api_key(conn) do
