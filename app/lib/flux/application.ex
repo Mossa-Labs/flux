@@ -21,6 +21,8 @@ defmodule Flux.Application do
       Flux.AI.Registry,
       # Community self-registration (EE adds its own registrations on top).
       Flux.Registrations,
+      # Records API-key last_used_at off the request path.
+      Flux.Accounts.ApiKeyUsage,
       # Active queue adapter — resolved from the registry at its own init time.
       Flux.Queue.Supervisor,
       # Active AI provider — starts a process only if the provider needs one.
