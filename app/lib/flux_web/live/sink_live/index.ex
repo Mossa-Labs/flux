@@ -181,20 +181,23 @@ defmodule FluxWeb.SinkLive.Index do
 
   @impl true
   def handle_event("test", %{"id" => id}, socket) do
-    sink = Sinks.get_sink!(id)
+    case fetch_sink(socket, id) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "Sink not found.")}
 
-    case Sinks.test_connection(sink) do
-      :ok ->
-        {:noreply, put_flash(socket, :info, "Connection successful!")}
+      sink ->
+        case Sinks.test_connection(sink) do
+          :ok ->
+            {:noreply, put_flash(socket, :info, "Connection successful!")}
 
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Connection failed: #{inspect(reason)}")}
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Connection failed: #{inspect(reason)}")}
+        end
     end
   end
 
   def handle_event("toggle", %{"id" => id}, socket) do
-    authorize(socket, :edit_sink, fn ->
-      sink = Sinks.get_sink!(id)
+    authorize_sink(socket, id, :edit_sink, fn sink ->
       {:ok, sink} = Sinks.toggle_enabled(sink)
       status = if sink.enabled, do: "enabled", else: "disabled"
 
@@ -206,14 +209,29 @@ defmodule FluxWeb.SinkLive.Index do
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
-    authorize(socket, :delete_sink, fn ->
-      sink = Sinks.get_sink!(id)
+    authorize_sink(socket, id, :delete_sink, fn sink ->
       {:ok, _} = Sinks.delete_sink(sink)
 
       {:noreply,
        socket
        |> stream_delete(:sinks, sink)
        |> put_flash(:info, "Sink deleted")}
+    end)
+  end
+
+  defp fetch_sink(socket, id) do
+    Sinks.get_sink(id, socket.assigns.current_scope.organization_id)
+  end
+
+  # Authorizes `action` for the current role, then loads the sink scoped to the
+  # current organization (a crafted id from another org is treated as
+  # not-found). Calls `fun.(sink)` only when both checks pass.
+  defp authorize_sink(socket, id, action, fun) do
+    authorize(socket, action, fn ->
+      case fetch_sink(socket, id) do
+        nil -> {:noreply, put_flash(socket, :error, "Sink not found.")}
+        sink -> fun.(sink)
+      end
     end)
   end
 end
