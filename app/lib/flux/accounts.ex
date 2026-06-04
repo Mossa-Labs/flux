@@ -292,10 +292,8 @@ defmodule Flux.Accounts do
 
   Returns `{:ok, plaintext, %ApiKey{}}` where `plaintext` (e.g.
   `flux_pk_<32 chars>`) is shown exactly once — only its SHA-256 hash is
-  stored. `attrs` accepts `:name` (required), `:role`, and `:expires_at`.
-
-  TODO(api-key-scopes): accept fine-grained scopes instead of a single coarse
-  `:role` (backlog — see MOS-456 plan, Phase 5).
+  stored. `attrs` accepts `:name` (required), `:role`, `:expires_at`, and
+  `:scopes` (defaults to the role's full set when omitted).
   """
   def create_api_key(organization_id, attrs) do
     raw = generate_api_key()
