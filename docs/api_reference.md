@@ -7,7 +7,15 @@ This document covers the external HTTP API for integrating with Flux.
 ## Table of Contents
 
 - [Authentication](#authentication)
+- [Authorization](#authorization)
 - [Endpoints](#endpoints)
+  - [GET /health](#get-health)
+  - [GET /api/pipelines](#get-apipipelines)
+  - [POST /api/pipelines](#post-apipipelines)
+  - [GET /api/pipelines/:id](#get-apipipelinesid)
+  - [POST /api/pipelines/:id/start](#post-apipipelinesidstart)
+  - [POST /api/pipelines/:id/stop](#post-apipipelinesidstop)
+  - [GET /api/sinks](#get-apisinks)
   - [POST /api/webhooks/:source](#post-apiwebhookssource)
 - [Message Structure](#message-structure)
 
@@ -15,35 +23,126 @@ This document covers the external HTTP API for integrating with Flux.
 
 ## Authentication
 
-All API requests require an `X-API-Key` header. The key is configured via application config:
+All API requests except `GET /health` require an `X-API-Key` header carrying a
+**per-organization API key**. Each key is bound to one organization, so requests
+are automatically scoped to that organization's data.
 
-```elixir
-config :flux, FluxWeb.Plugs.ApiAuth,
-  api_key: "your-secret-api-key"
+Create and manage keys under **System Settings → API Keys**. A key looks like
+`flux_pk_<random>` and is shown in full **once, at creation** — only a hash is
+stored, so copy it then. Keys can be given an optional expiry and revoked at any
+time.
+
+```bash
+curl http://localhost:4000/api/pipelines \
+  -H "X-API-Key: flux_pk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ```
 
-In production, set the `FLUX_API_KEY` environment variable (loaded in `config/runtime.exs`).
+> **Legacy global key (deprecated).** A single key configured via
+> `config :flux, FluxWeb.Plugs.ApiAuth, api_key:` (or the `FLUX_API_KEY` env var)
+> still authenticates during migration, scoped to the first organization, and
+> logs a deprecation warning. Prefer per-organization keys.
 
 ### Error Responses
 
-| Status | Error | Message | Cause |
-|--------|-------|---------|-------|
-| 401 | `Missing API key` | `X-API-Key header is required` | Request has no `X-API-Key` header |
-| 401 | `Invalid API key` | `The provided API key is invalid` | Key does not match configured value |
-| 500 | `Configuration error` | `API authentication not configured` | No API key configured on the server |
+| Status | Error code | Cause |
+|--------|------------|-------|
+| 401 | `Missing API key` / `Invalid API key` | No key, or an unknown / revoked / expired key |
+| 403 | `forbidden` | The key's role lacks permission for the action |
+| 404 | `not_found` | Resource missing or not in the key's organization |
+| 422 | `unprocessable_entity` | Validation failed (`details` lists field errors) |
 
 All error responses return JSON:
 
 ```json
-{
-  "error": "<error>",
-  "message": "<message>"
-}
+{ "error": "<code>", "message": "<message>" }
 ```
+
+`422` responses include a `details` object keyed by field.
+
+---
+
+## Authorization
+
+A key carries a **role** (`admin`, `member`, or `viewer`) chosen at creation.
+Endpoints are gated by role:
+
+| Action | Minimum role |
+|--------|--------------|
+| List / read pipelines and sinks | `viewer` |
+| Start / stop a pipeline | `member` |
+| Create a pipeline | `member` |
+
+Requests that exceed the key's role return `403`.
 
 ---
 
 ## Endpoints
+
+### GET /health
+
+Unauthenticated health probe for load balancers. Returns `200` when the database
+and queue are reachable, `503` otherwise.
+
+```json
+{ "status": "ok", "database": "connected", "queue": "connected", "version": "0.1.0" }
+```
+
+### GET /api/pipelines
+
+Lists the organization's pipelines (summary view).
+
+```json
+{ "data": [
+  { "id": 1, "name": "orders", "status": "active",
+    "source_queue": "webhooks.orders", "sink_count": 2, "updated_at": "..." }
+] }
+```
+
+### POST /api/pipelines
+
+Creates a pipeline from a JSON IR body (the same format the visual builder
+produces). The organization is taken from the API key — any `organization_id` in
+the body is ignored. Requires the `member` role. Returns `201` with the created
+pipeline, or `422` on validation errors.
+
+```bash
+curl -X POST http://localhost:4000/api/pipelines \
+  -H "X-API-Key: flux_pk_..." -H "Content-Type: application/json" \
+  -d '{"name":"orders","source_queue":"webhooks.orders",
+       "steps":{"version":"1.0","steps":[]},"sink_ids":[]}'
+```
+
+### GET /api/pipelines/:id
+
+Returns a pipeline's full detail — config, steps, sink ids, and a metrics
+snapshot. `404` if the pipeline is not in the key's organization.
+
+### POST /api/pipelines/:id/start
+
+Starts (or resumes) a pipeline. Requires the `member` role. Returns the new
+status:
+
+```json
+{ "data": { "id": 1, "status": "active" } }
+```
+
+### POST /api/pipelines/:id/stop
+
+Stops a pipeline gracefully. Requires the `member` role. Returns
+`{ "data": { "id": 1, "status": "stopped" } }`.
+
+### GET /api/sinks
+
+Lists the organization's sinks. **Secret config fields** (auth tokens,
+passwords, usernames, keys) are replaced with `"[REDACTED]"` in the response.
+
+```json
+{ "data": [
+  { "id": 1, "name": "warehouse", "type": "http", "enabled": true,
+    "config": { "url": "https://...", "auth": { "type": "bearer", "token": "[REDACTED]" } },
+    "updated_at": "..." }
+] }
+```
 
 ### POST /api/webhooks/:source
 
