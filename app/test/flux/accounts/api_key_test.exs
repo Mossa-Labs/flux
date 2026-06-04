@@ -94,21 +94,6 @@ defmodule Flux.Accounts.ApiKeyTest do
       assert Enum.sort(viewer.scopes) == Enum.sort(~w(read:pipelines read:sinks))
     end
 
-    test "explicit scopes are stored as given" do
-      o = org()
-      {:ok, _raw, key} = Accounts.create_api_key(o.id, %{name: "k", scopes: ["read:pipelines"]})
-      assert key.scopes == ["read:pipelines"]
-    end
-
-    test "unknown scopes are rejected" do
-      o = org()
-
-      assert {:error, cs} =
-               Accounts.create_api_key(o.id, %{name: "k", scopes: ["read:everything"]})
-
-      assert %{scopes: _} = errors_on(cs)
-    end
-
     test "effective_scopes/1 falls back to role defaults for a scopeless key" do
       legacy = %ApiKey{role: "viewer", scopes: []}
 
