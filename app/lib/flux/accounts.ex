@@ -305,12 +305,21 @@ defmodule Flux.Accounts do
     }
 
     %ApiKey{}
-    |> ApiKey.create_changeset(attrs, programmatic)
+    |> ApiKey.create_changeset(gate_scopes(attrs), programmatic)
     |> Repo.insert()
     |> case do
       {:ok, api_key} -> {:ok, raw, api_key}
       {:error, changeset} -> {:error, changeset}
     end
+  end
+
+  # Fine-grained (below-role) scopes are a Pro feature. Without the entitlement,
+  # drop any requested scopes so the changeset falls back to the role's full set
+  # — the key still works, just at role granularity.
+  defp gate_scopes(attrs) do
+    if Flux.License.has_feature?(:api_key_scopes),
+      do: attrs,
+      else: Map.drop(attrs, [:scopes, "scopes"])
   end
 
   @doc "Lists an organization's API keys, newest first."

@@ -10,6 +10,7 @@ defmodule FluxWeb.SystemSettingsLive do
   alias Flux.Repo
   alias Flux.Structure
   alias Flux.Structure.{OrganizationMember, Team, TeamMember}
+  alias FluxWeb.Components.UpgradePrompt
 
   @redirect_after_ms 20_000
   @tick_ms 1_000
@@ -41,6 +42,7 @@ defmodule FluxWeb.SystemSettingsLive do
        |> assign(:api_keys, if(org_id, do: Accounts.list_api_keys(org_id), else: []))
        |> assign(:api_key_form, new_api_key_form())
        |> assign(:revealed_key, nil)
+       |> assign(:api_key_scopes_enabled, Flux.License.has_feature?(:api_key_scopes))
        |> stream(:teams_stream, teams)}
     else
       Process.send_after(self(), :redirect_to_dashboard, @redirect_after_ms)
@@ -107,6 +109,7 @@ defmodule FluxWeb.SystemSettingsLive do
           api_keys={@api_keys}
           api_key_form={@api_key_form}
           revealed_key={@revealed_key}
+          api_key_scopes_enabled={@api_key_scopes_enabled}
           streams={@streams}
         />
       <% else %>
@@ -168,6 +171,7 @@ defmodule FluxWeb.SystemSettingsLive do
           api_keys={@api_keys}
           api_key_form={@api_key_form}
           revealed_key={@revealed_key}
+          scopes_enabled={@api_key_scopes_enabled}
         />
       <% else %>
         <p class="text-base-content/60">
@@ -298,6 +302,7 @@ defmodule FluxWeb.SystemSettingsLive do
             options={[{"Admin", "admin"}, {"Member", "member"}, {"Viewer", "viewer"}]}
           />
           <.input
+            :if={@scopes_enabled}
             field={@api_key_form[:scopes]}
             type="select"
             multiple
@@ -307,9 +312,12 @@ defmodule FluxWeb.SystemSettingsLive do
           <.input field={@api_key_form[:expires_at]} type="date" label="Expires (optional)" />
           <.button class="btn btn-primary">Create key</.button>
         </.form>
-        <p class="text-xs text-base-content/50 mt-1">
+        <p :if={@scopes_enabled} class="text-xs text-base-content/50 mt-1">
           A key's access is the intersection of its role and its scopes.
         </p>
+        <div :if={!@scopes_enabled} class="mt-2">
+          <UpgradePrompt.upgrade_prompt feature={:api_key_scopes} size={:compact} />
+        </div>
 
         <div class="mt-4 overflow-x-auto">
           <table class="table table-sm">

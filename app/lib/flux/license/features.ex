@@ -22,6 +22,7 @@ defmodule Flux.License.Features do
     * `:live_signals` - the Live Signals monitoring page
     * `:cron_polling` - scheduled (cron) source polling
     * `:org_rbac` - organization-centric RBAC
+    * `:api_key_scopes` - fine-grained (below-role) API key scopes
     * `:sso`, `:audit_log`, `:white_label`, `:mfa` - enterprise auth/compliance
   """
 
@@ -42,7 +43,9 @@ defmodule Flux.License.Features do
       :live_signals,
       :cron_polling,
       # Org-centric RBAC is "Pro+" per MOS-458 — entitled from the Pro tier up.
-      :org_rbac
+      :org_rbac,
+      # Restricting an API key's scopes below its role (least-privilege keys).
+      :api_key_scopes
     ],
     enterprise: [
       :sso,
