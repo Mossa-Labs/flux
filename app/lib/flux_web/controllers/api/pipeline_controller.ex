@@ -6,7 +6,7 @@ defmodule FluxWeb.API.PipelineController do
   """
   use FluxWeb, :controller
 
-  import FluxWeb.API.Authz, only: [authorize: 2]
+  import FluxWeb.API.Authz, only: [authorize: 2, require_scope: 2]
 
   alias Flux.Pipeline.{Manager, Metrics}
   alias Flux.Pipelines
@@ -14,12 +14,15 @@ defmodule FluxWeb.API.PipelineController do
   action_fallback FluxWeb.API.FallbackController
 
   def index(conn, _params) do
-    pipelines = Pipelines.list_pipelines(org_id(conn))
-    render(conn, :index, pipelines: pipelines)
+    with :ok <- require_scope(conn, "read:pipelines") do
+      pipelines = Pipelines.list_pipelines(org_id(conn))
+      render(conn, :index, pipelines: pipelines)
+    end
   end
 
   def show(conn, %{"id" => id}) do
-    with {:ok, pipeline} <- fetch(conn, id) do
+    with :ok <- require_scope(conn, "read:pipelines"),
+         {:ok, pipeline} <- fetch(conn, id) do
       metrics =
         Map.get(Metrics.snapshot().per_pipeline, pipeline.id) || metrics_by_string(pipeline.id)
 
@@ -28,7 +31,8 @@ defmodule FluxWeb.API.PipelineController do
   end
 
   def create(conn, params) do
-    with :ok <- authorize(conn, :create_pipeline),
+    with :ok <- require_scope(conn, "write:pipelines"),
+         :ok <- authorize(conn, :create_pipeline),
          attrs = Map.put(params, "organization_id", org_id(conn)),
          {:ok, pipeline} <- Pipelines.create_pipeline(attrs) do
       conn
@@ -38,7 +42,8 @@ defmodule FluxWeb.API.PipelineController do
   end
 
   def start(conn, %{"id" => id}) do
-    with :ok <- authorize(conn, :run_pipeline),
+    with :ok <- require_scope(conn, "write:pipelines"),
+         :ok <- authorize(conn, :run_pipeline),
          {:ok, pipeline} <- fetch(conn, id) do
       case Manager.start_pipeline(pipeline.id) do
         {:ok, _pid} ->
@@ -52,7 +57,8 @@ defmodule FluxWeb.API.PipelineController do
   end
 
   def stop(conn, %{"id" => id}) do
-    with :ok <- authorize(conn, :run_pipeline),
+    with :ok <- require_scope(conn, "write:pipelines"),
+         :ok <- authorize(conn, :run_pipeline),
          {:ok, pipeline} <- fetch(conn, id) do
       case Manager.stop_pipeline(pipeline.id) do
         :ok ->
