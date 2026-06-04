@@ -78,6 +78,20 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       assert html =~ "No API keys yet."
     end
 
+    test "hides the scope picker without the Pro entitlement", %{conn: conn} do
+      {:ok, lv, html} = live(conn, ~p"/system/settings")
+
+      refute has_element?(lv, "#api-key-form select[multiple]")
+      assert html =~ "Fine-grained API key scopes"
+    end
+
+    test "shows the scope picker with the Pro entitlement", %{conn: conn} do
+      Flux.LicenseHelpers.with_license_tier(:pro, fn ->
+        {:ok, lv, _html} = live(conn, ~p"/system/settings")
+        assert has_element?(lv, "#api-key-form select[multiple]")
+      end)
+    end
+
     test "creates an API key and reveals the plaintext once", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/system/settings")
 

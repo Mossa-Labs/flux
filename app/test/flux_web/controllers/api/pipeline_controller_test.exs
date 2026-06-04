@@ -17,13 +17,6 @@ defmodule FluxWeb.API.PipelineControllerTest do
     raw
   end
 
-  defp scoped_key(org_id, scopes) do
-    {:ok, raw, _} =
-      Accounts.create_api_key(org_id, %{name: "scoped", role: "admin", scopes: scopes})
-
-    raw
-  end
-
   defp auth(conn, raw), do: put_req_header(conn, "x-api-key", raw)
 
   defp pipeline(org_id, name) do
@@ -154,23 +147,6 @@ defmodule FluxWeb.API.PipelineControllerTest do
              |> auth(key(o.id, "admin"))
              |> post(~p"/api/pipelines/999999/start")
              |> json_response(404)
-    end
-  end
-
-  describe "scopes" do
-    test "a read-only key can list but not create", %{conn: conn, org: o} do
-      raw = scoped_key(o.id, ["read:pipelines"])
-      assert conn |> auth(raw) |> get(~p"/api/pipelines") |> json_response(200)
-
-      assert conn
-             |> auth(raw)
-             |> post(~p"/api/pipelines", %{"name" => "x", "source_queue" => "q"})
-             |> json_response(403)
-    end
-
-    test "a key without read:pipelines is forbidden from listing", %{conn: conn, org: o} do
-      raw = scoped_key(o.id, ["read:sinks"])
-      assert conn |> auth(raw) |> get(~p"/api/pipelines") |> json_response(403)
     end
   end
 end

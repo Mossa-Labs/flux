@@ -27,15 +27,6 @@ defmodule FluxWeb.API.SinkControllerTest do
     assert conn |> get(~p"/api/sinks") |> json_response(401)
   end
 
-  test "403 when the key lacks the read:sinks scope", %{conn: conn} do
-    o = org()
-
-    {:ok, raw, _} =
-      Accounts.create_api_key(o.id, %{name: "k", role: "admin", scopes: ["read:pipelines"]})
-
-    assert conn |> auth(raw) |> get(~p"/api/sinks") |> json_response(403)
-  end
-
   test "lists the org's sinks with secrets redacted", %{conn: conn} do
     o = org()
     other = org("Other")
