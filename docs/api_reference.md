@@ -257,7 +257,7 @@ When a webhook is received, Flux creates a `Flux.Queue.Message` struct with the 
 | `correlation_id` | string \| nil | Value of `X-Correlation-ID` header, or `nil` |
 | `metadata` | map | Auto-populated request metadata (see below) |
 | `inserted_at` | DateTime | UTC timestamp when the message was created |
-| `adapter_meta` | map | Adapter-specific metadata (e.g., RabbitMQ `delivery_tag`) |
+| `adapter_meta` | map | Queue-adapter-specific metadata, if any |
 
 ### Metadata Fields
 

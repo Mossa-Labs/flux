@@ -1,6 +1,6 @@
 # Flux User Guide
 
-This guide covers how to use the Flux web interface to manage pipelines, sinks, anomaly detection, and system settings.
+This guide covers how to use the Flux web interface to manage pipelines, sinks, and system settings.
 
 ---
 
@@ -11,7 +11,6 @@ This guide covers how to use the Flux web interface to manage pipelines, sinks, 
 - [Managing Pipelines](#managing-pipelines)
 - [Visual Pipeline Builder](#visual-pipeline-builder)
 - [Managing Sinks](#managing-sinks)
-- [Live Signals (Anomaly Detection)](#live-signals-anomaly-detection)
 - [System Settings](#system-settings)
 - [User Settings](#user-settings)
 
@@ -54,7 +53,7 @@ graph LR
 
 **Route**: `/dashboard`
 
-The dashboard provides a real-time overview of your system's health. It displays four metric cards and a system health summary, all updated live every 2 seconds.
+The dashboard provides a real-time overview of your system's health. It displays metric cards and a system health summary, all updated live every 2 seconds.
 
 ### Metric Cards
 
@@ -62,12 +61,11 @@ The dashboard provides a real-time overview of your system's health. It displays
 |------|-------------|
 | **Active Pipelines** | Number of pipelines with `active` status. Shows how many are currently running |
 | **Events / Sec** | Rolling throughput over the last 60 seconds. Shows total processed count below |
-| **Anomalies** | Number of pipelines with anomalous z-scores. Red when > 0 ("Requires attention"), green when 0 ("All clear") |
 | **Failed Messages** | Lifetime count of messages that failed processing. Yellow-highlighted when > 0 |
 
 ### System Health
 
-Below the cards, a System Health panel shows three summary stats: events/sec, active pipeline count, and anomalies detected.
+Below the cards, a System Health panel shows summary stats: events/sec and active pipeline count.
 
 All metrics update in real time via PubSub -- no page refresh needed.
 
@@ -151,14 +149,13 @@ The builder has three panels:
 | Transform | Arrow path | Extract and map fields (Map step) |
 | Rename | Pencil | Rename a field in the data |
 | Script | Code bracket | Custom Lua transformation (see [lua_scripting.md](lua_scripting.md)) |
-| AI Detect | CPU chip | Anomaly detection scoring |
 
 **Output nodes:**
 
 | Node | Purpose |
 |------|---------|
 | Queue | Publish to a destination queue for pipeline chaining |
-| Sink nodes | One node per configured sink (HTTP, S3, Postgres) -- dynamically listed from your enabled sinks |
+| Sink nodes | One node per configured sink (HTTP, Postgres) -- dynamically listed from your enabled sinks |
 
 ### Building a Pipeline
 
@@ -183,7 +180,7 @@ Sinks are output destinations where processed pipeline data is delivered.
 The sink list shows all sinks in your organization:
 
 - **Name** with type icon
-- **Type** badge: HTTP, S3, Postgres
+- **Type** badge: HTTP, Postgres
 - **Enabled/Disabled** status
 - **Last updated** timestamp
 
@@ -191,7 +188,7 @@ The sink list shows all sinks in your organization:
 
 | Action | Description |
 |--------|-------------|
-| **Test Connection** | Verify connectivity to the destination (HEAD request for HTTP, head_bucket for S3, SELECT 1 for Postgres) |
+| **Test Connection** | Verify connectivity to the destination (HEAD request for HTTP, SELECT 1 for Postgres) |
 | **Toggle Enable/Disable** | Enable or disable the sink without deleting it |
 | **Edit** | Open the sink configuration form |
 | **Delete** | Remove the sink (confirmation dialog shown) |
@@ -218,18 +215,6 @@ Send data as HTTP requests (webhooks).
 | Timeout | Request timeout in seconds (default: 30) |
 | Retry attempts | Number of retries on failure (default: 3) |
 
-#### S3 Sink
-Write data to S3-compatible object storage (AWS S3, MinIO, GCP Cloud Storage).
-
-| Field | Description |
-|-------|-------------|
-| Bucket | S3 bucket name |
-| Region | AWS region |
-| Access Key ID | AWS access key |
-| Secret Access Key | AWS secret key |
-| Key Template | Object key with placeholders: `{id}`, `{timestamp}`, `{date}`, `{pipeline_id}`, `{field.path}` |
-| Endpoint | Custom endpoint URL for S3-compatible services (e.g., MinIO) |
-
 #### Postgres Sink
 Insert data directly into a PostgreSQL table.
 
@@ -240,48 +225,6 @@ Insert data directly into a PostgreSQL table.
 | Table | Target table name |
 | Column Mapping | Map data fields to table columns (supports nested paths with dot notation) |
 | On Conflict | Strategy for duplicate keys: `nothing`, `replace_all`, or `raise` |
-
----
-
-## Live Signals (Anomaly Detection)
-
-**Route**: `/intelligence/signals`
-
-The Live Signals page provides real-time AI-powered anomaly monitoring across all pipelines. Data refreshes automatically every 5 seconds.
-
-### Summary Cards
-
-Three cards at the top of the page:
-
-| Card | Description |
-|------|-------------|
-| **Active Anomalies** | Count of pipelines with z-scores above threshold (pulsing alert when > 0) |
-| **Highest Z-Score** | Maximum z-score across all monitored fields |
-| **Pipelines Monitored** | Number of pipelines with anomaly detection data |
-
-### Pipeline Anomaly Table
-
-A table listing all monitored pipelines with:
-
-- Pipeline name and processing status
-- Maximum z-score across fields
-- Number of monitored fields
-- Signal indicator: pulsing red dot for anomaly, green dot for normal
-
-### Field Detail View
-
-Click a pipeline row to expand a detailed breakdown:
-
-- **Field statistics table** showing per-field: field name, z-score (color-coded), value count, min, max, and anomaly/normal badge
-- **Value history chart** (uPlot) with multi-line time series, color-coded per field, and a draggable cursor for exploration
-
-### Z-Score Color Coding
-
-| Z-Score | Color | Meaning |
-|---------|-------|---------|
-| > 3.0 | Red | Strong anomaly |
-| > 2.0 | Yellow/Warning | Potential anomaly |
-| <= 2.0 | Green | Normal |
 
 ---
 
@@ -300,15 +243,13 @@ System settings are restricted to users with the **owner** role. Non-owners see 
 
 ### Members Management
 
-Manage organization or team members depending on your RBAC mode:
+Members are managed per team. For each team you can:
 
 - View members with their roles and status
-- Add new members (by email, with role assignment)
+- Add new members (by email, with role assignment, and first/last name fields)
 - Edit member roles (Admin, Member, Viewer)
-- Disable or re-enable members (soft-disable preserves audit trail)
+- Disable or re-enable members (soft-disable preserves history)
 - Remove members (you cannot remove yourself)
-
-In **team-centric** mode, members are managed per team with first/last name fields. In **org-centric** mode, members are managed at the organization level.
 
 See [rbac.md](rbac.md) for details on roles and permissions.
 

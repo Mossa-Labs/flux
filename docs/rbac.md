@@ -1,19 +1,18 @@
 # RBAC (Role-Based Access Control)
 
-Flux supports two RBAC modes, selected by config so the same codebase can run as **cloud (multi-tenant)** or **self-hosted** with minimal surface.
+Flux uses **team-centric** RBAC: organization access and roles are derived from a
+user's team memberships, so a self-hosted deployment gets multi-tenant access
+control without managing separate organization-member records.
 
 ## Config
 
 ```elixir
 # config/config.exs (or runtime)
-config :flux, :rbac_mode, :team_centric   # default: self-hosted / dev
-# config :flux, :rbac_mode, :org_centric  # cloud / full org membership
+config :flux, :rbac_mode, :team_centric   # default
 ```
 
-* **`:team_centric`** (default): Org access and role are derived from **teams** and **team_members**. No need to manage `organization_members`; optional default org when the user has no teams.
-* **`:org_centric`**: Org access and role come from **organization_members**. Table is used; backfill ensures existing org owners get an owner row.
-
-Same `Scope` shape and `can?/3` API in both modes.
+Org access and role are derived from **teams** and **team_members**. There is an
+optional default org when the user has no teams.
 
 ## Scope
 
@@ -23,9 +22,10 @@ Same `Scope` shape and `can?/3` API in both modes.
 * `organization_id` — default/current org
 * `organization_role` — role in that org (`owner`, `admin`, `member`, `viewer`)
 
-**Org-centric:** Default org and role are loaded from `organization_members` (first by `inserted_at`).
-
-**Team-centric:** Accessible orgs = distinct orgs from the user’s team memberships; default org = first such org; role = best role among the user’s teams in that org (admin > member > viewer). If the user has no teams, a single default org (e.g. from seeds) is used with a fallback role.
+Accessible orgs = the distinct orgs from the user's team memberships; the default
+org = the first such org; the role = the **best** role among the user's teams in
+that org (admin > member > viewer). If the user has no teams, a single default org
+(e.g. from seeds) is used with a fallback role.
 
 ## Permission API
 
@@ -48,21 +48,20 @@ Flux.Permissions.can?(scope, action, resource_or_scope)
 * **member** — create/edit pipelines and sinks, run pipelines.
 * **viewer** — read-only (view pipelines, sinks, dashboard).
 
-In team-centric mode, the effective org role is the **best** role among the user’s team memberships in that org.
+The effective org role is the **best** role among the user's team memberships in that org.
 
 ## Seed users (dev)
 
-Seeds create test data compatible with both modes:
+Seeds create test data:
 
 * **Users**: `admin@flux.dev`, `member@flux.dev`, `viewer@flux.dev` (password: `password1234`).
 * **Organization**: Flux Development (slug: `flux-dev`).
 * **Teams**: Core, Analytics (under that org).
 * **Team members**: Core → admin, member; Analytics → admin, viewer.
-* **Organization members** (for org-centric): admin → owner, member → member, viewer → viewer.
 
 Run `mix ecto.setup` (or `ecto.create`, `ecto.migrate`, `run priv/repo/seeds.exs`) to apply migrations and seeds.
 
 ## Deployment
 
-* **Self-hosted / Docker**: Prefer `:team_centric`; no `organization_members` management; optional single default org from seeds.
-* **Cloud / multi-tenant**: Use `:org_centric`; manage org members and roles via `organization_members`; backfill ensures existing org owners get an owner row.
+Self-hosted deployments use team-centric RBAC: no separate organization-member
+management is required, and an optional single default org can come from seeds.

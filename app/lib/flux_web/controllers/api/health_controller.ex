@@ -17,8 +17,29 @@ defmodule FluxWeb.API.HealthController do
       status: if(healthy?, do: "ok", else: "degraded"),
       database: database,
       queue: queue,
-      version: version()
+      version: version(),
+      cluster: cluster_info()
     })
+  end
+
+  defp cluster_info do
+    nodes = [node() | Node.list()]
+
+    %{
+      node: to_string(node()),
+      node_count: length(nodes),
+      nodes: Enum.map(nodes, &to_string/1),
+      supervisor_members: supervisor_member_count()
+    }
+  end
+
+  # Number of nodes participating in pipeline supervision. The Community
+  # (single-node) backend reports 1; the Pro distributed backend reports the
+  # cluster member count. Falls back to 1 on error.
+  defp supervisor_member_count do
+    Flux.Pipeline.Supervision.member_count()
+  rescue
+    _ -> 1
   end
 
   defp check_database do

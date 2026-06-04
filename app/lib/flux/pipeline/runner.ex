@@ -50,12 +50,15 @@ defmodule Flux.Pipeline.Runner do
   end
 
   @impl true
-  def process_name({:via, Registry, {registry, key}}, base_name) do
-    {:via, Registry, {registry, {key, base_name}}}
+  def process_name(via, base_name) do
+    Flux.Pipeline.Supervision.child_via(via, base_name)
   end
 
+  # Unique runner name resolved through the active supervision backend (local
+  # Registry for Community; cluster-wide Horde.Registry for Pro). The unique name
+  # makes a duplicate start return {:already_started, pid}, so each pipeline runs once.
   defp via_tuple(pipeline_id) do
-    {:via, Registry, {Flux.Pipeline.Registry, {:runner, pipeline_id}}}
+    Flux.Pipeline.Supervision.via_tuple(pipeline_id)
   end
 
   defp producer_config(pipeline) do

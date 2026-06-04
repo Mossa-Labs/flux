@@ -36,7 +36,6 @@ graph LR
         INTERP[Interpreter]
         STEPS[Pipeline Steps]
         SINKS[Sink Adapters]
-        AI[AI Detector]
     end
 
     UI --> INTERP
@@ -45,26 +44,25 @@ graph LR
     QUEUE --> INTERP
     INTERP --> STEPS
     STEPS --> SINKS
-    STEPS --> AI
 
     style UI fill:#4f46e5,color:#fff
     style INTERP fill:#059669,color:#fff
-    style AI fill:#d97706,color:#fff
+    style STEPS fill:#d97706,color:#fff
 ```
 
 **Control Plane (`FluxWeb`)**: Phoenix 1.8 LiveView application for management, configuration, and real-time visibility. All UI is built with LiveView and function components, except the pipeline visual builder canvas which uses React Flow (lazy-loaded only on `/pipelines/builder`).
 
-**Data Plane (`FluxEngine`)**: Broadway-based execution engine, Oban scheduler, Nx-powered anomaly detection, and queue/sink adapters.
+**Data Plane (`FluxEngine`)**: Broadway-based execution engine, Oban scheduler, and pluggable queue/sink adapters. Pipeline transformation steps (map, filter, rename, and Lua `script`) run here.
 
 ### Context Modules
 
 | Context | Module | Responsibility |
 |---------|--------|----------------|
-| Pipelines | `Flux.Pipelines` | Pipeline CRUD, status management, listing by organization |
+| Pipelines | `Flux.Pipelines` | Pipeline CRUD, status management, listing by team |
 | Sinks | `Flux.Sinks` | Sink CRUD, configuration validation |
 | Accounts | `Flux.Accounts` | User registration, authentication, session management, scope building |
-| Structure | `Flux.Structure` | Organizations, teams, team members |
-| Permissions | `Flux.Permissions` | Role-based access control via `can?/3` |
+| Structure | `Flux.Structure` | Teams, team members |
+| Permissions | `Flux.Permissions` | Team-centric role-based access control via `can?/3` |
 
 ### Pipeline Execution Flow
 
@@ -90,9 +88,8 @@ sequenceDiagram
 
 The `Flux.Pipeline.Interpreter` receives the pipeline's JSON IR configuration and iterates through each step sequentially. Each step is dispatched based on its `type`:
 
-- `"native"` -- Resolved via `Flux.Pipeline.Step.module_for_operation/1` to compiled Elixir modules
+- `"native"` -- Resolved via `Flux.Pipeline.Step.module_for_operation/1` to compiled Elixir modules (`map`, `filter`, `rename`)
 - `"script"` -- Routed to `Flux.Pipeline.Steps.Script` (Lua sandbox via Luerl)
-- `"ai"` -- Routed to `Flux.AI.Detector` for anomaly scoring
 
 ### Supervision Tree
 
@@ -102,17 +99,16 @@ Flux.Supervisor (one_for_one)
  |-- Flux.Repo
  |-- DNSCluster
  |-- Phoenix.PubSub (name: Flux.PubSub)
- |-- Queue Adapter (Memory or RabbitMQ)
+ |-- Queue Adapter (configured via the queue registry)
  |-- Oban
  |-- Registry (Flux.Pipeline.Registry)
  |-- DynamicSupervisor (Flux.Pipeline.DynamicSupervisor)
- |-- Flux.AI.Detector
  |-- Flux.Pipeline.Metrics
  |-- Flux.Pipeline.Manager
  |-- FluxWeb.Endpoint
 ```
 
-The `Pipeline.Manager` starts after `Metrics` and `AI.Detector` so that telemetry handlers and ETS tables are ready before pipelines begin processing.
+The `Pipeline.Manager` starts after `Metrics` so that telemetry handlers and ETS tables are ready before pipelines begin processing.
 
 ---
 
@@ -176,7 +172,7 @@ The behaviour callback must return one of:
 |-------------|---------|
 | `{:ok, transformed_data}` | Step succeeded; continue to next step |
 | `{:skip, reason}` | Skip this message (e.g., filtered out, duplicate) |
-| `{:error, reason}` | Step failed; message is sent to the dead-letter queue |
+| `{:error, reason}` | Step failed; the message is rejected and the error is recorded |
 
 ### Step 2: Register in `Flux.Pipeline.Step`
 
@@ -212,7 +208,7 @@ The `Flux.Pipeline.Interpreter` already handles all `"native"` type steps by dis
 }
 ```
 
-If your step requires a new `type` (not `"native"`, `"script"`, or `"ai"`), add a new `execute_step/2` clause in `lib/flux/pipeline/interpreter.ex`.
+If your step requires a new `type` (not `"native"` or `"script"`), add a new `execute_step/2` clause in `lib/flux/pipeline/interpreter.ex`.
 
 ### Step 4: Add the UI Node in the Visual Builder
 
@@ -251,31 +247,39 @@ end
 
 ## Adding a New Sink Adapter
 
-This section walks through creating a new sink type. We will use a hypothetical `Kafka` sink as the example.
+Flux discovers sink adapters at runtime through `Flux.Sink.Registry`: each
+adapter implements the `Flux.Sink.Adapter` behaviour and registers itself
+against a string type identifier at boot. The Community edition ships the
+`http` and `postgres` adapters, registered in `Flux.Registrations`. This
+section walks through adding your own adapter using a generic `FileSink` that
+appends each delivered record to a local file as a line of JSON.
 
 ### Step 1: Create the Adapter Module
 
-Create `lib/flux/sink/adapters/kafka.ex`:
+Create `lib/flux/sink/adapters/file_sink.ex`:
 
 ```elixir
-defmodule Flux.Sink.Adapters.Kafka do
+defmodule Flux.Sink.Adapters.FileSink do
   @moduledoc """
-  Kafka sink adapter for publishing processed data to Kafka topics.
+  Example sink adapter that appends each record to a local file as JSON.
+
+  Config options:
+  - `path`: Filesystem path to append to (required)
   """
 
-  @behaviour Flux.Sink
+  @behaviour Flux.Sink.Adapter
 
   require Logger
 
   @impl true
-  def deliver(data, config, _opts \\ []) do
-    topic = Map.fetch!(config, "topic")
-    brokers = Map.fetch!(config, "brokers")
+  def deliver(data, config, _opts) do
+    path = Map.fetch!(config, "path")
 
-    Logger.debug("Delivering to Kafka topic #{topic}")
+    Logger.debug("Appending record to #{path}")
 
-    # Kafka publishing logic here
-    case publish_to_kafka(brokers, topic, data) do
+    line = Jason.encode!(data) <> "\n"
+
+    case File.write(path, line, [:append]) do
       :ok -> :ok
       {:error, reason} -> {:error, reason}
     end
@@ -283,33 +287,19 @@ defmodule Flux.Sink.Adapters.Kafka do
 
   @impl true
   def validate_config(config) do
-    errors =
-      []
-      |> maybe_add_error(config, "topic", "topic is required")
-      |> maybe_add_error(config, "brokers", "brokers is required")
-
-    case errors do
-      [] -> :ok
-      errors -> {:error, errors}
+    case Map.get(config, "path") do
+      path when is_binary(path) and path != "" -> :ok
+      _ -> {:error, ["path is required"]}
     end
   end
 
   @impl true
   def test_connection(config) do
-    brokers = Map.get(config, "brokers")
-    # Validate broker connectivity
-    case ping_brokers(brokers) do
-      :ok -> :ok
-      {:error, reason} -> {:error, reason}
-    end
-  end
+    path = Map.get(config, "path", "")
+    dir = Path.dirname(path)
 
-  defp maybe_add_error(errors, config, key, message) do
-    if Map.has_key?(config, key), do: errors, else: [message | errors]
+    if File.dir?(dir), do: :ok, else: {:error, "directory #{dir} does not exist"}
   end
-
-  defp publish_to_kafka(_brokers, _topic, _data), do: :ok
-  defp ping_brokers(_brokers), do: :ok
 end
 ```
 
@@ -321,25 +311,34 @@ The behaviour defines three callbacks:
 | `validate_config/1` | Yes | Validate the sink's config map |
 | `test_connection/1` | No | Test connectivity to the destination |
 
-### Step 2: Register in `Flux.Sink`
+### Step 2: Register the Adapter
 
-Add the new type to the `@sink_types` map in `lib/flux/sink/sink.ex` (the behaviour module):
+Adapters self-register at boot. Add your adapter to `register_sinks/0` in
+`lib/flux/registrations.ex` so it joins the registry alongside the built-in
+Community adapters:
 
 ```elixir
-@sink_types %{
-  "http" => Flux.Sink.Adapters.HTTP,
-  "s3" => Flux.Sink.Adapters.S3,
-  "postgres" => Flux.Sink.Adapters.Postgres,
-  "kafka" => Flux.Sink.Adapters.Kafka
-}
+defp register_sinks do
+  Flux.Sink.Registry.register("http", Flux.Sink.Adapters.HTTP)
+  Flux.Sink.Registry.register("postgres", Flux.Sink.Adapters.Postgres)
+  Flux.Sink.Registry.register("file", Flux.Sink.Adapters.FileSink)
+  :ok
+end
 ```
+
+At dispatch time, `Flux.Sink.deliver/3` looks the type up via
+`Flux.Sink.Registry.lookup/1` and calls the resolved adapter — there is no
+hard-coded list of adapters to edit.
+
+> Additional sink adapters ship in a separate commercial edition; they register
+> themselves at boot the same way.
 
 ### Step 3: Add to the Sink Schema
 
 Add the new type to `@sink_types` in `lib/flux/sinks/sink.ex` (the Ecto schema):
 
 ```elixir
-@sink_types ~w(http s3 postgres kafka)
+@sink_types ~w(http postgres file)
 ```
 
 This ensures the `validate_inclusion(:type, @sink_types)` check in the changeset accepts the new type.
@@ -349,40 +348,40 @@ This ensures the `validate_inclusion(:type, @sink_types)` check in the changeset
 Add a form section for the new sink type in the `SinkLive.Form` LiveView. Use the standard `<.input>` component for each configuration field:
 
 ```heex
-<div :if={@form[:type].value == "kafka"}>
-  <.input field={@form[:config]["brokers"]} type="text" label="Brokers" placeholder="localhost:9092" />
-  <.input field={@form[:config]["topic"]} type="text" label="Topic" />
+<div :if={@form[:type].value == "file"}>
+  <.input field={@form[:config]["path"]} type="text" label="File path" placeholder="/var/log/flux/events.jsonl" />
 </div>
 ```
 
 ### Step 5: Write Tests
 
-Create `test/flux/sink/adapters/kafka_test.exs`:
+Create `test/flux/sink/adapters/file_sink_test.exs`:
 
 ```elixir
-defmodule Flux.Sink.Adapters.KafkaTest do
+defmodule Flux.Sink.Adapters.FileSinkTest do
   use ExUnit.Case, async: true
 
-  alias Flux.Sink.Adapters.Kafka
+  alias Flux.Sink.Adapters.FileSink
 
   describe "validate_config/1" do
     test "returns :ok for valid config" do
-      config = %{"topic" => "events", "brokers" => "localhost:9092"}
-      assert :ok = Kafka.validate_config(config)
+      assert :ok = FileSink.validate_config(%{"path" => "/tmp/events.jsonl"})
     end
 
     test "returns errors for missing required fields" do
-      assert {:error, errors} = Kafka.validate_config(%{})
-      assert "topic is required" in errors
-      assert "brokers is required" in errors
+      assert {:error, errors} = FileSink.validate_config(%{})
+      assert "path is required" in errors
     end
   end
 
   describe "deliver/3" do
-    test "delivers data successfully" do
-      config = %{"topic" => "events", "brokers" => "localhost:9092"}
-      data = %{"event" => "test"}
-      assert :ok = Kafka.deliver(data, config)
+    test "appends data to the file" do
+      path = Path.join(System.tmp_dir!(), "flux_file_sink_#{System.unique_integer([:positive])}.jsonl")
+      on_exit(fn -> File.rm(path) end)
+
+      config = %{"path" => path}
+      assert :ok = FileSink.deliver(%{"event" => "test"}, config, [])
+      assert File.read!(path) =~ ~s("event":"test")
     end
   end
 end
@@ -392,7 +391,15 @@ end
 
 ## Adding a New Queue Adapter
 
-### Step 1: Implement the `Flux.Queue` Behaviour
+Queue adapters follow the same registry pattern as sinks: each implements the
+`Flux.Queue.Adapter` behaviour and registers against a string type identifier
+via `Flux.Queue.Registry.register/2` at boot. The Community edition ships the
+in-memory adapter (`Flux.Queue.Adapters.Memory`), registered under `"memory"`
+in `Flux.Registrations`. The active adapter — the one `Flux.Queue` publishes
+through — is selected by `config :flux, Flux.Queue, type: "memory"` and seeded
+at boot.
+
+### Step 1: Implement the `Flux.Queue.Adapter` Behaviour
 
 Create a new adapter module (e.g., `lib/flux/queue/adapters/redis.ex`):
 
@@ -404,7 +411,7 @@ defmodule Flux.Queue.Adapters.Redis do
 
   use GenServer
 
-  @behaviour Flux.Queue
+  @behaviour Flux.Queue.Adapter
 
   alias Flux.Queue.Message
 
@@ -412,17 +419,17 @@ defmodule Flux.Queue.Adapters.Redis do
     GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
   end
 
-  @impl Flux.Queue
+  @impl Flux.Queue.Adapter
   def publish(queue, %Message{} = message, opts \\ []) do
     GenServer.call(__MODULE__, {:publish, queue, message, opts})
   end
 
-  @impl Flux.Queue
+  @impl Flux.Queue.Adapter
   def ack(%Message{} = message) do
     GenServer.call(__MODULE__, {:ack, message})
   end
 
-  @impl Flux.Queue
+  @impl Flux.Queue.Adapter
   def reject(%Message{} = message, requeue \\ false) do
     GenServer.call(__MODULE__, {:reject, message, requeue})
   end
@@ -453,34 +460,42 @@ defmodule Flux.Queue.Adapters.Redis do
 end
 ```
 
-The three required callbacks are:
+The required callbacks are:
 
-| Callback | Description |
-|----------|-------------|
-| `publish/3` | Publish a `Flux.Queue.Message` to a named queue |
-| `ack/1` | Acknowledge successful processing of a message |
-| `reject/2` | Reject a message, optionally requeuing it |
+| Callback | Required | Description |
+|----------|----------|-------------|
+| `publish/3` | Yes | Publish a `Flux.Queue.Message` to a named queue |
+| `ack/1` | Yes | Acknowledge successful processing of a message |
+| `reject/2` | Yes | Reject a message, optionally requeuing it |
+| `producer_spec/1` | No | Return the Broadway producer child spec used by `Flux.Pipeline.Runner` to consume messages |
 
-### Step 2: Add to the Supervision Tree
+### Step 2: Register the Adapter
 
-The queue adapter is started as a child in `lib/flux/application.ex` via the `queue_adapter_child_spec/0` function. It reads the configured adapter from application config and starts it with a name:
+Register your adapter at boot in `register_queues/0` in
+`lib/flux/registrations.ex`, alongside the built-in in-memory adapter:
 
 ```elixir
-defp queue_adapter_child_spec do
-  adapter = Application.get_env(:flux, Flux.Queue)[:adapter]
-  {adapter, name: adapter}
+defp register_queues do
+  Flux.Queue.Registry.register("memory", Flux.Queue.Adapters.Memory)
+  Flux.Queue.Registry.register("redis", Flux.Queue.Adapters.Redis)
+  :ok
 end
 ```
 
-No changes to `application.ex` are needed -- just ensure your adapter module implements `start_link/1` and accepts a `name` option.
+If your adapter runs a process (a GenServer connection, a pool, etc.), add it
+as a child in `lib/flux/application.ex` so it starts with the application.
 
-### Step 3: Configure in `config/runtime.exs`
+> Additional queue adapters ship in a separate commercial edition; they register
+> themselves at boot the same way.
 
-Add configuration for the new adapter:
+### Step 3: Configure the Active Adapter
+
+Point Flux at your adapter by setting the active queue type. The registry
+resolves `Flux.Queue` calls through whichever type is active:
 
 ```elixir
 # config/runtime.exs
-config :flux, Flux.Queue, adapter: Flux.Queue.Adapters.Redis
+config :flux, Flux.Queue, type: "redis"
 
 config :flux, Flux.Queue.Adapters.Redis,
   url: System.get_env("REDIS_URL") || "redis://localhost:6379",
@@ -497,7 +512,7 @@ config :flux, Flux.Queue.Adapters.Redis,
 |-----------|-------------|----------|---------|
 | Unit / Context | `Flux.DataCase` | `test/flux/` | Database-backed tests (contexts, schemas) |
 | LiveView / Controller | `FluxWeb.ConnCase` | `test/flux_web/` | HTTP and LiveView integration tests |
-| Pure logic | `ExUnit.Case` | `test/flux/` | Side-effect-free unit tests (steps, scoring) |
+| Pure logic | `ExUnit.Case` | `test/flux/` | Side-effect-free unit tests (steps, adapters) |
 
 ### Fixtures
 
@@ -508,7 +523,7 @@ Test data fixtures are located in `test/support/fixtures/`:
 | `Flux.AccountsFixtures` | Users, registration, authentication |
 | `Flux.PipelinesFixtures` | Pipelines with default configurations |
 | `Flux.SinksFixtures` | Sink instances with valid configs |
-| `Flux.StructureFixtures` | Organizations, teams, team members |
+| `Flux.StructureFixtures` | Teams, team members |
 
 ### Process Management
 
@@ -516,10 +531,10 @@ Always use `start_supervised!/1` to start processes in tests:
 
 ```elixir
 # Good
-pid = start_supervised!({Flux.AI.Detector, window_size: 100})
+pid = start_supervised!({Flux.Pipeline.Metrics, name: :test_metrics})
 
 # Bad - process may leak between tests
-{:ok, pid} = Flux.AI.Detector.start_link(window_size: 100)
+{:ok, pid} = Flux.Pipeline.Metrics.start_link(name: :test_metrics)
 ```
 
 Avoid `Process.sleep/1` and `Process.alive?/1`. Instead, use `Process.monitor/1`:
@@ -715,7 +730,7 @@ Template pattern:
 
 - Always preload associations when accessed in templates.
 - Use `Ecto.Changeset.get_field/2` to read changeset fields -- never access changesets directly in templates.
-- Fields set programmatically (e.g., `user_id`, `organization_id`) must not appear in `cast` calls.
+- Fields set programmatically (e.g., `user_id`, `team_id`) must not appear in `cast` calls.
 - Schema fields use `:string` type even for `:text` database columns.
 
 ### HEEx Templates

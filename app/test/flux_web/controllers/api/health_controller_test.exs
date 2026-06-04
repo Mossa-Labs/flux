@@ -9,4 +9,14 @@ defmodule FluxWeb.API.HealthControllerTest do
     assert body["queue"] == "connected"
     assert is_binary(body["version"])
   end
+
+  test "reports cluster membership", %{conn: conn} do
+    body = conn |> get(~p"/health") |> json_response(200)
+
+    cluster = body["cluster"]
+    assert cluster["node"] == to_string(node())
+    assert cluster["node_count"] >= 1
+    assert to_string(node()) in cluster["nodes"]
+    assert cluster["supervisor_members"] >= 1
+  end
 end

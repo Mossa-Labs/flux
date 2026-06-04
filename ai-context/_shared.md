@@ -9,7 +9,7 @@ Flux is a self-hosted, high-performance ETL/ELT platform for dynamic data pipeli
 - **Backend**: Phoenix 1.8, LiveView, Elixir
 - **Frontend**: Tailwind CSS v4, React Flow (lazy-loaded on `/pipelines/builder`)
 - **Database**: Postgres 18
-- **Queue**: RabbitMQ (production) / In-memory (development)
+- **Queue**: pluggable adapters — in-memory (development); durable broker (production)
 - **Processing**: Broadway, Oban (scheduler), Nx (AI/ML)
 - **Auth**: Argon2 password hashing
 
@@ -28,6 +28,14 @@ Flux is a self-hosted, high-performance ETL/ELT platform for dynamic data pipeli
 
 - Run `mix precommit` when done with changes and fix any issues
 - Use `:req` (Req) for HTTP requests - avoid `:httpoison`, `:tesla`, `:httpc`
+
+## Source Control & Scope Guardrails
+
+These apply to **every** contributor — human or AI/LLM agent (Claude included).
+
+- **Never commit or push directly to `main`.** Always create a feature branch and land changes through a pull request. If you are on `main`, branch first; never `git commit`/`git push` against `main`, and never force-push it. (This was a real mistake once — do not repeat it.)
+- **Ask before sending anything to GitHub.** When you finish a set of changes, do **not** push the branch or open/update a pull request on your own initiative. First **ask the user** whether they want to (a) push the branch and open the PR now, or (b) smoke-test / review locally first. Committing locally is fine; treat every `git push` and every PR as a step that needs the user's explicit go-ahead **each time** — do not assume prior approval carries over to the next change.
+- **Confirm where a feature belongs before you build it.** Each repository has a **"Repository Scope"** section defining what may live here. Before adding a feature — or any part of one — verify it belongs in *this* repository/edition. If it belongs in the other edition, **stop** and build it there. When the placement is not obvious, **ask rather than guess**: a wrong placement is costly to undo, and a public-repo placement is irreversible.
 
 ## Phoenix 1.8 Guidelines
 
