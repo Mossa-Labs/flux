@@ -1,13 +1,18 @@
 defmodule FluxWeb.Plugs.ApiAuth do
   @moduledoc """
-  Plug for API key authentication.
+  Authenticates API requests via the `X-API-Key` header and assigns
+  `conn.assigns.current_scope` for downstream org-scoping and authorization.
 
-  Validates the `X-API-Key` header against a configured API key.
+  Resolution order:
 
-  ## Configuration
+    1. **Per-organization key** (`flux_pk_...`) — looked up in `api_keys`; the
+       scope's org and role come from the key. Usage is recorded off the
+       request path.
+    2. **Legacy global key** (`config :flux, FluxWeb.Plugs.ApiAuth, api_key:`) —
+       kept for backwards compatibility during migration; scoped to the first
+       organization with the `owner` role and logged as deprecated.
 
-      config :flux, FluxWeb.Plugs.ApiAuth,
-        api_key: "your-secret-api-key"
+  Anything else (missing/invalid/revoked/expired) returns `401`.
 
   ## Usage
 
@@ -15,50 +20,91 @@ defmodule FluxWeb.Plugs.ApiAuth do
         plug :accepts, ["json"]
         plug FluxWeb.Plugs.ApiAuth
       end
-
   """
 
   import Plug.Conn
+  import Ecto.Query, only: [from: 2]
+
+  require Logger
+
+  alias Flux.Accounts
+  alias Flux.Accounts.{ApiKeyUsage, Scope}
+  alias Flux.Repo
+  alias Flux.Structure.Organization
 
   @behaviour Plug
+
+  @per_org_prefix "flux_pk_"
 
   @impl Plug
   def init(opts), do: opts
 
   @impl Plug
   def call(conn, _opts) do
-    with {:ok, provided_key} <- get_api_key(conn),
-         {:ok, configured_key} <- get_configured_key(),
-         :ok <- validate_key(provided_key, configured_key) do
-      conn
-    else
+    case get_api_key(conn) do
+      {:ok, key} ->
+        authenticate(conn, key)
+
       {:error, :missing_key} ->
-        conn
-        |> put_status(:unauthorized)
-        |> Phoenix.Controller.json(%{
-          error: "Missing API key",
-          message: "X-API-Key header is required"
-        })
-        |> halt()
-
-      {:error, :invalid_key} ->
-        conn
-        |> put_status(:unauthorized)
-        |> Phoenix.Controller.json(%{
-          error: "Invalid API key",
-          message: "The provided API key is invalid"
-        })
-        |> halt()
-
-      {:error, :not_configured} ->
-        conn
-        |> put_status(:internal_server_error)
-        |> Phoenix.Controller.json(%{
-          error: "Configuration error",
-          message: "API authentication not configured"
-        })
-        |> halt()
+        unauthorized(conn, "Missing API key", "X-API-Key header is required")
     end
+  end
+
+  defp authenticate(conn, @per_org_prefix <> _ = raw) do
+    case Accounts.authenticate_api_key(raw) do
+      {:ok, api_key} ->
+        ApiKeyUsage.touch(api_key.id)
+
+        :telemetry.execute([:flux, :api, :authenticated], %{}, %{
+          api_key_id: api_key.id,
+          organization_id: api_key.organization_id
+        })
+
+        assign(conn, :current_scope, %Scope{
+          user: nil,
+          organization_id: api_key.organization_id,
+          organization_role: api_key.role
+        })
+
+      {:error, :unauthorized} ->
+        unauthorized(
+          conn,
+          "Invalid API key",
+          "The provided API key is invalid, revoked, or expired"
+        )
+    end
+  end
+
+  defp authenticate(conn, raw) do
+    case Application.get_env(:flux, __MODULE__)[:api_key] do
+      configured when is_binary(configured) and configured != "" ->
+        if Plug.Crypto.secure_compare(raw, configured),
+          do: legacy_scope(conn),
+          else: unauthorized(conn, "Invalid API key", "The provided API key is invalid")
+
+      _ ->
+        unauthorized(conn, "Invalid API key", "The provided API key is invalid")
+    end
+  end
+
+  defp legacy_scope(conn) do
+    Logger.warning(
+      "[ApiAuth] Authenticated with the deprecated global API key. Migrate to a per-organization key (flux_pk_...)."
+    )
+
+    org_id =
+      Repo.one(from(o in Organization, order_by: [asc: o.inserted_at], limit: 1, select: o.id))
+
+    :telemetry.execute([:flux, :api, :authenticated], %{}, %{
+      api_key_id: nil,
+      organization_id: org_id
+    })
+
+    assign(conn, :current_scope, %Scope{
+      user: nil,
+      organization_id: org_id,
+      organization_role: "owner"
+    })
   end
 
   defp get_api_key(conn) do
@@ -68,19 +114,10 @@ defmodule FluxWeb.Plugs.ApiAuth do
     end
   end
 
-  defp get_configured_key do
-    case Application.get_env(:flux, __MODULE__)[:api_key] do
-      nil -> {:error, :not_configured}
-      key when is_binary(key) and byte_size(key) > 0 -> {:ok, key}
-      _ -> {:error, :not_configured}
-    end
-  end
-
-  defp validate_key(provided, configured) do
-    if Plug.Crypto.secure_compare(provided, configured) do
-      :ok
-    else
-      {:error, :invalid_key}
-    end
+  defp unauthorized(conn, error, message) do
+    conn
+    |> put_status(:unauthorized)
+    |> Phoenix.Controller.json(%{error: error, message: message})
+    |> halt()
   end
 end
