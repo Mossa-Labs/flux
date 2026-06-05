@@ -52,7 +52,29 @@ defmodule Flux.Application do
     ]
 
     opts = [strategy: :one_for_one, name: Flux.Supervisor]
-    Supervisor.start_link(children, opts)
+    result = Supervisor.start_link(children, opts)
+    warn_if_ha_misconfigured()
+    result
+  end
+
+  # HA safety: warn loudly if clustering is intended (DNS_CLUSTER_QUERY set) but
+  # the in-memory queue is active. Memory loses data on failover, so HA
+  # deployments must use a durable queue (RabbitMQ / Pro).
+  defp warn_if_ha_misconfigured do
+    clustering? = Application.get_env(:flux, :dns_cluster_query) not in [nil, :ignore, ""]
+
+    memory_queue? =
+      match?({:ok, Flux.Queue.Adapters.Memory}, Flux.Queue.Registry.active())
+
+    if clustering? and memory_queue? do
+      require Logger
+
+      Logger.warning(
+        "[HA] Clustering is enabled but the in-memory queue is active. The memory " <>
+          "queue loses data on node failover — HA deployments must use a durable " <>
+          "queue. Set FLUX_QUEUE_TYPE=rabbitmq (Pro)."
+      )
+    end
   end
 
   # Tell Phoenix to update the endpoint configuration
