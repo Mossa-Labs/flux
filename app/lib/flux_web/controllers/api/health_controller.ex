@@ -17,8 +17,28 @@ defmodule FluxWeb.API.HealthController do
       status: if(healthy?, do: "ok", else: "degraded"),
       database: database,
       queue: queue,
-      version: version()
+      version: version(),
+      cluster: cluster_info()
     })
+  end
+
+  defp cluster_info do
+    nodes = [node() | Node.list()]
+
+    %{
+      node: to_string(node()),
+      node_count: length(nodes),
+      nodes: Enum.map(nodes, &to_string/1),
+      horde_members: horde_member_count()
+    }
+  end
+
+  # Number of nodes participating in the pipeline Horde cluster (the supervisor
+  # that relocates runners on failover). Falls back to 1 if Horde isn't running.
+  defp horde_member_count do
+    length(Horde.Cluster.members(Flux.Pipeline.DynamicSupervisor))
+  rescue
+    _ -> 1
   end
 
   defp check_database do
