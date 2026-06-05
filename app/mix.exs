@@ -105,6 +105,7 @@ defmodule Flux.MixProject do
       {:bandit, "~> 1.5"},
       {:oban, "~> 2.17"},
       {:broadway, "~> 1.0"},
+      {:horde, "~> 0.9"},
       {:nx, "~> 0.9"},
       {:luerl, "~> 1.2"},
       # Testing & Documentation

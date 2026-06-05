@@ -34,10 +34,15 @@ defmodule Flux.Application do
       Flux.AI.Supervisor,
       # Oban for background jobs
       {Oban, Application.fetch_env!(:flux, Oban)},
-      # Pipeline process registry
-      {Registry, keys: :unique, name: Flux.Pipeline.Registry},
-      # Dynamic supervisor for pipeline runners
-      {DynamicSupervisor, name: Flux.Pipeline.DynamicSupervisor, strategy: :one_for_one},
+      # Pipeline process registry — Horde.Registry so runner names are unique
+      # cluster-wide (a pipeline runs on exactly one node). `members: :auto`
+      # discovers peer registries over the connected cluster.
+      {Horde.Registry, name: Flux.Pipeline.Registry, keys: :unique, members: :auto},
+      # Distributed supervisor for pipeline runners — Horde relocates a dead
+      # node's runners onto a surviving node (failover) and, with the unique
+      # registry above, prevents the same pipeline running twice.
+      {Horde.DynamicSupervisor,
+       name: Flux.Pipeline.DynamicSupervisor, strategy: :one_for_one, members: :auto},
       # Pipeline metrics aggregator (must start before Manager)
       Flux.Pipeline.Metrics,
       # Pipeline manager (auto-starts active pipelines)

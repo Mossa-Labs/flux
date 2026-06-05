@@ -50,12 +50,14 @@ defmodule Flux.Pipeline.Runner do
   end
 
   @impl true
-  def process_name({:via, Registry, {registry, key}}, base_name) do
-    {:via, Registry, {registry, {key, base_name}}}
+  def process_name({:via, Horde.Registry, {registry, key}}, base_name) do
+    {:via, Horde.Registry, {registry, {key, base_name}}}
   end
 
+  # Cluster-wide unique name via Horde.Registry — starting the same pipeline on a
+  # second node fails with {:already_started, pid}, so each pipeline runs once.
   defp via_tuple(pipeline_id) do
-    {:via, Registry, {Flux.Pipeline.Registry, {:runner, pipeline_id}}}
+    {:via, Horde.Registry, {Flux.Pipeline.Registry, {:runner, pipeline_id}}}
   end
 
   defp producer_config(pipeline) do
