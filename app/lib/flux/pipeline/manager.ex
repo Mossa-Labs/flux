@@ -38,22 +38,23 @@ defmodule Flux.Pipeline.Manager do
   Returns `:running`, `:stopped`, or `:not_found`.
   """
   def get_status(pipeline_id) do
-    case Registry.lookup(Flux.Pipeline.Registry, {:runner, pipeline_id}) do
+    case Horde.Registry.lookup(Flux.Pipeline.Registry, {:runner, pipeline_id}) do
       [{_pid, _}] -> :running
       [] -> :stopped
     end
   end
 
   @doc """
-  Lists all currently running pipeline IDs.
+  Lists all currently running pipeline IDs (cluster-wide).
   """
   def list_running do
-    Registry.select(Flux.Pipeline.Registry, [{{:"$1", :_, :_}, [], [:"$1"]}])
+    Horde.Registry.select(Flux.Pipeline.Registry, [{{:"$1", :_, :_}, [], [:"$1"]}])
     |> Enum.filter(fn
       {:runner, _id} -> true
       _ -> false
     end)
     |> Enum.map(fn {:runner, id} -> id end)
+    |> Enum.uniq()
   end
 
   @impl true
@@ -120,9 +121,9 @@ defmodule Flux.Pipeline.Manager do
   @impl true
   def handle_call({:stop_pipeline, pipeline_id}, _from, state) do
     result =
-      case Registry.lookup(Flux.Pipeline.Registry, {:runner, pipeline_id}) do
+      case Horde.Registry.lookup(Flux.Pipeline.Registry, {:runner, pipeline_id}) do
         [{pid, _}] ->
-          DynamicSupervisor.terminate_child(Flux.Pipeline.DynamicSupervisor, pid)
+          Horde.DynamicSupervisor.terminate_child(Flux.Pipeline.DynamicSupervisor, pid)
 
           case Pipelines.get_pipeline!(pipeline_id) do
             nil -> :ok
@@ -144,7 +145,10 @@ defmodule Flux.Pipeline.Manager do
   defp do_start_pipeline(pipeline) do
     child_spec = Runner.child_spec(pipeline)
 
-    case DynamicSupervisor.start_child(Flux.Pipeline.DynamicSupervisor, child_spec) do
+    # Horde.DynamicSupervisor places the runner on one cluster node; the unique
+    # Horde.Registry name makes a concurrent start on another node return
+    # {:already_started, pid}, which we treat as success (idempotent auto-start).
+    case Horde.DynamicSupervisor.start_child(Flux.Pipeline.DynamicSupervisor, child_spec) do
       {:ok, pid} -> {:ok, pid}
       {:ok, pid, _info} -> {:ok, pid}
       {:error, {:already_started, pid}} -> {:ok, pid}
