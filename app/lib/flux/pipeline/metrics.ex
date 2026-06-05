@@ -27,6 +27,25 @@ defmodule Flux.Pipeline.Metrics do
   @doc "Returns the PubSub topic for metrics updates."
   def topic, do: @pubsub_topic
 
+  @doc """
+  Folds per-node metric maps into cluster-wide totals. Each node broadcasts its
+  own local counters (tagged with `:node`); the dashboard sums them so totals
+  reflect the whole cluster regardless of which node serves the LiveView.
+  """
+  def fold(node_metrics) when is_list(node_metrics) do
+    Enum.reduce(
+      node_metrics,
+      %{events_per_sec: 0.0, processed_total: 0, failed_total: 0},
+      fn m, acc ->
+        %{
+          events_per_sec: acc.events_per_sec + (Map.get(m, :events_per_sec) || 0),
+          processed_total: acc.processed_total + (Map.get(m, :processed_total) || 0),
+          failed_total: acc.failed_total + (Map.get(m, :failed_total) || 0)
+        }
+      end
+    )
+  end
+
   # -- GenServer callbacks --
 
   @impl true
@@ -104,6 +123,7 @@ defmodule Flux.Pipeline.Metrics do
       @pubsub_topic,
       {:metrics_update,
        %{
+         node: node(),
          events_per_sec: events_per_sec,
          processed_total: state.processed_total,
          failed_total: state.failed_total,

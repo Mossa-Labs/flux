@@ -14,11 +14,14 @@ defmodule FluxWeb.DashboardLive.Index do
     end
 
     org_id = socket.assigns.current_scope.organization_id
-    metrics = Metrics.snapshot()
+    snapshot = Metrics.snapshot()
     pipelines = Pipelines.list_pipelines(org_id)
     active_count = Enum.count(pipelines, &(&1.status == "active"))
     running_count = length(Manager.list_running())
     anomaly_count = length(Flux.AI.list_anomalous_pipelines())
+
+    # Seed with this node's metrics; peers fold in as their broadcasts arrive.
+    metrics_by_node = %{node() => Map.put(snapshot, :node, node())}
 
     {:ok,
      socket
@@ -26,19 +29,25 @@ defmodule FluxWeb.DashboardLive.Index do
      |> assign(:page_title, "Dashboard")
      |> assign(:active_pipeline_count, active_count)
      |> assign(:running_pipeline_count, running_count)
-     |> assign(:events_per_sec, metrics.events_per_sec)
      |> assign(:anomaly_count, anomaly_count)
-     |> assign(:processed_total, metrics.processed_total)
-     |> assign(:failed_total, metrics.failed_total)}
+     |> assign(:metrics_by_node, metrics_by_node)
+     |> assign_cluster_metrics(metrics_by_node)}
   end
 
   @impl true
   def handle_info({:metrics_update, metrics}, socket) do
+    node = Map.get(metrics, :node, node())
+
+    metrics_by_node =
+      socket.assigns.metrics_by_node
+      |> Map.put(node, metrics)
+      # Drop nodes that have left the cluster so their stale totals don't linger.
+      |> Map.take([node() | Node.list()])
+
     {:noreply,
      socket
-     |> assign(:events_per_sec, metrics.events_per_sec)
-     |> assign(:processed_total, metrics.processed_total)
-     |> assign(:failed_total, metrics.failed_total)}
+     |> assign(:metrics_by_node, metrics_by_node)
+     |> assign_cluster_metrics(metrics_by_node)}
   end
 
   def handle_info({:pipeline_updated, _pipeline}, socket) do
@@ -56,6 +65,16 @@ defmodule FluxWeb.DashboardLive.Index do
   end
 
   def handle_info(_msg, socket), do: {:noreply, socket}
+
+  # Fold per-node metrics into cluster-wide totals for display.
+  defp assign_cluster_metrics(socket, metrics_by_node) do
+    totals = Metrics.fold(Map.values(metrics_by_node))
+
+    socket
+    |> assign(:events_per_sec, totals.events_per_sec)
+    |> assign(:processed_total, totals.processed_total)
+    |> assign(:failed_total, totals.failed_total)
+  end
 
   @impl true
   def render(assigns) do
