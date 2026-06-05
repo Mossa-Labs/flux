@@ -10,7 +10,12 @@ defmodule Flux.Application do
     children = [
       FluxWeb.Telemetry,
       Flux.Repo,
+      # HA clustering: DNSCluster forms the BEAM cluster by resolving
+      # DNS_CLUSTER_QUERY (see rel/env.sh.eex for node distribution). Disabled
+      # (:ignore) when the query is unset — i.e. single-node / dev.
       {DNSCluster, query: Application.get_env(:flux, :dns_cluster_query) || :ignore},
+      # Phoenix.PubSub's default PG2 adapter is cluster-aware: once nodes are
+      # connected, broadcasts (metrics, pipeline producers) fan out cluster-wide.
       {Phoenix.PubSub, name: Flux.PubSub},
       # Registries for adapters / strategies / providers — must start before
       # Flux.Registrations so boot-time registrations have somewhere to land.
