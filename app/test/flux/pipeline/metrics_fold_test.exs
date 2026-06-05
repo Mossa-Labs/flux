@@ -5,14 +5,14 @@ defmodule Flux.Pipeline.MetricsFoldTest do
   alias Flux.Pipeline.Metrics
 
   test "fold/1 sums per-node metrics into cluster-wide totals" do
-    a = %{node: :"a@h", events_per_sec: 1.5, processed_total: 10, failed_total: 1}
-    b = %{node: :"b@h", events_per_sec: 2.0, processed_total: 5, failed_total: 0}
+    a = %{node: :a@h, events_per_sec: 1.5, processed_total: 10, failed_total: 1}
+    b = %{node: :b@h, events_per_sec: 2.0, processed_total: 5, failed_total: 0}
 
     assert %{events_per_sec: 3.5, processed_total: 15, failed_total: 1} = Metrics.fold([a, b])
   end
 
   test "fold/1 of a single node returns its own totals" do
-    a = %{node: :"a@h", events_per_sec: 4.0, processed_total: 7, failed_total: 2}
+    a = %{node: :a@h, events_per_sec: 4.0, processed_total: 7, failed_total: 2}
     assert %{events_per_sec: 4.0, processed_total: 7, failed_total: 2} = Metrics.fold([a])
   end
 
