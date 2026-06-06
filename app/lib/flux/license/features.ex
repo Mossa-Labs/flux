@@ -11,8 +11,8 @@ defmodule Flux.License.Features do
   ## Adding a new gated feature
 
     1. Add the feature atom to the appropriate tier below.
-    2. Place the enforcement point in `flux` (interpreter, LiveView, context).
-    3. Add the real implementation + overlay registration in `flux-ee`.
+    2. Place the enforcement point here (interpreter, LiveView, context).
+    3. Add the real implementation + registration in the commercial edition.
 
   Feature atoms gate the following:
 

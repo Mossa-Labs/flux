@@ -26,13 +26,11 @@ This manual covers installation, configuration, operations, and troubleshooting 
 | Elixir | 1.15+ | Compiled on Erlang/OTP 26+ |
 | Erlang/OTP | 26+ | BEAM runtime |
 | PostgreSQL | 18 | Primary datastore |
-| RabbitMQ | 3.12+ | Production message broker only |
 | Node.js | 18+ | Asset compilation (esbuild, Tailwind CSS) |
 
-### Development vs Production Dependencies
+### Queue Adapter
 
-- **Development and test** environments use an **in-memory queue adapter** (`Flux.Queue.Adapters.Memory`). RabbitMQ is not required.
-- **Production** requires a running RabbitMQ instance for durable, back-pressure-aware message buffering with dead-letter queue (DLQ) support.
+Flux ships with an **in-memory queue adapter** (`Flux.Queue.Adapters.Memory`) across all environments. It provides fast, in-process message buffering with no external dependencies and is well-suited to single-node deployments. Durable, multi-node queue backends ship in the separate commercial edition.
 
 ---
 
@@ -67,7 +65,6 @@ This single command runs `ecto.create`, `ecto.migrate`, and `run priv/repo/seeds
 | **Organization** | Flux Development (slug: `flux-dev`) |
 | **Teams** | Core, Analytics (under Flux Development) |
 | **Team members** | Core: admin + member; Analytics: admin + viewer |
-| **Organization members** | admin (owner), member (member), viewer (viewer) |
 
 ### 4. Asset Compilation
 
@@ -125,19 +122,16 @@ docker compose up --build
 |---------|-------|-------|---------|
 | `app` | Built from `app/Dockerfile` | `4000` | Phoenix server (auto-runs deps.get, ecto.create, ecto.migrate, phx.server) |
 | `db` | `postgres:18-alpine` | `5432` | PostgreSQL database |
-| `rabbitmq` | `rabbitmq:4-management` | `5672` (AMQP), `15672` (Management UI) | Message broker |
 
 ### Volumes
 
 - `postgres_data` -- persists database data across restarts
-- `rabbitmq_data` -- persists broker state across restarts
 
 ### Health Checks
 
 - **Postgres**: `pg_isready -U postgres` (5s interval, 5 retries)
-- **RabbitMQ**: `rabbitmq-diagnostics check_running` (10s interval, 5 retries)
 
-The `app` service waits for both `db` and `rabbitmq` to pass health checks before starting.
+The `app` service waits for `db` to pass its health check before starting.
 
 ### Common Commands
 
@@ -167,84 +161,39 @@ docker compose down -v
 
 ### Queue Adapter
 
-Flux uses an adapter pattern for its message queue, allowing different backends per environment.
-
-**Development** (`config/dev.exs`):
+Flux uses an adapter pattern for its message queue. The Community edition ships the in-memory adapter, configured in `config/config.exs`:
 
 ```elixir
 config :flux, Flux.Queue, adapter: Flux.Queue.Adapters.Memory
 ```
 
-The memory adapter provides fast, in-process queuing with no external dependencies.
-
-**Production** (`config/runtime.exs`):
-
-```elixir
-config :flux, Flux.Queue, adapter: Flux.Queue.Adapters.RabbitMQ
-
-config :flux, Flux.Queue.Adapters.RabbitMQ,
-  url: System.get_env("RABBITMQ_URL") || "amqp://guest:guest@localhost:5672",
-  exchange: System.get_env("RABBITMQ_EXCHANGE") || "flux.events",
-  dlx_exchange: "flux.events.dlx",
-  dlq_ttl: 7 * 24 * 60 * 60 * 1000   # 7 days
-```
-
-| RabbitMQ Variable | Default | Description |
-|-------------------|---------|-------------|
-| `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672` | AMQP connection URL |
-| `RABBITMQ_EXCHANGE` | `flux.events` | Main exchange name |
+The memory adapter provides fast, in-process queuing with no external dependencies and is suitable for single-node deployments.
 
 ### RBAC Mode
 
-Flux supports two RBAC deployment modes, configured at compile time:
+Flux uses team-centric RBAC, configured at compile time:
 
 ```elixir
 # config/config.exs
-config :flux, rbac_mode: :team_centric    # Default (self-hosted)
-# config :flux, rbac_mode: :org_centric   # Cloud / multi-tenant
+config :flux, rbac_mode: :team_centric
 ```
 
-See [RBAC and Permissions](#rbac-and-permissions) for details on each mode.
-
-### Dead-Letter Queue (DLQ)
-
-When using the RabbitMQ adapter in production, messages that fail processing are sent to a dead-letter queue for inspection and reprocessing.
-
-**How it works:**
-
-1. The RabbitMQ adapter declares a dead-letter exchange (`flux.events.dlx`, fanout) and a DLQ (`flux.events.dlq`).
-2. Messages rejected without requeue (e.g., after exhausting pipeline retries) are routed to the DLX, which fans out to the DLQ.
-3. DLQ messages have a configurable TTL (default: 7 days / 604,800,000 ms). After expiry, messages are discarded by RabbitMQ.
-
-**Configuration:**
-
-```elixir
-config :flux, Flux.Queue.Adapters.RabbitMQ,
-  dlx_exchange: "flux.events.dlx",       # Dead-letter exchange name
-  dlq_ttl: 7 * 24 * 60 * 60 * 1000       # TTL in milliseconds (default: 7 days)
-```
-
-**Inspecting failed messages:**
-
-Access the RabbitMQ Management UI at `http://<rabbitmq-host>:15672` (default credentials: `guest` / `guest`). Navigate to **Queues** > `flux.events.dlq` to view, inspect, or manually requeue failed messages.
-
-The in-memory queue adapter (development/test) does not support dead-letter queues.
+See [RBAC and Permissions](#rbac-and-permissions) for details.
 
 ### Oban Scheduler
 
-Oban handles background job processing (scheduled polling, webhook delivery, etc.):
+Oban handles background job processing (e.g., outbound webhook delivery):
 
 ```elixir
 # config/config.exs (base settings)
 config :flux, Oban,
   repo: Flux.Repo,
-  queues: [default: 10, polling: 5, webhooks: 20]
+  queues: [default: 10, webhooks: 20]
 ```
 
 | Queue | Concurrency | Purpose |
 |-------|-------------|---------|
 | `default` | 10 | General background tasks |
-| `polling` | 5 | Scheduled pull-based data ingestion |
 | `webhooks` | 20 | Outbound webhook delivery |
 
 ---
@@ -269,8 +218,6 @@ MIX_ENV=prod mix release
 | `PORT` | No | HTTP port (default: `4000`) |
 | `POOL_SIZE` | No | Database connection pool size (default: `10`) |
 | `ECTO_IPV6` | No | Set to `true` or `1` to enable IPv6 for database connections |
-| `RABBITMQ_URL` | No | RabbitMQ connection URL (default: `amqp://guest:guest@localhost:5672`) |
-| `RABBITMQ_EXCHANGE` | No | RabbitMQ exchange name (default: `flux.events`) |
 | `DNS_CLUSTER_QUERY` | No | DNS query for cluster node discovery |
 
 ### Starting the Application
@@ -294,14 +241,13 @@ graph TB
     WEB --> DB[(PostgreSQL 18)]
     ENGINE --> DB
     OBAN --> DB
-    ENGINE --> MQ[(RabbitMQ)]
 
     style WEB fill:#4f46e5,color:#fff
     style ENGINE fill:#059669,color:#fff
     style OBAN fill:#d97706,color:#fff
 ```
 
-For horizontal scaling, the monolith can be split into separate `web` and `worker` containers that share the same database and broker.
+Flux forms a cluster across nodes for high availability: the engine distributes pipeline supervision with Horde and aggregates metrics cluster-wide. Use `DNS_CLUSTER_QUERY` to enable automatic node discovery.
 
 ---
 
@@ -329,10 +275,7 @@ Active pipelines auto-start when the application boots. The `Flux.Pipeline.Manag
 
 ### Source Queues and Message Routing
 
-Each pipeline has a `source_queue` field identifying the topic it consumes from (e.g., `webhooks.github`, `polling.sftp`). Messages are published to queues via:
-
-- **Push (real-time)**: External systems send webhooks to the FluxWeb endpoint, which validates and publishes payloads to the appropriate queue.
-- **Pull (scheduled)**: Oban workers poll external sources (SFTP, S3, SQL) on cron schedules and publish fetched data to queues.
+Each pipeline has a `source_queue` field identifying the topic it consumes from (e.g., `webhooks.github`). Messages are published to queues when external systems send webhooks to the FluxWeb endpoint, which validates and publishes payloads to the appropriate queue.
 
 ### Pipeline JSON IR Format
 
@@ -344,8 +287,7 @@ Pipelines use a JSON-based Intermediate Representation (IR) that decouples the U
   "steps": [
     {"id": "s1", "type": "native", "operation": "rename", "config": {"from": "old_name", "to": "new_name"}},
     {"id": "s2", "type": "native", "operation": "filter", "config": {"field": "status", "operator": "eq", "value": "active"}},
-    {"id": "s3", "type": "script", "language": "lua", "code": "function transform(data) ... end", "timeout_ms": 5000},
-    {"id": "s4", "type": "ai", "operation": "anomaly_detect", "config": {"fields": ["response_time"], "threshold": 2.0}}
+    {"id": "s3", "type": "script", "language": "lua", "code": "function transform(data) ... end", "timeout_ms": 5000}
   ]
 }
 ```
@@ -395,16 +337,6 @@ Executes user-defined Lua code in a sandboxed environment. The script must defin
 
 See [docs/lua_scripting.md](lua_scripting.md) for detailed examples and the list of available/restricted functions.
 
-#### AI Anomaly Detection
-
-Scores data points against a sliding window of historical values using z-score analysis. If the score exceeds the configured threshold, an `_anomaly` metadata field is added to the record.
-
-| Config Key | Type | Default | Description |
-|------------|------|---------|-------------|
-| `fields` | list | `[]` | Numerical fields to monitor |
-| `threshold` | float | `2.0` | Z-score threshold for anomaly flagging |
-| `pipeline_id` | string | - | Pipeline identifier for window tracking |
-
 ### Configuring Sinks
 
 Sinks are output destinations where processed pipeline data is delivered. Configure sinks under **Sinks** in the sidebar.
@@ -417,18 +349,6 @@ Delivers data as HTTP POST requests (webhooks).
 |------------|-------------|
 | `url` | Destination URL |
 | `headers` | Optional HTTP headers map |
-
-#### S3 Sink
-
-Writes data to S3-compatible object storage (including MinIO).
-
-| Config Key | Description |
-|------------|-------------|
-| `bucket` | S3 bucket name |
-| `region` | AWS region |
-| `access_key_id` | AWS access key |
-| `secret_access_key` | AWS secret key |
-| `prefix` | Optional object key prefix |
 
 #### Postgres Sink
 
@@ -446,53 +366,13 @@ Each sink has the following schema properties:
 |-------|------|-------------|
 | `name` | string | Unique name within the organization |
 | `description` | string | Optional description |
-| `type` | string | One of: `http`, `s3`, `postgres` |
+| `type` | string | One of: `http`, `postgres` |
 | `config` | map | Type-specific configuration |
 | `enabled` | boolean | Whether the sink is active (default: `true`) |
 
-### Polling Sources (Oban)
+### Ingesting Data via Webhooks
 
-Flux supports pull-based data ingestion via the `Flux.Workers.Poller` Oban worker. Polling jobs fetch data from external HTTP endpoints and publish it to a queue for pipeline processing.
-
-**Worker configuration:**
-
-| Setting | Value |
-|---------|-------|
-| Queue | `:polling` (5 concurrent workers) |
-| Max attempts | 3 |
-| Uniqueness | 60-second deduplication window |
-| Queue routing | Messages published to `polling.<source_id>` |
-
-**Job arguments:**
-
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `source_id` | Yes | Source identifier (used for queue routing and logging) |
-| `url` | No | HTTP URL to poll. If omitted, returns placeholder data |
-| `headers` | No | Map of HTTP headers for the request |
-
-**One-shot polling job:**
-
-```elixir
-%{"source_id" => "weather-api", "url" => "https://api.example.com/data"}
-|> Flux.Workers.Poller.new(schedule_in: 60)
-|> Oban.insert()
-```
-
-**Recurring polling via Oban cron plugin:**
-
-```elixir
-# In config/config.exs or config/runtime.exs
-config :flux, Oban,
-  plugins: [
-    {Oban.Plugins.Cron,
-     crontab: [
-       {"*/5 * * * *", Flux.Workers.Poller, args: %{source_id: "scheduled-source", url: "https://api.example.com/data"}}
-     ]}
-  ]
-```
-
-To consume polled data, set a pipeline's `source_queue` to `polling.<source_id>` (e.g., `polling.weather-api`).
+Flux ingests data through webhook (push) sources. External systems POST payloads to the FluxWeb webhook endpoint, which validates and publishes them to the target queue for pipeline processing. Set a pipeline's `source_queue` to the queue its webhook publishes to (e.g., `webhooks.github`).
 
 ---
 
@@ -528,9 +408,7 @@ owner > admin > member > viewer
 | Manage organization | Yes | Yes | -- | -- |
 | View system settings | Yes | -- | -- | -- |
 
-### RBAC Modes
-
-#### Team-Centric (default -- recommended for self-hosted)
+### Team-Centric RBAC
 
 ```elixir
 config :flux, rbac_mode: :team_centric
@@ -538,21 +416,9 @@ config :flux, rbac_mode: :team_centric
 
 - Organization access and roles are **derived from team memberships**.
 - The user's effective organization role is their **highest role** across all team memberships in that organization (e.g., if a user is `admin` in one team and `member` in another, their org role is `admin`).
-- No `organization_members` table management is required.
 - A default organization (from seeds) is used when a user has no team memberships.
 
-#### Org-Centric (for cloud / multi-tenant)
-
-```elixir
-config :flux, rbac_mode: :org_centric
-```
-
-- Organization access and roles come from the `organization_members` table.
-- Roles are assigned directly per organization membership.
-- Suitable for multi-tenant deployments where explicit org membership management is needed.
-- A backfill migration ensures existing organization owners have an `owner` row in `organization_members`.
-
-Both modes produce the same `Flux.Accounts.Scope` struct shape and use the same `Flux.Permissions.can?/3` API, so application code does not need to branch on RBAC mode.
+RBAC produces a `Flux.Accounts.Scope` struct and exposes the `Flux.Permissions.can?/3` API for permission checks throughout the application.
 
 ---
 
@@ -567,11 +433,10 @@ The Flux dashboard provides real-time metrics powered by the `Flux.Pipeline.Metr
 | **Events/sec** | Rolling throughput over a 60-second sliding window |
 | **Active Pipelines** | Count of pipelines with `status = "active"` |
 | **Processed Total** | Cumulative messages successfully processed |
-| **Failed Total** | Cumulative messages that failed processing (sent to DLQ) |
+| **Failed Total** | Cumulative messages that failed processing |
 | **Skipped Total** | Cumulative messages skipped by filter steps |
-| **Anomalies** | Pipelines with recent anomaly scores above threshold |
 
-Per-pipeline metrics include processed count, failed count, skipped count, and total processing duration.
+Per-pipeline metrics include processed count, failed count, skipped count, and total processing duration. In a cluster, metrics are aggregated cluster-wide.
 
 ### Metrics Internals
 
@@ -597,17 +462,6 @@ graph LR
 2. `Metrics` GenServer handles events via attached telemetry handlers, updating in-memory counters.
 3. Every 2 seconds, `Metrics` calculates throughput (events in the last 60s / 60), prunes the sliding window, and broadcasts a snapshot to `pipeline_metrics`.
 4. Dashboard LiveView receives the broadcast and updates the UI in real time.
-
-### AI-Powered Anomaly Detection
-
-The `Flux.AI.Detector` GenServer maintains sliding windows of numerical metric values (default window: 1000 values) per pipeline and field combination, stored in ETS for high-performance access.
-
-Anomaly detection uses **z-score analysis**:
-
-1. For each monitored field, the detector maintains running statistics (count, sum, sum of squares, min, max).
-2. When a new data point arrives, its z-score is calculated against the window statistics.
-3. If the z-score exceeds the configured threshold (default: 2.0), the record is tagged with anomaly metadata.
-4. The `list_anomalous_pipelines/1` function returns pipeline IDs with recent anomalous values.
 
 ### Phoenix LiveDashboard
 
@@ -663,18 +517,6 @@ The repository includes a CI workflow at `.github/workflows/test.yml` that runs 
 
 ## Troubleshooting
 
-### RabbitMQ Connection Issues
-
-**Symptom**: Application fails to start in production with a connection error referencing AMQP.
-
-**Resolution**:
-
-1. Verify RabbitMQ is running: `rabbitmqctl status`
-2. Check the `RABBITMQ_URL` environment variable is correct.
-3. Ensure the RabbitMQ user has permissions to create exchanges and queues.
-4. Verify network connectivity between the Flux application and RabbitMQ host.
-5. Check RabbitMQ logs for authentication or virtual host errors.
-
 ### Pipeline Will Not Start
 
 **Symptom**: A pipeline remains in `stopped` or `paused` status and does not process messages.
@@ -695,9 +537,8 @@ The repository includes a CI workflow at `.github/workflows/test.yml` that runs 
 
 1. Confirm the sink is enabled (`enabled: true`).
 2. **HTTP sink**: Verify the destination URL is reachable. Check for HTTP status errors in logs.
-3. **S3 sink**: Verify bucket exists, region is correct, and IAM credentials have `PutObject` permission.
-4. **Postgres sink**: Verify the connection URL, ensure the target table exists, and check column mappings.
-5. Use `Flux.Sink.test_connection/2` in an IEx session to validate connectivity:
+3. **Postgres sink**: Verify the connection URL, ensure the target table exists, and check column mappings.
+4. Use `Flux.Sink.test_connection/2` in an IEx session to validate connectivity:
 
    ```elixir
    Flux.Sink.test_connection("http", %{"url" => "https://example.com/webhook"})
@@ -728,7 +569,7 @@ Pipeline processing steps and sink delivery emit `Logger.debug` messages with pi
 
 ### Lua Script Errors
 
-**Symptom**: Pipeline fails at a script step; messages are sent to the dead-letter queue.
+**Symptom**: Pipeline fails at a script step.
 
 **Resolution**:
 
