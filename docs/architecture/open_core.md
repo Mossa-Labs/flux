@@ -139,4 +139,3 @@ and commit the result. See [`../../ai-context/README.md`](../../ai-context/READM
 
 - [`../developer_guide.md`](../developer_guide.md) — worked examples: add a sink, queue, or step
 - [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md) — contribution model and the "no Pro/EE code here" rule
-- [`../migration_to_open_core.md`](../migration_to_open_core.md) — for anyone who forked the pre-split monolith

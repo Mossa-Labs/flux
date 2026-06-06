@@ -70,8 +70,7 @@ source was never committed here. Community users are unaffected — gated featur
 surface a clear upgrade prompt, never a crash.
 
 Read [`docs/architecture/open_core.md`](docs/architecture/open_core.md) for the
-full design. Forking the old monolith? See
-[`docs/migration_to_open_core.md`](docs/migration_to_open_core.md).
+full design.
 
 ## Contributing
 
