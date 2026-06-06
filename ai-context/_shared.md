@@ -9,7 +9,7 @@ Flux is a self-hosted, high-performance ETL/ELT platform for dynamic data pipeli
 - **Backend**: Phoenix 1.8, LiveView, Elixir
 - **Frontend**: Tailwind CSS v4, React Flow (lazy-loaded on `/pipelines/builder`)
 - **Database**: Postgres 18
-- **Queue**: RabbitMQ (production) / In-memory (development)
+- **Queue**: pluggable adapters — in-memory (development); durable broker (production)
 - **Processing**: Broadway, Oban (scheduler), Nx (AI/ML)
 - **Auth**: Argon2 password hashing
 

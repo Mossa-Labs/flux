@@ -19,9 +19,9 @@ The system is composed of two primary planes:
 
 ### 2. Data Plane (FluxEngine)
 *   **Role**: Execution and Processing.
-*   **Tech**: Broadway, RabbitMQ/AMQP, **Oban (Scheduler)**, Nx.
+*   **Tech**: Broadway, **Oban (Scheduler)**.
 *   **Responsibilities**:
-    *   Ingestion (Push & Pull).
+    *   Ingestion.
     *   Buffering & Flow Control.
     *   Transformation & Enrichment.
     *   Reliable Delivery (Sinks).
@@ -31,37 +31,24 @@ The system is composed of two primary planes:
 ## Core Components
 
 ### A. Ingestion Layer
-Flux supports two modes of data entry:
-1.  **Push (Real-time)**:
-    *   External systems send generic Webhooks (JSON/XML) to the `FluxWeb.Endpoint`.
-    *   Payloads are immediately validated and published to the **Queue Adapter**.
-2.  **Pull (Scheduled)**:
-    *   Managed by **Oban**.
-    *   Jobs run on defined Cron schedules to poll external sources (SFTP, S3, SQL).
-    *   Fetched data is chunked and published to the **Queue Adapter**.
+Flux ingests data via **push**: external systems send generic Webhooks (JSON/XML) to the `FluxWeb.Endpoint`. Payloads are immediately validated and published to the **Queue Adapter**.
 
 ### B. Buffering & Queue Adapter
-To support both Production reliability and Development simplicity, Flux uses an **Adapter Pattern**:
-*   **Production**: `Flux.Queue.RabbitMQ`
-    *   Uses AMQP 0-9-1.
-    *   Provides durable persistence, back-pressure, and dlq (dead-letter queue) support.
-*   **Testing/Lite**: `Flux.Queue.Memory`
-    *   Uses fast in-memory generic polling or PubSub.
+Flux uses an **Adapter Pattern** for buffering so the queue backend is pluggable. The Community edition ships the **in-memory adapter** (`Flux.Queue.Adapters.Memory`), which uses fast in-memory polling / PubSub — ideal for development and single-node deployments. Adapters are registered at boot in `Flux.Registrations` and looked up by string type through `Flux.Queue.Registry`, so additional backends can be registered without changing the engine.
 
 ### C. Pipeline Engine (Broadway)
-Each user-defined pipeline spawns a dedicated **DynamicSupervisor** tree.
-*   **Producer**: Consumes from the specific Queue Topic.
-*   **Processors (Concurrency: High)**:
-    1.  **Structure Map**: Rename keys, cast types, deep merge.
-    2.  **Luerl Script**: User-defined Lua logic for safe custom transformations.
-    3.  **Enhancer**: HTTP lookups for data enrichment.
-    4.  **AI Sentinel**: Nx-based signal processing (see below).
+Each user-defined pipeline spawns a dedicated supervised Broadway tree.
+*   **Producer**: Consumes from the configured queue.
+*   **Processors (Concurrency: High)** execute the pipeline's steps:
+    1.  **Map / Rename**: Rename keys, cast types, deep merge.
+    2.  **Filter**: Drop records that don't match a predicate.
+    3.  **Script**: User-defined Lua logic for safe custom transformations, run in the `Luerl` sandbox.
 *   **Batcher**: Aggregates records for efficient bulk writing.
-*   **Consumer**: Writes to final destination (S3, Postgres, Webhook).
+*   **Consumer**: Writes to the configured destination via a sink adapter (HTTP, Postgres).
 
 ### D. Visual Builder & Execution Strategy (Hybrid IR)
 Flux uses a **JSON-based Intermediate Representation (IR)** to decouple the UI from execution.
-*   **CSS Framework**: **Tailwind CSS v4** (Oxygen engine) for high-performance styling.
+*   **CSS Framework**: **Tailwind CSS v4** for high-performance styling.
 *   **Frontend (React Flow)** — *only* for the pipeline builder canvas/flow chart:
     *   **Lazy Loading**: React and React Flow are **only loaded** on the Builder route (`/pipelines/builder`). They are not bundled into the main `app.js`.
     *   **Integration**: Embedded via Phoenix Client Hook (`<div phx-hook="VisualBuilder" ...>`).
@@ -71,34 +58,28 @@ Flux uses a **JSON-based Intermediate Representation (IR)** to decouple the UI f
     *   The `FluxEngine` iterates through this JSON list.
     *   **Native Steps**: Common ops (Map, Filter, Rename) are executed as compiled Elixir code for maximum speed.
     *   **Script Steps**: Custom logic nodes are executed via the `Luerl` sandbox.
-    *   **Benefit**: This allows "Round-Tripping" (Edit UI \u2192 Save JSON \u2192 Load UI) without complex code parsing.
+    *   **Benefit**: This allows "Round-Tripping" (Edit UI → Save JSON → Load UI) without complex code parsing.
 
-### E. Intelligence Layer (AI)
-*   **Library**: `Nx` (Numerical Elixir) + `Bumblebee` (optional future).
-*   **Function**:
-    *   Maintains sliding windows of metric statistics (Payload size, Value distributions).
-    *   Detects anomalies (Z-Score spikes, Drift).
-    *   Tags records as `{:anomaly, score}` for routing to alert queues.
+### E. Extensibility
+Sinks, queues, and pipeline steps are **behaviours** resolved through **registries** at runtime, never hard-coded in the engine. Community adapters self-register at boot in `Flux.Registrations`. See [`developer_guide.md`](developer_guide.md) for how to add your own, and [`architecture/open_core.md`](architecture/open_core.md) for the extension model.
 
 ---
 
 ## Data Model (Postgres 18)
 
 *   `organizations`: Top-level tenant (creator via `user_id`).
-*   `organization_members`: (Optional) Org membership and role when `:rbac_mode` is `:org_centric`; used for RBAC and default org resolution.
 *   `teams`: Sub-groups within organizations (`organization_id`, creator `user_id`).
-*   `team_members`: User–team membership and role (admin, member, viewer); used for access and, when `:rbac_mode` is `:team_centric`, for org role derivation.
+*   `team_members`: User–team membership and role (admin, member, viewer); used for access and for org role derivation.
 *   `pipelines`: Configuration definitions (JSONB).
 *   `pipeline_runs`: Audit log of execution batches.
-*   `signals`: Stored anomaly events for analysis.
 
 ### Authorization and RBAC
 
-*   **Config**: `config :flux, :rbac_mode, :org_centric | :team_centric` (default `:team_centric`).
-*   **Org-centric**: Scope and roles come from `organization_members`; cloud / multi-tenant.
-*   **Team-centric**: Scope and roles are derived from `teams` and `team_members`; self-hosted can use this without managing org members.
-*   **Scope** (see `Flux.Accounts.Scope`): `user`, `organization_id`, `organization_role`. Same struct in both modes; only the source of org/role differs.
+*   **Team-centric**: Scope and roles are derived from `teams` and `team_members` — self-hosted deployments use this without managing separate org membership.
+*   **Scope** (see `Flux.Accounts.Scope`): `user`, `organization_id`, `organization_role`.
 *   **Permission API**: `Flux.Permissions.can?(scope, action, resource)` — use in LiveViews, contexts, and layout to allow or forbid actions by role.
+
+See [`rbac.md`](rbac.md) for details.
 
 ## Deployment Strategy
 *   **Containerization**: Docker / Docker Compose.
@@ -107,4 +88,3 @@ Flux uses a **JSON-based Intermediate Representation (IR)** to decouple the UI f
     *   `app` (**Monolith**): Contains `FluxWeb` (UI), `FluxEngine` (Broadway), and `Oban` (Scheduler).
         *   *Note*: Can be split into distinct `web` and `worker` containers for scaling if required.
     *   `db` (Postgres 18): Stores App Data, Pipeline Configs, and Oban Jobs.
-    *   `broker` (RabbitMQ): Durable message buffer for pipeline events.

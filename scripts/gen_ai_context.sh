@@ -6,8 +6,7 @@
 #   ai-context/*.overlay.md    exactly one repo-specific overlay
 #       -> CLAUDE.md, AGENTS.md (banner + shared + overlay)
 #
-# The public Community repo is the source of truth for _shared.md; the
-# commercial edition vendors a copy and verifies it against this one.
+# This repo is the source of truth for _shared.md.
 #
 # Usage:
 #   scripts/gen_ai_context.sh           regenerate CLAUDE.md and AGENTS.md

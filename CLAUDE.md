@@ -15,7 +15,7 @@ Flux is a self-hosted, high-performance ETL/ELT platform for dynamic data pipeli
 - **Backend**: Phoenix 1.8, LiveView, Elixir
 - **Frontend**: Tailwind CSS v4, React Flow (lazy-loaded on `/pipelines/builder`)
 - **Database**: Postgres 18
-- **Queue**: RabbitMQ (production) / In-memory (development)
+- **Queue**: pluggable adapters — in-memory (development); durable broker (production)
 - **Processing**: Broadway, Oban (scheduler), Nx (AI/ML)
 - **Auth**: Argon2 password hashing
 
@@ -201,8 +201,8 @@ When generating **Pull Request notes**, **PR description**, or similar:
 
 This is the **public** Flux repository. It ships the **Community Edition only** and is licensed Apache 2.0.
 
-- **Decide the edition before you build.** First determine whether the feature (or any part of it) is Community or Pro/Enterprise. If it is a **proprietary implementation** (real adapter/algorithm source worth protecting), it does **not** belong here — build it in the private `flux-ee` repo. The **gating mechanism** for a Pro/EE feature (its entry in `Flux.License.Features`, `has_feature?` checks, enforcement points, upgrade prompts) *does* live here, gated — but the proprietary code behind it does not. When unsure which side a feature falls on, **ask before writing code**; do not default to placing it here.
-- **Never add Pro or Enterprise code here.** Advanced AI (the `Flux.AI.Detector` anomaly provider), the S3 sink, the RabbitMQ queue, SSO / audit / MFA, billing, and other commercial features ship in the separate **Flux Pro / Enterprise** edition, maintained privately by the Flux team. Anything intended to be license-gated must **never** enter this repo's git history — once published under Apache 2.0 it cannot be made proprietary again.
+- **Decide the edition before you build.** First determine whether the feature (or any part of it) is Community or Pro/Enterprise. If it is a **proprietary implementation** (real adapter/algorithm source worth protecting), it does **not** belong here — it belongs in the separate, privately maintained Pro/Enterprise edition. The **gating mechanism** for a Pro/EE feature (its entry in `Flux.License.Features`, `has_feature?` checks, enforcement points, upgrade prompts) *does* live here, gated — but the proprietary code behind it does not. When unsure which side a feature falls on, **ask before writing code**; do not default to placing it here.
+- **Never add Pro or Enterprise code here.** Proprietary commercial features ship in the separate **Flux Pro / Enterprise** edition, maintained privately by the Flux team. Anything intended to be license-gated must **never** enter this repo's git history — once published under Apache 2.0 it cannot be made proprietary again.
 - **Extend via behaviours + the registry, never by hard-coding adapters:**
   - Sinks implement `Flux.Sink.Adapter` and register through `Flux.Sink.Registry`.
   - Queues implement `Flux.Queue.Adapter` and register through `Flux.Queue.Registry`.

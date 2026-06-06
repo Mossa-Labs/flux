@@ -352,7 +352,7 @@ For security reasons, the following are disabled:
 
 ## Error Handling
 
-If your script encounters an error, the message will be marked as failed and sent to the dead letter queue (DLQ). Common errors include:
+If your script encounters an error, the message is marked as failed after the pipeline's retries are exhausted. Common errors include:
 
 - **Timeout**: Script exceeded `timeout_ms`
 - **Runtime Error**: Lua syntax or runtime errors

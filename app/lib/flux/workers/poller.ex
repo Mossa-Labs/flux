@@ -42,7 +42,7 @@ defmodule Flux.Workers.Poller do
 
   # Note: scheduled (cron) polling is the `:cron_polling` Pro feature. The gate
   # lives where the recurring schedule is configured — the `Oban.Plugins.Cron`
-  # plugin is only wired up in licensed (EE) builds (see flux-ee runtime config).
+  # plugin is only wired up in licensed (Pro/Enterprise) builds.
   # This worker stays ungated so one-off jobs enqueued directly still run.
   @impl Oban.Worker
   def perform(%Oban.Job{args: args}) do
