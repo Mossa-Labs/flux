@@ -86,5 +86,5 @@ See [`rbac.md`](rbac.md) for details.
 *   **Orchestration**: Self-hosted (instances) or Kubernetes.
 *   **Services**:
     *   `app` (**Monolith**): Contains `FluxWeb` (UI), `FluxEngine` (Broadway), and `Oban` (Scheduler).
-        *   *Note*: Can be split into distinct `web` and `worker` containers for scaling if required.
+        *   *Note*: The Community edition runs as a single node. Multi-node horizontal scaling and high availability ship in the commercial (Pro/Enterprise) edition.
     *   `db` (Postgres 18): Stores App Data, Pipeline Configs, and Oban Jobs.

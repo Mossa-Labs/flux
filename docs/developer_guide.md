@@ -97,7 +97,6 @@ The `Flux.Pipeline.Interpreter` receives the pipeline's JSON IR configuration an
 Flux.Supervisor (one_for_one)
  |-- FluxWeb.Telemetry
  |-- Flux.Repo
- |-- DNSCluster
  |-- Phoenix.PubSub (name: Flux.PubSub)
  |-- Queue Adapter (configured via the queue registry)
  |-- Oban

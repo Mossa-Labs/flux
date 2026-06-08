@@ -218,7 +218,6 @@ MIX_ENV=prod mix release
 | `PORT` | No | HTTP port (default: `4000`) |
 | `POOL_SIZE` | No | Database connection pool size (default: `10`) |
 | `ECTO_IPV6` | No | Set to `true` or `1` to enable IPv6 for database connections |
-| `DNS_CLUSTER_QUERY` | No | DNS query for cluster node discovery |
 
 ### Starting the Application
 
@@ -247,7 +246,7 @@ graph TB
     style OBAN fill:#d97706,color:#fff
 ```
 
-Flux forms a cluster across nodes for high availability: the engine distributes pipeline supervision with Horde and aggregates metrics cluster-wide. Use `DNS_CLUSTER_QUERY` to enable automatic node discovery.
+The Community edition runs as a **single node**. Horizontal scaling and high availability — distributed pipeline supervision and cluster-wide metrics across multiple nodes — ship in the separate commercial (Pro/Enterprise) edition. Running Community across connected BEAM nodes is unsupported: peers are ignored and the engine logs a warning at boot.
 
 ---
 
@@ -436,7 +435,7 @@ The Flux dashboard provides real-time metrics powered by the `Flux.Pipeline.Metr
 | **Failed Total** | Cumulative messages that failed processing |
 | **Skipped Total** | Cumulative messages skipped by filter steps |
 
-Per-pipeline metrics include processed count, failed count, skipped count, and total processing duration. In a cluster, metrics are aggregated cluster-wide.
+Per-pipeline metrics include processed count, failed count, skipped count, and total processing duration. The commercial (Pro/Enterprise) edition aggregates these metrics cluster-wide across nodes.
 
 ### Metrics Internals
 

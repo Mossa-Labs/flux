@@ -27,7 +27,7 @@ Everything you need to run real pipelines in production, free and open source:
 | **Pipeline builder** | Visual React-Flow canvas on `/pipelines/builder` |
 | **REST API** | Full developer API (8 endpoints) with per-organization API keys |
 | **Multi-tenancy** | Organizations + team role-based access control (RBAC) |
-| **High availability** | Cluster-aware engine (Horde-based distribution, cluster-wide metrics) |
+| **Deployment** | Single-node (horizontal scaling & high availability ship in Pro/Enterprise) |
 | **Monitoring** | Real-time metrics dashboard (Phoenix PubSub) |
 
 Pro and Enterprise add advanced capabilities and commercial support, shipped as a
