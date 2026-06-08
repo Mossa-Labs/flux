@@ -99,6 +99,11 @@ config :flux, Oban,
   repo: Flux.Repo,
   queues: [default: 10, polling: 5, webhooks: 20]
 
+# Pipeline supervision backend. The Community edition is single-node only.
+# The Pro build (flux_pro) overrides this with the Horde-backed distributed
+# backend to enable horizontal scaling / HA.
+config :flux, Flux.Pipeline.Supervision, impl: Flux.Pipeline.Supervision.Local
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

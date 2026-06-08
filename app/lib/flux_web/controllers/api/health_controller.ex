@@ -29,14 +29,15 @@ defmodule FluxWeb.API.HealthController do
       node: to_string(node()),
       node_count: length(nodes),
       nodes: Enum.map(nodes, &to_string/1),
-      horde_members: horde_member_count()
+      supervisor_members: supervisor_member_count()
     }
   end
 
-  # Number of nodes participating in the pipeline Horde cluster (the supervisor
-  # that relocates runners on failover). Falls back to 1 if Horde isn't running.
-  defp horde_member_count do
-    length(Horde.Cluster.members(Flux.Pipeline.DynamicSupervisor))
+  # Number of nodes participating in pipeline supervision. The Community
+  # (single-node) backend reports 1; the Pro distributed backend reports the
+  # cluster member count. Falls back to 1 on error.
+  defp supervisor_member_count do
+    Flux.Pipeline.Supervision.member_count()
   rescue
     _ -> 1
   end

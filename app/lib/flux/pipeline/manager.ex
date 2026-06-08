@@ -9,8 +9,15 @@ defmodule Flux.Pipeline.Manager do
 
   alias Flux.Pipelines
   alias Flux.Pipeline.Runner
+  alias Flux.Pipeline.Supervision
 
   require Logger
+
+  # Auto-start waits for the supervision backend to be ready (the distributed
+  # backend's cluster infra starts after the base app). Retry with a fixed delay
+  # up to a cap, then proceed regardless so a misconfiguration can't wedge boot.
+  @auto_start_retry_ms 250
+  @auto_start_max_attempts 40
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -38,33 +45,45 @@ defmodule Flux.Pipeline.Manager do
   Returns `:running`, `:stopped`, or `:not_found`.
   """
   def get_status(pipeline_id) do
-    case Horde.Registry.lookup(Flux.Pipeline.Registry, {:runner, pipeline_id}) do
-      [{_pid, _}] -> :running
-      [] -> :stopped
-    end
+    if Supervision.whereis(pipeline_id), do: :running, else: :stopped
   end
 
   @doc """
-  Lists all currently running pipeline IDs (cluster-wide).
+  Lists all currently running pipeline IDs.
   """
   def list_running do
-    Horde.Registry.select(Flux.Pipeline.Registry, [{{:"$1", :_, :_}, [], [:"$1"]}])
-    |> Enum.filter(fn
-      {:runner, _id} -> true
-      _ -> false
-    end)
-    |> Enum.map(fn {:runner, id} -> id end)
-    |> Enum.uniq()
+    Supervision.list_running()
   end
 
   @impl true
   def init(_opts) do
     send(self(), :auto_start)
-    {:ok, %{}}
+    {:ok, %{auto_start_attempts: 0}}
   end
 
   @impl true
   def handle_info(:auto_start, state) do
+    cond do
+      Supervision.ready?() ->
+        run_auto_start()
+        {:noreply, state}
+
+      state.auto_start_attempts >= @auto_start_max_attempts ->
+        Logger.error(
+          "Pipeline Manager: supervision backend not ready after " <>
+            "#{@auto_start_max_attempts} attempts; auto-starting anyway."
+        )
+
+        run_auto_start()
+        {:noreply, state}
+
+      true ->
+        Process.send_after(self(), :auto_start, @auto_start_retry_ms)
+        {:noreply, %{state | auto_start_attempts: state.auto_start_attempts + 1}}
+    end
+  end
+
+  defp run_auto_start do
     Logger.info("Pipeline Manager: Auto-starting active pipelines...")
 
     pipelines = Pipelines.list_active_pipelines()
@@ -84,8 +103,6 @@ defmodule Flux.Pipeline.Manager do
     Logger.info(
       "Pipeline Manager: Auto-start complete. #{length(pipelines)} pipeline(s) started."
     )
-
-    {:noreply, state}
   end
 
   @impl true
@@ -121,9 +138,9 @@ defmodule Flux.Pipeline.Manager do
   @impl true
   def handle_call({:stop_pipeline, pipeline_id}, _from, state) do
     result =
-      case Horde.Registry.lookup(Flux.Pipeline.Registry, {:runner, pipeline_id}) do
-        [{pid, _}] ->
-          Horde.DynamicSupervisor.terminate_child(Flux.Pipeline.DynamicSupervisor, pid)
+      case Supervision.whereis(pipeline_id) do
+        pid when is_pid(pid) ->
+          Supervision.terminate_pipeline(pid)
 
           case Pipelines.get_pipeline!(pipeline_id) do
             nil -> :ok
@@ -132,7 +149,7 @@ defmodule Flux.Pipeline.Manager do
 
           :ok
 
-        [] ->
+        nil ->
           {:error, :not_running}
       end
 
@@ -143,16 +160,8 @@ defmodule Flux.Pipeline.Manager do
   end
 
   defp do_start_pipeline(pipeline) do
-    child_spec = Runner.child_spec(pipeline)
-
-    # Horde.DynamicSupervisor places the runner on one cluster node; the unique
-    # Horde.Registry name makes a concurrent start on another node return
-    # {:already_started, pid}, which we treat as success (idempotent auto-start).
-    case Horde.DynamicSupervisor.start_child(Flux.Pipeline.DynamicSupervisor, child_spec) do
-      {:ok, pid} -> {:ok, pid}
-      {:ok, pid, _info} -> {:ok, pid}
-      {:error, {:already_started, pid}} -> {:ok, pid}
-      {:error, reason} -> {:error, reason}
-    end
+    pipeline
+    |> Runner.child_spec()
+    |> Supervision.start_pipeline()
   end
 end

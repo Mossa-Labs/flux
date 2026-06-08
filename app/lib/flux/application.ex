@@ -10,12 +10,8 @@ defmodule Flux.Application do
     children = [
       FluxWeb.Telemetry,
       Flux.Repo,
-      # HA clustering: DNSCluster forms the BEAM cluster by resolving
-      # DNS_CLUSTER_QUERY (see rel/env.sh.eex for node distribution). Disabled
-      # (:ignore) when the query is unset — i.e. single-node / dev.
-      {DNSCluster, query: Application.get_env(:flux, :dns_cluster_query) || :ignore},
-      # Phoenix.PubSub's default PG2 adapter is cluster-aware: once nodes are
-      # connected, broadcasts (metrics, pipeline producers) fan out cluster-wide.
+      # Phoenix.PubSub's default PG2 adapter. Single-node in the Community build;
+      # the Pro build forms a cluster (DNSCluster) so broadcasts fan out.
       {Phoenix.PubSub, name: Flux.PubSub},
       # Registries for adapters / strategies / providers — must start before
       # Flux.Registrations so boot-time registrations have somewhere to land.
@@ -34,15 +30,12 @@ defmodule Flux.Application do
       Flux.AI.Supervisor,
       # Oban for background jobs
       {Oban, Application.fetch_env!(:flux, Oban)},
-      # Pipeline process registry — Horde.Registry so runner names are unique
-      # cluster-wide (a pipeline runs on exactly one node). `members: :auto`
-      # discovers peer registries over the connected cluster.
-      {Horde.Registry, name: Flux.Pipeline.Registry, keys: :unique, members: :auto},
-      # Distributed supervisor for pipeline runners — Horde relocates a dead
-      # node's runners onto a surviving node (failover) and, with the unique
-      # registry above, prevents the same pipeline running twice.
-      {Horde.DynamicSupervisor,
-       name: Flux.Pipeline.DynamicSupervisor, strategy: :one_for_one, members: :auto},
+      # Pipeline process registry + supervisor for the single-node (Community)
+      # backend (`Flux.Pipeline.Supervision.Local`). The `:unique` registry keeps
+      # a pipeline running at most once on this node. The Pro build starts its own
+      # Horde-backed registry/supervisor and routes through them instead.
+      {Registry, keys: :unique, name: Flux.Pipeline.Registry},
+      {DynamicSupervisor, name: Flux.Pipeline.DynamicSupervisor, strategy: :one_for_one},
       # Pipeline metrics aggregator (must start before Manager)
       Flux.Pipeline.Metrics,
       # Pipeline manager (auto-starts active pipelines)
@@ -53,26 +46,24 @@ defmodule Flux.Application do
 
     opts = [strategy: :one_for_one, name: Flux.Supervisor]
     result = Supervisor.start_link(children, opts)
-    warn_if_ha_misconfigured()
+    warn_if_clustered()
     result
   end
 
-  # HA safety: warn loudly if clustering is intended (DNS_CLUSTER_QUERY set) but
-  # the in-memory queue is active. Memory loses data on failover, so HA
-  # deployments must use a durable queue (RabbitMQ / Pro).
-  defp warn_if_ha_misconfigured do
-    clustering? = Application.get_env(:flux, :dns_cluster_query) not in [nil, :ignore, ""]
-
-    memory_queue? =
-      match?({:ok, Flux.Queue.Adapters.Memory}, Flux.Queue.Registry.active())
-
-    if clustering? and memory_queue? do
+  # The Community edition is single-node only: pipeline supervision is local
+  # (`Flux.Pipeline.Supervision.Local`), so connected peers are ignored and a
+  # pipeline can end up running on every node. Warn loudly if a cluster is
+  # detected. Horizontal scaling / HA is a Pro feature (the Pro build supplies
+  # the distributed, Horde-backed supervision backend).
+  defp warn_if_clustered do
+    if Node.list() != [] do
       require Logger
 
       Logger.warning(
-        "[HA] Clustering is enabled but the in-memory queue is active. The memory " <>
-          "queue loses data on node failover — HA deployments must use a durable " <>
-          "queue. Set FLUX_QUEUE_TYPE=rabbitmq (Pro)."
+        "[HA] Connected BEAM peers detected (#{inspect(Node.list())}), but the " <>
+          "Community edition is single-node only. Peers are ignored and pipelines " <>
+          "are NOT coordinated across nodes — upgrade to Flux Pro for horizontal " <>
+          "scaling and high availability."
       )
     end
   end

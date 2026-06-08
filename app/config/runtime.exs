@@ -54,13 +54,6 @@ if config_env() == :prod do
 
   host = System.get_env("PHX_HOST") || "example.com"
 
-  # HA clustering (MOS-459): set DNS_CLUSTER_QUERY to a DNS name that resolves to
-  # all Flux node IPs so DNSCluster connects them into one BEAM cluster. Examples:
-  #   * Kubernetes headless service: "flux-headless.default.svc.cluster.local"
-  #   * AWS ECS service discovery / Consul: the service's A-record name
-  # Leave unset for a single-node deployment (clustering stays disabled).
-  config :flux, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
-
   config :flux, FluxWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: [

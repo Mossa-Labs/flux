@@ -17,6 +17,6 @@ defmodule FluxWeb.API.HealthControllerTest do
     assert cluster["node"] == to_string(node())
     assert cluster["node_count"] >= 1
     assert to_string(node()) in cluster["nodes"]
-    assert cluster["horde_members"] >= 1
+    assert cluster["supervisor_members"] >= 1
   end
 end
