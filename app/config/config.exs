@@ -108,6 +108,12 @@ config :flux, Flux.Pipeline.Supervision, impl: Flux.Pipeline.Supervision.Local
 # burst rate per API key.
 config :flux, FluxWeb.Plugs.BurstLimiter, limit: 1_000, window_ms: 1_000
 
+# Per-org + node-wide caps on user-initiated pipeline starts (MOS-450).
+config :flux, Flux.Pipeline.Manager,
+  start_limit: 20,
+  start_node_limit: 100,
+  start_window_ms: 60_000
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

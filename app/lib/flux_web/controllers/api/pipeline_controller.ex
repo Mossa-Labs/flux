@@ -80,6 +80,17 @@ defmodule FluxWeb.API.PipelineController do
 
   defp metrics_by_string(id), do: Map.get(Metrics.snapshot().per_pipeline, to_string(id))
 
+  # Pipeline-start safety valve tripped (MOS-450) — too many starts this minute.
+  defp transition_error(conn, :rate_limited) do
+    conn
+    |> put_resp_header("retry-after", "60")
+    |> put_status(:too_many_requests)
+    |> json(%{
+      error: "rate_limited",
+      message: "Too many pipeline starts. Try again shortly."
+    })
+  end
+
   defp transition_error(conn, reason) do
     conn
     |> put_status(:unprocessable_entity)

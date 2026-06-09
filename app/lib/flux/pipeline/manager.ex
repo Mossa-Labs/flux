@@ -143,13 +143,21 @@ defmodule Flux.Pipeline.Manager do
               {:error, :not_found}
 
             pipeline ->
-              case do_start_pipeline(pipeline) do
-                {:ok, pid} ->
-                  Pipelines.update_status(pipeline, "active")
-                  {:ok, pid}
+              # Abuse-protection safety valve (MOS-450): cap user-initiated
+              # starts per org and node-wide. Auto-start bypasses this path
+              # (run_auto_start/0 calls do_start_pipeline/1 directly), so the
+              # boot path is never throttled.
+              if within_start_limits?(pipeline.organization_id) do
+                case do_start_pipeline(pipeline) do
+                  {:ok, pid} ->
+                    Pipelines.update_status(pipeline, "active")
+                    {:ok, pid}
 
-                {:error, reason} ->
-                  {:error, reason}
+                  {:error, reason} ->
+                    {:error, reason}
+                end
+              else
+                {:error, :rate_limited}
               end
           end
       end
@@ -188,5 +196,24 @@ defmodule Flux.Pipeline.Manager do
     pipeline
     |> Runner.child_spec()
     |> Supervision.start_pipeline()
+  end
+
+  # Per-org fairness + a node-wide ceiling on user-initiated pipeline starts.
+  # Short-circuit `and`: a per-org denial never consumes a node-ceiling token.
+  defp within_start_limits?(org_id) do
+    {limit, node_limit, window_ms} = start_limit_config()
+
+    Flux.RateLimiter.allow?({:pipeline_start, org_id}, limit, window_ms) and
+      Flux.RateLimiter.allow?(:pipeline_start_node, node_limit, window_ms)
+  end
+
+  defp start_limit_config do
+    opts = Application.get_env(:flux, __MODULE__, [])
+
+    {
+      Keyword.get(opts, :start_limit, 20),
+      Keyword.get(opts, :start_node_limit, 100),
+      Keyword.get(opts, :start_window_ms, 60_000)
+    }
   end
 end

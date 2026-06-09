@@ -272,6 +272,9 @@ defmodule FluxWeb.PipelineLive.Show do
 
   defp summarize_step_config(_), do: "No configuration"
 
+  defp start_limit_message,
+    do: "Too many pipeline starts — please wait a moment and try again."
+
   defp format_datetime(datetime) do
     Calendar.strftime(datetime, "%b %d, %Y at %H:%M")
   end
@@ -285,6 +288,9 @@ defmodule FluxWeb.PipelineLive.Show do
         {:ok, _pid} ->
           {:ok, pipeline} = Pipelines.update_status(pipeline, "active")
           {:noreply, assign(socket, :pipeline, pipeline)}
+
+        {:error, :rate_limited} ->
+          {:noreply, put_flash(socket, :error, start_limit_message())}
 
         {:error, reason} ->
           {:noreply, put_flash(socket, :error, "Failed to start: #{inspect(reason)}")}
@@ -309,6 +315,9 @@ defmodule FluxWeb.PipelineLive.Show do
         {:ok, _pid} ->
           {:ok, pipeline} = Pipelines.update_status(pipeline, "active")
           {:noreply, assign(socket, :pipeline, pipeline)}
+
+        {:error, :rate_limited} ->
+          {:noreply, put_flash(socket, :error, start_limit_message())}
 
         {:error, reason} ->
           {:noreply, put_flash(socket, :error, "Failed to resume: #{inspect(reason)}")}
