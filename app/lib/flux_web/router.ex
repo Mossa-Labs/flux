@@ -21,6 +21,8 @@ defmodule FluxWeb.Router do
   pipeline :api_authenticated do
     plug(:accepts, ["json"])
     plug(FluxWeb.Plugs.ApiAuth)
+    # Burst safety valve — runs after auth so it can key on the API key (MOS-450).
+    plug(FluxWeb.Plugs.BurstLimiter)
   end
 
   scope "/", FluxWeb do

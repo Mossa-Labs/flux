@@ -67,6 +67,8 @@ defmodule FluxWeb.Plugs.ApiAuth do
           organization_role: api_key.role
         })
         |> assign(:api_scopes, ApiKey.effective_scopes(api_key))
+        # Stable per-key identity for the burst rate limiter (MOS-450).
+        |> assign(:api_key_id, api_key.id)
 
       {:error, :unauthorized} ->
         unauthorized(
@@ -109,6 +111,9 @@ defmodule FluxWeb.Plugs.ApiAuth do
       organization_role: "owner"
     })
     |> assign(:api_scopes, ApiKey.scopes())
+    # The legacy global key has no per-key id; the burst limiter falls back to a
+    # per-org bucket for it (MOS-450).
+    |> assign(:api_key_id, nil)
   end
 
   defp get_api_key(conn) do
