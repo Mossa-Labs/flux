@@ -65,8 +65,14 @@ defmodule Flux.Pipeline.Manager do
   def handle_info(:auto_start, state) do
     cond do
       Supervision.ready?() ->
-        run_auto_start()
-        {:noreply, state}
+        # A failed query here (the DB is still starting, or — in tests — this
+        # process owns no sandbox connection) must NOT crash the Manager: a
+        # crash-loop would exceed the supervisor's restart intensity and take
+        # the whole app down with it (Repo, Endpoint, ...). Retry instead.
+        case run_auto_start() do
+          :ok -> {:noreply, state}
+          :error -> retry_auto_start(state)
+        end
 
       state.auto_start_attempts >= @auto_start_max_attempts ->
         Logger.error(
@@ -78,8 +84,21 @@ defmodule Flux.Pipeline.Manager do
         {:noreply, state}
 
       true ->
-        Process.send_after(self(), :auto_start, @auto_start_retry_ms)
-        {:noreply, %{state | auto_start_attempts: state.auto_start_attempts + 1}}
+        retry_auto_start(state)
+    end
+  end
+
+  defp retry_auto_start(state) do
+    if state.auto_start_attempts >= @auto_start_max_attempts do
+      Logger.error(
+        "Pipeline Manager: gave up auto-starting active pipelines after " <>
+          "#{@auto_start_max_attempts} attempts (database unavailable)."
+      )
+
+      {:noreply, state}
+    else
+      Process.send_after(self(), :auto_start, @auto_start_retry_ms)
+      {:noreply, %{state | auto_start_attempts: state.auto_start_attempts + 1}}
     end
   end
 
@@ -103,6 +122,12 @@ defmodule Flux.Pipeline.Manager do
     Logger.info(
       "Pipeline Manager: Auto-start complete. #{length(pipelines)} pipeline(s) started."
     )
+
+    :ok
+  rescue
+    error ->
+      Logger.warning("Pipeline Manager: auto-start deferred — #{Exception.message(error)}")
+      :error
   end
 
   @impl true
