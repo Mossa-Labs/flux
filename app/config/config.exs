@@ -104,6 +104,10 @@ config :flux, Oban,
 # backend to enable horizontal scaling / HA.
 config :flux, Flux.Pipeline.Supervision, impl: Flux.Pipeline.Supervision.Local
 
+# Abuse-protection safety valve (MOS-450), cross-tier / not license-gated:
+# burst rate per API key.
+config :flux, FluxWeb.Plugs.BurstLimiter, limit: 1_000, window_ms: 1_000
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"
