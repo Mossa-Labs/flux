@@ -43,6 +43,8 @@ defmodule FluxWeb.SystemSettingsLive do
        |> assign(:api_key_form, new_api_key_form())
        |> assign(:revealed_key, nil)
        |> assign(:api_key_scopes_enabled, Flux.License.has_feature?(:api_key_scopes))
+       |> assign(:usage_metering_enabled, usage_metering_enabled?())
+       |> assign(:usage, load_usage(org_id))
        |> stream(:teams_stream, teams)}
     else
       Process.send_after(self(), :redirect_to_dashboard, @redirect_after_ms)
@@ -84,6 +86,23 @@ defmodule FluxWeb.SystemSettingsLive do
     end
   end
 
+  defp usage_metering_enabled?, do: Flux.License.has_feature?(:usage_metering)
+
+  # Only fetch real usage when metering is entitled; the Community build shows
+  # an upgrade prompt instead (metering is a Pro feature).
+  defp load_usage(nil), do: nil
+
+  defp load_usage(org_id) do
+    if usage_metering_enabled?() do
+      case Flux.Metering.get_usage(org_id) do
+        {:ok, usage} -> usage
+        {:error, _} -> nil
+      end
+    else
+      nil
+    end
+  end
+
   defp load_members(_scope, nil, _), do: []
 
   defp load_members(scope, _org_id, :org_centric),
@@ -110,6 +129,8 @@ defmodule FluxWeb.SystemSettingsLive do
           api_key_form={@api_key_form}
           revealed_key={@revealed_key}
           api_key_scopes_enabled={@api_key_scopes_enabled}
+          usage_metering_enabled={@usage_metering_enabled}
+          usage={@usage}
           streams={@streams}
         />
       <% else %>
@@ -150,6 +171,8 @@ defmodule FluxWeb.SystemSettingsLive do
       </div>
 
       <.license_section license={@license} />
+
+      <.usage_section enabled={@usage_metering_enabled} usage={@usage} />
 
       <%= if @org_id do %>
         <.teams_section
@@ -222,6 +245,120 @@ defmodule FluxWeb.SystemSettingsLive do
     </section>
     """
   end
+
+  attr :enabled, :boolean, required: true
+  attr :usage, :map, default: nil
+
+  defp usage_section(assigns) do
+    ~H"""
+    <section class="card bg-base-100 shadow-sm border border-base-200">
+      <div class="card-body">
+        <h2 class="card-title text-base font-bold">
+          <.icon name="hero-chart-bar" class="w-5 h-5" /> Usage & Quotas
+        </h2>
+
+        <%= cond do %>
+          <% !@enabled -> %>
+            <div class="mt-2">
+              <UpgradePrompt.upgrade_prompt feature={:usage_metering} />
+            </div>
+          <% is_nil(@usage) -> %>
+            <p class="text-sm text-base-content/60 mt-2">Usage data is not available yet.</p>
+          <% true -> %>
+            <.usage_body usage={@usage} />
+        <% end %>
+      </div>
+    </section>
+    """
+  end
+
+  attr :usage, :map, required: true
+
+  defp usage_body(assigns) do
+    assigns =
+      assigns
+      |> assign(:metrics, Map.get(assigns.usage, :metrics, %{}))
+      |> assign(:quota, Map.get(assigns.usage, :quota, %{}))
+
+    ~H"""
+    <div class="space-y-4">
+      <div :if={!Map.get(@quota, :unlimited, true)} class="space-y-1">
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-base-content/70">
+            Messages this period
+            <span :if={Map.get(@quota, :state) == :warn} class="badge badge-warning badge-sm ml-1">
+              {usage_pct(@quota)}% used
+            </span>
+            <span :if={Map.get(@quota, :state) == :over} class="badge badge-error badge-sm ml-1">
+              over quota
+            </span>
+          </span>
+          <span class="font-medium">
+            {format_metric(:messages_ingested, Map.get(@quota, :usage, 0))} / {format_metric(
+              :messages_ingested,
+              Map.get(@quota, :limit)
+            )}
+          </span>
+        </div>
+        <div class="w-full bg-base-200 rounded-full h-2 overflow-hidden">
+          <div
+            class={["h-2 rounded-full", quota_bar_class(Map.get(@quota, :state))]}
+            style={"width: #{quota_bar_width(@quota)}%"}
+          >
+          </div>
+        </div>
+      </div>
+
+      <dl class="grid grid-cols-2 sm:grid-cols-5 gap-4">
+        <div :for={metric <- Flux.Metering.metrics()} class="rounded-lg border border-base-200 p-3">
+          <dt class="text-xs text-base-content/60">{usage_metric_label(metric)}</dt>
+          <dd class="text-lg font-semibold">{format_metric(metric, Map.get(@metrics, metric))}</dd>
+        </div>
+      </dl>
+    </div>
+    """
+  end
+
+  defp usage_metric_label(:messages_ingested), do: "Ingested"
+  defp usage_metric_label(:messages_processed), do: "Processed"
+  defp usage_metric_label(:sink_deliveries), do: "Sink deliveries"
+  defp usage_metric_label(:active_pipelines), do: "Active pipelines"
+  defp usage_metric_label(:pipeline_hours), do: "Pipeline hours"
+
+  defp format_metric(_metric, nil), do: "∞"
+
+  defp format_metric(:pipeline_hours, value) when is_number(value),
+    do: :erlang.float_to_binary(value / 1, decimals: 1)
+
+  defp format_metric(_metric, value) when is_integer(value), do: delimit(value)
+  defp format_metric(_metric, value), do: to_string(value)
+
+  # Group integer digits with commas (e.g. 12345 -> "12,345"); avoids a dep.
+  defp delimit(value) when is_integer(value) do
+    sign = if value < 0, do: "-", else: ""
+
+    digits =
+      value
+      |> abs()
+      |> Integer.to_string()
+      |> String.graphemes()
+      |> Enum.reverse()
+      |> Enum.chunk_every(3)
+      |> Enum.map_join(",", &Enum.join/1)
+      |> String.reverse()
+
+    sign <> digits
+  end
+
+  defp usage_pct(quota), do: quota |> Map.get(:pct, 0.0) |> round()
+
+  defp quota_bar_width(quota) do
+    quota |> Map.get(:pct, 0.0) |> min(100.0) |> max(0.0) |> Float.round(1)
+  end
+
+  defp quota_bar_class(:over), do: "bg-error"
+  defp quota_bar_class(:warn), do: "bg-warning"
+  defp quota_bar_class(_), do: "bg-primary"
 
   defp tier_badge_class(:enterprise), do: "badge-primary"
   defp tier_badge_class(:pro), do: "badge-secondary"

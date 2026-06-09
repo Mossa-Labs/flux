@@ -23,8 +23,8 @@ defmodule Flux.Accounts.ApiKey do
   import Ecto.Changeset
 
   @roles ~w(admin member viewer)
-  @scopes ~w(read:pipelines write:pipelines read:sinks write:sinks)
-  @viewer_scopes ~w(read:pipelines read:sinks)
+  @scopes ~w(read:pipelines write:pipelines read:sinks write:sinks read:usage)
+  @viewer_scopes ~w(read:pipelines read:sinks read:usage)
 
   schema "api_keys" do
     field :key_prefix, :string

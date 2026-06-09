@@ -32,10 +32,12 @@ defmodule FluxWeb.API.WebhookController do
 
     * 202 Accepted - Message queued successfully
     * 400 Bad Request - Invalid payload
+    * 429 Too Many Requests - Organization is over its usage quota
     * 500 Internal Server Error - Queue publish failed
 
   """
   def create(conn, %{"source" => source} = params) do
+    org_id = conn.assigns.current_scope.organization_id
     payload = Map.delete(params, "source")
     correlation_id = get_correlation_id(conn)
 
@@ -48,8 +50,24 @@ defmodule FluxWeb.API.WebhookController do
 
     queue_name = "webhooks.#{source}"
 
+    # Usage quota is a Pro feature; the Community provider always returns `:ok`,
+    # so ingestion is never throttled on Community.
+    case Flux.Metering.check_quota(org_id) do
+      :ok -> publish(conn, queue_name, message, source, org_id, correlation_id)
+      {:error, {:quota_exceeded, retry_after}} -> quota_exceeded(conn, retry_after)
+    end
+  end
+
+  defp publish(conn, queue_name, message, source, org_id, correlation_id) do
     case Queue.publish(queue_name, message) do
       :ok ->
+        # `messages_ingested` hook point: a Pro metering handler attaches here.
+        :telemetry.execute(
+          [:flux, :queue, :published],
+          %{count: 1},
+          %{organization_id: org_id, source: source, queue: queue_name}
+        )
+
         Logger.info("Webhook received",
           source: source,
           message_id: message.id,
@@ -77,6 +95,18 @@ defmodule FluxWeb.API.WebhookController do
           message: "Failed to queue message"
         })
     end
+  end
+
+  defp quota_exceeded(conn, retry_after) do
+    conn
+    |> put_resp_header("retry-after", Integer.to_string(retry_after))
+    |> put_status(:too_many_requests)
+    |> json(%{
+      status: "error",
+      error: "quota_exceeded",
+      message: "Usage quota exceeded for the current period",
+      retry_after: retry_after
+    })
   end
 
   defp get_correlation_id(conn) do

@@ -91,14 +91,14 @@ defmodule Flux.Accounts.ApiKeyTest do
       assert Enum.sort(admin.scopes) == Enum.sort(ApiKey.scopes())
 
       {:ok, _raw, viewer} = Accounts.create_api_key(o.id, %{name: "v", role: "viewer"})
-      assert Enum.sort(viewer.scopes) == Enum.sort(~w(read:pipelines read:sinks))
+      assert Enum.sort(viewer.scopes) == Enum.sort(~w(read:pipelines read:sinks read:usage))
     end
 
     test "effective_scopes/1 falls back to role defaults for a scopeless key" do
       legacy = %ApiKey{role: "viewer", scopes: []}
 
       assert Enum.sort(ApiKey.effective_scopes(legacy)) ==
-               Enum.sort(~w(read:pipelines read:sinks))
+               Enum.sort(~w(read:pipelines read:sinks read:usage))
     end
   end
 end

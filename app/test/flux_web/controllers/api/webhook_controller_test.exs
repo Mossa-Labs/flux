@@ -111,5 +111,50 @@ defmodule FluxWeb.API.WebhookControllerTest do
       assert message.payload == %{"event" => "created", "value" => 42}
       refute Map.has_key?(message.payload, "source")
     end
+
+    test "emits [:flux, :queue, :published] telemetry on success", %{conn: conn} do
+      ref = make_ref()
+      parent = self()
+
+      :telemetry.attach(
+        "test-queue-published-#{inspect(ref)}",
+        [:flux, :queue, :published],
+        fn _event, measurements, metadata, _ ->
+          send(parent, {:published, ref, measurements, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach("test-queue-published-#{inspect(ref)}") end)
+
+      conn
+      |> put_req_header("content-type", "application/json")
+      |> put_req_header("x-api-key", "test-api-key")
+      |> post(~p"/api/webhooks/github", %{"event" => "push"})
+      |> json_response(202)
+
+      assert_receive {:published, ^ref, %{count: 1},
+                      %{source: "github", queue: "webhooks.github"}}
+    end
+
+    test "returns 429 + Retry-After when the org is over quota", %{conn: conn} do
+      Flux.Metering.Registry.set_active(Flux.MeteringTestProvider)
+      Application.put_env(:flux, :test_metering_quota, {:error, {:quota_exceeded, 30}})
+
+      on_exit(fn ->
+        Flux.Metering.Registry.set_active(Flux.Metering.Providers.Community)
+        Application.delete_env(:flux, :test_metering_quota)
+      end)
+
+      conn =
+        conn
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("x-api-key", "test-api-key")
+        |> post(~p"/api/webhooks/github", %{"event" => "push"})
+
+      assert json_response(conn, 429)["error"] == "quota_exceeded"
+      assert get_resp_header(conn, "retry-after") == ["30"]
+      assert Memory.get_messages("webhooks.github") == []
+    end
   end
 end
