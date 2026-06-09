@@ -205,6 +205,9 @@ defmodule FluxWeb.PipelineLive.Index do
           {:ok, pipeline} = Pipelines.update_status(pipeline, "active")
           {:noreply, stream_insert(socket, :pipelines, pipeline)}
 
+        {:error, :rate_limited} ->
+          {:noreply, put_flash(socket, :error, start_limit_message())}
+
         {:error, reason} ->
           {:noreply, put_flash(socket, :error, "Failed to start: #{inspect(reason)}")}
       end
@@ -225,6 +228,9 @@ defmodule FluxWeb.PipelineLive.Index do
         {:ok, _pid} ->
           {:ok, pipeline} = Pipelines.update_status(pipeline, "active")
           {:noreply, stream_insert(socket, :pipelines, pipeline)}
+
+        {:error, :rate_limited} ->
+          {:noreply, put_flash(socket, :error, start_limit_message())}
 
         {:error, reason} ->
           {:noreply, put_flash(socket, :error, "Failed to resume: #{inspect(reason)}")}
@@ -266,6 +272,9 @@ defmodule FluxWeb.PipelineLive.Index do
       end
     end)
   end
+
+  defp start_limit_message,
+    do: "Too many pipeline starts — please wait a moment and try again."
 
   @impl true
   def handle_info({:pipeline_updated, pipeline}, socket) do
