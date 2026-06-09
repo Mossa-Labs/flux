@@ -20,6 +20,7 @@ defmodule Flux.Application do
       Flux.Pipeline.StepRegistry,
       Flux.Auth.Registry,
       Flux.AI.Registry,
+      Flux.Metering.Registry,
       # Community self-registration (EE adds its own registrations on top).
       Flux.Registrations,
       # Records API-key last_used_at off the request path.

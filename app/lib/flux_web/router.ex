@@ -49,6 +49,8 @@ defmodule FluxWeb.Router do
     post("/pipelines/:id/stop", PipelineController, :stop)
 
     get("/sinks", SinkController, :index)
+
+    get("/usage", UsageController, :show)
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

@@ -220,10 +220,10 @@ defmodule Flux.Pipeline.Runner do
 
         case Flux.Sink.deliver(data, config, opts) do
           :ok ->
-            :ok
+            emit_sink_delivered(sink, pipeline_id)
 
           {:ok, _meta} ->
-            :ok
+            emit_sink_delivered(sink, pipeline_id)
 
           {:error, reason} ->
             Logger.error(
@@ -234,5 +234,15 @@ defmodule Flux.Pipeline.Runner do
     end
 
     :ok
+  end
+
+  # `sink_deliveries` hook point: a Pro metering handler attaches here and
+  # resolves the organization from `pipeline_id`. Non-proprietary emit only.
+  defp emit_sink_delivered(sink, pipeline_id) do
+    :telemetry.execute(
+      [:flux, :sink, :delivered],
+      %{count: 1},
+      %{pipeline_id: pipeline_id, sink_id: sink.id}
+    )
   end
 end
