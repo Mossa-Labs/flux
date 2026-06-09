@@ -21,6 +21,9 @@ defmodule Flux.Application do
       Flux.Auth.Registry,
       Flux.AI.Registry,
       Flux.Metering.Registry,
+      # Abuse-protection safety valves (burst / pipeline-start limits) — owns the
+      # rate-limiter ETS table; must be up before the endpoint serves requests.
+      Flux.RateLimiter,
       # Community self-registration (EE adds its own registrations on top).
       Flux.Registrations,
       # Records API-key last_used_at off the request path.
