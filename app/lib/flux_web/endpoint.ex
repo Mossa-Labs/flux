@@ -47,7 +47,10 @@ defmodule FluxWeb.Endpoint do
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
-    json_decoder: Phoenix.json_library()
+    json_decoder: Phoenix.json_library(),
+    # Cap request bodies at 10 MB to prevent memory exhaustion (MOS-450).
+    # Oversized bodies raise Plug.Parsers.RequestTooLargeError -> 413.
+    length: 10 * 1024 * 1024
 
   plug Plug.MethodOverride
   plug Plug.Head
