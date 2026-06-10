@@ -64,74 +64,46 @@ defmodule Flux.Sink.Adapters.Postgres do
 
   @impl Flux.Sink.Adapter
   def validate_config(config) do
-    errors = []
+    Flux.Sink.Validation.run(config, [
+      &validate_table/1,
+      &validate_columns/1,
+      &validate_mode/1,
+      &validate_on_conflict/1
+    ])
+  end
 
-    errors =
-      if Map.has_key?(config, "table") do
-        errors
-      else
-        ["table is required" | errors]
-      end
+  defp validate_table(config) do
+    case Map.get(config, "table") do
+      nil -> {:error, "table is required"}
+      t when is_binary(t) and byte_size(t) > 0 -> :ok
+      _ -> {:error, "table must be a non-empty string"}
+    end
+  end
 
-    errors =
-      case Map.get(config, "table") do
-        nil -> errors
-        t when is_binary(t) and byte_size(t) > 0 -> errors
-        _ -> ["table must be a non-empty string" | errors]
-      end
+  defp validate_columns(config) do
+    case Map.get(config, "columns") do
+      nil -> {:error, "columns mapping is required"}
+      c when is_map(c) and map_size(c) > 0 -> :ok
+      _ -> {:error, "columns must be a non-empty map"}
+    end
+  end
 
-    errors =
-      if Map.has_key?(config, "columns") do
-        errors
-      else
-        ["columns mapping is required" | errors]
-      end
+  defp validate_mode(config) do
+    case Map.get(config, "mode", "internal") do
+      "internal" -> :ok
+      "external" when is_map_key(config, "database_url") -> :ok
+      "external" -> {:error, "database_url is required for external mode"}
+      mode -> {:error, "mode must be 'internal' or 'external', got: #{mode}"}
+    end
+  end
 
-    errors =
-      case Map.get(config, "columns") do
-        nil -> errors
-        c when is_map(c) and map_size(c) > 0 -> errors
-        _ -> ["columns must be a non-empty map" | errors]
-      end
+  defp validate_on_conflict(config) do
+    case Map.get(config, "on_conflict") do
+      target when target in [nil, "nothing", "replace_all", "raise"] ->
+        :ok
 
-    errors =
-      case Map.get(config, "mode", "internal") do
-        "internal" ->
-          errors
-
-        "external" ->
-          if Map.has_key?(config, "database_url") do
-            errors
-          else
-            ["database_url is required for external mode" | errors]
-          end
-
-        mode ->
-          ["mode must be 'internal' or 'external', got: #{mode}" | errors]
-      end
-
-    errors =
-      case Map.get(config, "on_conflict") do
-        nil ->
-          errors
-
-        "nothing" ->
-          errors
-
-        "replace_all" ->
-          errors
-
-        "raise" ->
-          errors
-
-        other ->
-          ["on_conflict must be 'nothing', 'replace_all', or 'raise', got: #{other}" | errors]
-      end
-
-    if errors == [] do
-      :ok
-    else
-      {:error, Enum.reverse(errors)}
+      other ->
+        {:error, "on_conflict must be 'nothing', 'replace_all', or 'raise', got: #{other}"}
     end
   end
 
@@ -169,18 +141,23 @@ defmodule Flux.Sink.Adapters.Postgres do
   defp build_row(data, columns) do
     now = DateTime.utc_now()
 
+    # Keep column names as strings rather than `String.to_atom/1`. Column names come
+    # from user-supplied sink config, and atoms are never garbage collected, so
+    # converting arbitrary names would leak the atom table. Schemaless `insert_all`
+    # accepts string-keyed rows (Postgres' `quote_name/1` handles binaries), and the
+    # external (raw SQL) path stringifies keys anyway.
     mapped =
       columns
       |> Enum.map(fn {data_field, column_name} ->
         value = get_nested_value(data, data_field)
-        {String.to_atom(column_name), value}
+        {column_name, value}
       end)
       |> Map.new()
 
     # Add timestamps if not already mapped
     mapped
-    |> maybe_put_default(:inserted_at, now)
-    |> maybe_put_default(:updated_at, now)
+    |> maybe_put_default("inserted_at", now)
+    |> maybe_put_default("updated_at", now)
   end
 
   defp maybe_put_default(map, key, value) do
@@ -323,9 +300,10 @@ defmodule Flux.Sink.Adapters.Postgres do
         [on_conflict: :nothing]
 
       "replace_all" ->
+        # String targets pass straight through for a schemaless `insert_all`; no
+        # need to intern user-supplied column names as atoms (see `build_row/2`).
         target = Map.get(config, "conflict_target", [])
-        target_atoms = Enum.map(target, &String.to_atom/1)
-        [on_conflict: :replace_all, conflict_target: target_atoms]
+        [on_conflict: :replace_all, conflict_target: target]
 
       "raise" ->
         []

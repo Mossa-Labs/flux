@@ -41,7 +41,7 @@ defmodule Flux.Sink.Adapters.HTTP do
   @impl Flux.Sink.Adapter
   def deliver(data, config, _opts) do
     url = Map.fetch!(config, "url")
-    method = config |> Map.get("method", "POST") |> String.downcase() |> String.to_atom()
+    method = normalize_method(Map.get(config, "method", "POST"))
     headers = build_headers(config)
     timeout = Map.get(config, "timeout_ms", @default_timeout)
     retry_config = Map.get(config, "retry", %{})
@@ -90,78 +90,87 @@ defmodule Flux.Sink.Adapters.HTTP do
     end
   end
 
+  # Maps known HTTP verbs (case-insensitively) to the lowercase atoms Req expects.
+  # Built statically so user-supplied config can never intern arbitrary atoms;
+  # anything unrecognized falls back to :post (config is screened by
+  # `validate_config/1` before it reaches here).
+  @methods %{
+    "get" => :get,
+    "post" => :post,
+    "put" => :put,
+    "patch" => :patch,
+    "delete" => :delete
+  }
+
+  defp normalize_method(method) when is_binary(method) do
+    Map.get(@methods, String.downcase(method), :post)
+  end
+
+  defp normalize_method(_method), do: :post
+
   @impl Flux.Sink.Adapter
   def validate_config(config) do
-    errors = []
+    Flux.Sink.Validation.run(config, [
+      &validate_url/1,
+      &validate_method/1,
+      &validate_auth/1
+    ])
+  end
 
-    errors =
-      if Map.has_key?(config, "url") do
-        errors
-      else
-        ["url is required" | errors]
-      end
+  defp validate_url(config) do
+    case Map.get(config, "url") do
+      nil ->
+        {:error, "url is required"}
 
-    errors =
-      case Map.get(config, "url") do
-        nil ->
-          errors
+      url when is_binary(url) ->
+        case URI.parse(url) do
+          %URI{scheme: scheme} when scheme in ["http", "https"] -> :ok
+          _ -> {:error, "url must be a valid HTTP/HTTPS URL"}
+        end
 
-        url when is_binary(url) ->
-          case URI.parse(url) do
-            %URI{scheme: scheme} when scheme in ["http", "https"] ->
-              errors
+      _ ->
+        {:error, "url must be a string"}
+    end
+  end
 
-            _ ->
-              ["url must be a valid HTTP/HTTPS URL" | errors]
-          end
+  defp validate_method(config) do
+    case Map.get(config, "method") do
+      nil ->
+        :ok
 
-        _ ->
-          ["url must be a string" | errors]
-      end
+      method when is_binary(method) ->
+        if is_map_key(@methods, String.downcase(method)) do
+          :ok
+        else
+          {:error, "method must be GET, POST, PUT, PATCH, or DELETE"}
+        end
 
-    errors =
-      case Map.get(config, "method") do
-        nil ->
-          errors
+      _ ->
+        {:error, "method must be a string"}
+    end
+  end
 
-        method when is_binary(method) ->
-          if String.upcase(method) in ["GET", "POST", "PUT", "PATCH", "DELETE"] do
-            errors
-          else
-            ["method must be GET, POST, PUT, PATCH, or DELETE" | errors]
-          end
+  defp validate_auth(config) do
+    case Map.get(config, "auth") do
+      nil ->
+        :ok
 
-        _ ->
-          ["method must be a string" | errors]
-      end
+      %{"type" => "bearer", "token" => token} when is_binary(token) ->
+        :ok
 
-    errors =
-      case Map.get(config, "auth") do
-        nil ->
-          errors
+      %{"type" => "basic", "username" => u, "password" => p}
+      when is_binary(u) and is_binary(p) ->
+        :ok
 
-        %{"type" => "bearer", "token" => token} when is_binary(token) ->
-          errors
+      %{"type" => "api_key", "header_name" => h, "key" => k}
+      when is_binary(h) and is_binary(k) ->
+        :ok
 
-        %{"type" => "basic", "username" => u, "password" => p}
-        when is_binary(u) and is_binary(p) ->
-          errors
+      %{"type" => type} ->
+        {:error, "auth type '#{type}' requires proper configuration"}
 
-        %{"type" => "api_key", "header_name" => h, "key" => k}
-        when is_binary(h) and is_binary(k) ->
-          errors
-
-        %{"type" => type} ->
-          ["auth type '#{type}' requires proper configuration" | errors]
-
-        _ ->
-          ["auth must have a valid type (bearer, basic, or api_key)" | errors]
-      end
-
-    if errors == [] do
-      :ok
-    else
-      {:error, Enum.reverse(errors)}
+      _ ->
+        {:error, "auth must have a valid type (bearer, basic, or api_key)"}
     end
   end
 
