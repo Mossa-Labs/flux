@@ -10,12 +10,26 @@ defmodule Flux.License.Provider do
 
   @type tier :: :community | :pro | :enterprise
   @type feature :: atom()
+  @typedoc """
+  License lifecycle status, derived from `valid_until`:
+
+    * `:active` — comfortably within the paid period
+    * `:near_expiry` — expiring soon (renew reminder)
+    * `:grace` — past `valid_until` but inside the grace window (still entitled)
+    * `:expired` — past the grace window
+
+  Informational only — providers report it for UI banners. Enforcing a
+  downgrade on `:expired` is a separate concern.
+  """
+  @type status :: :active | :near_expiry | :grace | :expired
   @type license :: %{
           optional(:tier) => tier(),
           optional(:features) => [feature()],
           optional(:org) => String.t() | nil,
           optional(:valid_until) => DateTime.t() | nil,
           optional(:node_count) => pos_integer() | nil,
+          optional(:status) => status(),
+          optional(:grace_until) => DateTime.t() | nil,
           optional(atom()) => any()
         }
 
@@ -31,5 +45,14 @@ defmodule Flux.License.Provider do
   """
   @callback entitled?(feature()) :: boolean()
 
-  @optional_callbacks entitled?: 1
+  @doc """
+  Optional: apply a signed license token (verify + persist), returning the
+  resolved license. Providers that can activate a license at runtime (the
+  commercial edition) implement this; the Community stub does not, so
+  `Flux.License.apply_license/1` reports `{:error, :unsupported}` and the
+  activation UI stays hidden.
+  """
+  @callback apply_license(token :: String.t()) :: {:ok, license()} | {:error, term()}
+
+  @optional_callbacks entitled?: 1, apply_license: 1
 end

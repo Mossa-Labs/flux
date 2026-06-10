@@ -50,4 +50,52 @@ defmodule Flux.LicenseTest do
       end)
     end
   end
+
+  describe "activation (MOS-451)" do
+    setup do
+      prev = Application.get_env(:flux, Flux.License)
+
+      on_exit(fn ->
+        if prev,
+          do: Application.put_env(:flux, Flux.License, prev),
+          else: Application.delete_env(:flux, Flux.License)
+
+        Application.delete_env(:flux, :test_activation_license)
+        Application.delete_env(:flux, :test_activation_result)
+      end)
+
+      :ok
+    end
+
+    test "community build does not support activation" do
+      refute Flux.License.activation_supported?()
+      assert Flux.License.apply_license("anything") == {:error, :unsupported}
+      assert Flux.License.status() == :active
+    end
+
+    test "delegates apply_license to an activation-capable provider" do
+      Application.put_env(:flux, Flux.License, provider: Flux.LicenseActivationTestProvider)
+
+      assert Flux.License.activation_supported?()
+      assert {:ok, %{tier: :pro}} = Flux.License.apply_license("good-token")
+
+      Application.put_env(:flux, :test_activation_result, {:error, :invalid_signature})
+      assert Flux.License.apply_license("bad-token") == {:error, :invalid_signature}
+    end
+
+    test "status/0 reflects the provider's reported status" do
+      Application.put_env(:flux, Flux.License, provider: Flux.LicenseActivationTestProvider)
+
+      Application.put_env(:flux, :test_activation_license, %{
+        tier: :pro,
+        features: [],
+        org: "Acme",
+        valid_until: nil,
+        node_count: 1,
+        status: :grace
+      })
+
+      assert Flux.License.status() == :grace
+    end
+  end
 end
