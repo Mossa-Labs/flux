@@ -19,6 +19,31 @@ links out to further reading.
 
 ---
 
+## Why Flux, and when to use it
+
+Flux moves data from where it happens to where you need it. You **ingest** events
+by pointing webhooks at Flux, **transform** them with a chain of small composable
+steps (rename a field, drop records you don't care about, run a bit of custom
+Lua), and **deliver** the results to one or more destinations ("sinks") — an HTTP
+endpoint, a Postgres table, and more.
+
+This is the classic [ETL/ELT](docs/concepts.md#further-reading) problem, but Flux is
+built for the **event-driven, streaming** end of it: small messages arriving
+continuously, processed as they land, rather than giant nightly batch jobs. It runs
+entirely **self-hosted on the BEAM** (the Erlang virtual machine), which gives each
+pipeline its own lightweight, supervised process that restarts on failure without
+taking the rest of the system down.
+
+**Where Flux fits:**
+
+- **Reach for Flux** when you have webhook or event sources, want low-latency
+  per-message transforms, and prefer to self-host a single, operationally simple
+  service.
+- **It is not** a heavyweight DAG orchestrator for long batch workflows (that's
+  the niche of tools like Airflow), nor a large catalog of pre-built SaaS
+  connectors (Airbyte, Meltano). Flux favors a small, sharp core you extend
+  yourself through [behaviours and a registry](docs/concepts.md#extensibility).
+
 ## What's in the Community edition
 
 Everything you need to run real pipelines in production, free and open source:
