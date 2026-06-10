@@ -34,6 +34,8 @@ defmodule FluxWeb.SystemSettingsLive do
        |> assign(:org_id, org_id)
        |> assign(:rbac_mode, rbac_mode)
        |> assign(:license, load_license())
+       |> assign(:activation_supported, Flux.License.activation_supported?())
+       |> assign(:license_form, to_form(%{"token" => ""}, as: :license))
        |> assign(:teams, teams)
        |> assign(:members, members)
        |> assign(:team_form, nil)
@@ -86,6 +88,15 @@ defmodule FluxWeb.SystemSettingsLive do
     end
   end
 
+  defp activate_license(""), do: {:error, :empty}
+  defp activate_license(token), do: Flux.License.apply_license(token)
+
+  defp license_error(:empty), do: "the token is empty"
+  defp license_error(:unsupported), do: "activation isn't available in this build"
+  defp license_error(:invalid_signature), do: "the signature is invalid"
+  defp license_error(:not_writable), do: "the license file location is not writable"
+  defp license_error(reason), do: inspect(reason)
+
   defp usage_metering_enabled?, do: Flux.License.has_feature?(:usage_metering)
 
   # Only fetch real usage when metering is entitled; the Community build shows
@@ -119,6 +130,8 @@ defmodule FluxWeb.SystemSettingsLive do
           org_id={@org_id}
           current_scope={@current_scope}
           license={@license}
+          activation_supported={@activation_supported}
+          license_form={@license_form}
           teams={@teams}
           members={@members}
           rbac_mode={@rbac_mode}
@@ -170,7 +183,11 @@ defmodule FluxWeb.SystemSettingsLive do
         <p class="text-base-content/60 mt-1">Manage teams and users for your organization</p>
       </div>
 
-      <.license_section license={@license} />
+      <.license_section
+        license={@license}
+        activation_supported={@activation_supported}
+        license_form={@license_form}
+      />
 
       <.usage_section enabled={@usage_metering_enabled} usage={@usage} />
 
@@ -205,6 +222,10 @@ defmodule FluxWeb.SystemSettingsLive do
     """
   end
 
+  attr :license, :map, required: true
+  attr :activation_supported, :boolean, default: false
+  attr :license_form, :any, default: nil
+
   defp license_section(assigns) do
     ~H"""
     <section class="card bg-base-100 shadow-sm border border-base-200">
@@ -236,13 +257,78 @@ defmodule FluxWeb.SystemSettingsLive do
           </div>
         </dl>
 
+        <.license_status_banner license={@license} />
+
         <p :if={@license.tier == :community} class="text-sm text-base-content/60 mt-2">
           Running the Community tier.
           <.link href="https://flux.dev/pricing" class="link link-primary">Upgrade</.link>
           to unlock Pro and Enterprise features.
         </p>
+
+        <.activate_license_form :if={@activation_supported} form={@license_form} />
       </div>
     </section>
+    """
+  end
+
+  attr :license, :map, required: true
+
+  defp license_status_banner(assigns) do
+    assigns = assign(assigns, :status, Map.get(assigns.license, :status, :active))
+
+    ~H"""
+    <div
+      :if={@status == :near_expiry}
+      class="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+    >
+      <.icon name="hero-clock" class="w-4 h-4 inline" />
+      Your license expires on {format_expiry(Map.get(@license, :valid_until))}. Renew soon to avoid
+      interruption.
+    </div>
+    <div
+      :if={@status == :grace}
+      class="mt-3 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-900"
+    >
+      <.icon name="hero-exclamation-triangle" class="w-4 h-4 inline" />
+      Your license expired on {format_expiry(Map.get(@license, :valid_until))}. Pro stays active
+      during the grace period — apply a renewed license to continue.
+    </div>
+    <div
+      :if={@status == :expired}
+      class="mt-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900"
+    >
+      <.icon name="hero-x-circle" class="w-4 h-4 inline" />
+      Your license expired on {format_expiry(Map.get(@license, :valid_until))}. Apply a renewed
+      license to keep Pro features.
+    </div>
+    """
+  end
+
+  attr :form, :any, required: true
+
+  defp activate_license_form(assigns) do
+    ~H"""
+    <div class="mt-4 border-t border-base-200 pt-4">
+      <h3 class="text-sm font-semibold">Activate Pro</h3>
+      <p class="text-xs text-base-content/60 mt-1">
+        Paste your signed license token to activate Pro on this node.
+      </p>
+      <.form
+        for={@form}
+        id="activate-license-form"
+        phx-submit="activate_license"
+        class="mt-2 space-y-2"
+      >
+        <.input
+          field={@form[:token]}
+          type="textarea"
+          rows="3"
+          placeholder="flux license token…"
+          class="font-mono text-xs"
+        />
+        <.button class="btn btn-primary btn-sm">Activate license</.button>
+      </.form>
+    </div>
     """
   end
 
@@ -855,6 +941,24 @@ defmodule FluxWeb.SystemSettingsLive do
     do: [{"Admin", "admin"}, {"Member", "member"}, {"Viewer", "viewer"}]
 
   @impl true
+  def handle_event("activate_license", %{"license" => %{"token" => token}}, socket) do
+    case token |> to_string() |> String.trim() |> activate_license() do
+      {:ok, license} ->
+        {:noreply,
+         socket
+         |> assign(:license, Map.put_new(license, :tier, Flux.License.tier()))
+         |> assign(:license_form, to_form(%{"token" => ""}, as: :license))
+         |> put_flash(
+           :info,
+           "Pro activated — restart the node to finish enabling all Pro features."
+         )}
+
+      {:error, reason} ->
+        {:noreply,
+         put_flash(socket, :error, "Could not activate license: #{license_error(reason)}")}
+    end
+  end
+
   def handle_event("create_api_key", %{"api_key" => params}, socket) do
     org_id = socket.assigns.org_id
 
