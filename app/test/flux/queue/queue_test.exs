@@ -38,4 +38,25 @@ defmodule Flux.QueueTest do
       assert :ok = Queue.reject(message, true)
     end
   end
+
+  describe "DLQ facade with an adapter that omits the optional callbacks" do
+    # The active adapter in test is Memory, which does not implement the DLQ
+    # callbacks. The facade must return a clean upgrade error, not crash.
+    test "list_dlq_messages/2 returns pro_required" do
+      assert {:error, {:pro_required, :dlq}} = Queue.list_dlq_messages()
+      assert {:error, {:pro_required, :dlq}} = Queue.list_dlq_messages(10, 5)
+    end
+
+    test "dlq_depth/0 returns pro_required" do
+      assert {:error, {:pro_required, :dlq}} = Queue.dlq_depth()
+    end
+
+    test "retry_message/1 returns pro_required" do
+      assert {:error, {:pro_required, :dlq}} = Queue.retry_message(1)
+    end
+
+    test "discard_message/1 returns pro_required" do
+      assert {:error, {:pro_required, :dlq}} = Queue.discard_message(1)
+    end
+  end
 end

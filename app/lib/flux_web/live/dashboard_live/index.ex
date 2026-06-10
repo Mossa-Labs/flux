@@ -30,6 +30,7 @@ defmodule FluxWeb.DashboardLive.Index do
      |> assign(:active_pipeline_count, active_count)
      |> assign(:running_pipeline_count, running_count)
      |> assign(:anomaly_count, anomaly_count)
+     |> assign(:dlq_depth, dlq_depth())
      |> assign(:metrics_by_node, metrics_by_node)
      |> assign_cluster_metrics(metrics_by_node)}
   end
@@ -61,7 +62,8 @@ defmodule FluxWeb.DashboardLive.Index do
      socket
      |> assign(:active_pipeline_count, active_count)
      |> assign(:running_pipeline_count, running_count)
-     |> assign(:anomaly_count, anomaly_count)}
+     |> assign(:anomaly_count, anomaly_count)
+     |> assign(:dlq_depth, dlq_depth())}
   end
 
   def handle_info(_msg, socket), do: {:noreply, socket}
@@ -163,7 +165,14 @@ defmodule FluxWeb.DashboardLive.Index do
             </div>
           </div>
           <div class="mt-4 flex items-center text-sm text-base-content/60">
-            <span>Lifetime total</span>
+            <.link
+              :if={@dlq_depth > 0}
+              navigate={~p"/system/dlq"}
+              class="inline-flex items-center gap-1 badge badge-warning badge-sm hover:badge-warning/80"
+            >
+              <.icon name="hero-inbox-stack" class="w-3 h-3" /> {@dlq_depth} in DLQ
+            </.link>
+            <span :if={@dlq_depth == 0}>Lifetime total</span>
           </div>
         </div>
       </div>
@@ -200,4 +209,17 @@ defmodule FluxWeb.DashboardLive.Index do
   defp format_number(num) when is_float(num), do: :erlang.float_to_binary(num, decimals: 1)
   defp format_number(num) when is_integer(num), do: Integer.to_string(num)
   defp format_number(_), do: "0"
+
+  # DLQ depth for the badge — only when the feature is licensed. Any other
+  # result (Community stub, unsupported adapter, broker error) means "no badge".
+  defp dlq_depth do
+    if Flux.License.has_feature?(:dlq) do
+      case Flux.Queue.dlq_depth() do
+        {:ok, depth} -> depth
+        _ -> 0
+      end
+    else
+      0
+    end
+  end
 end

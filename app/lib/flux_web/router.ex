@@ -106,6 +106,9 @@ defmodule FluxWeb.Router do
       # System settings (owner only; 403 + redirect when unauthorized)
       live("/system/settings", SystemSettingsLive, :index)
 
+      # Dead-letter queue management (owner only + Pro-gated)
+      live("/system/dlq", DLQLive.Index, :index)
+
       # Settings (sudo mode enforced at module level in Settings LiveView)
       live("/users/settings", UserLive.Settings, :edit)
       live("/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email)

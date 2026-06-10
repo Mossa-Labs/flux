@@ -35,6 +35,18 @@ defmodule Flux.Queue.Adapters.Stub do
     raise "Active queue type requires Flux Pro. Configure `config :flux, Flux.Queue, type: \"memory\"` for Community, or upgrade to Pro to use RabbitMQ/Kafka."
   end
 
+  @impl Flux.Queue.Adapter
+  def list_dlq_messages(_count, _offset), do: dlq_required()
+
+  @impl Flux.Queue.Adapter
+  def get_dlq_depth, do: dlq_required()
+
+  @impl Flux.Queue.Adapter
+  def retry_message(_delivery_tag), do: dlq_required()
+
+  @impl Flux.Queue.Adapter
+  def discard_message(_delivery_tag), do: dlq_required()
+
   @impl GenServer
   def init(opts) do
     feature = Keyword.get(opts, :feature, :pro_queue)
@@ -47,4 +59,6 @@ defmodule Flux.Queue.Adapters.Stub do
   end
 
   defp pro_required, do: {:error, {:pro_required, :pro_queue}}
+
+  defp dlq_required, do: {:error, {:pro_required, :dlq}}
 end

@@ -27,4 +27,20 @@ defmodule Flux.Queue.Adapters.StubTest do
   test "producer_spec/1 raises with a clear upgrade message" do
     assert_raise RuntimeError, ~r/Flux Pro/, fn -> Stub.producer_spec(queue: "q") end
   end
+
+  test "list_dlq_messages/2 returns pro_required for :dlq" do
+    assert {:error, {:pro_required, :dlq}} = Stub.list_dlq_messages(50, 0)
+  end
+
+  test "get_dlq_depth/0 returns pro_required for :dlq" do
+    assert {:error, {:pro_required, :dlq}} = Stub.get_dlq_depth()
+  end
+
+  test "retry_message/1 returns pro_required for :dlq" do
+    assert {:error, {:pro_required, :dlq}} = Stub.retry_message(1)
+  end
+
+  test "discard_message/1 returns pro_required for :dlq" do
+    assert {:error, {:pro_required, :dlq}} = Stub.discard_message(1)
+  end
 end
