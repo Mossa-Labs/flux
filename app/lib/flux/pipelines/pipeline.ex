@@ -1,4 +1,13 @@
 defmodule Flux.Pipelines.Pipeline do
+  @moduledoc """
+  Ecto schema for a data pipeline.
+
+  A pipeline belongs to an organization and is defined by its source/destination
+  queues, an ordered map of processing `steps`, and the `sink_ids` it fans out
+  to. `status` tracks its lifecycle (one of #{inspect(~w(active paused stopped))})
+  and defaults to `"stopped"` so a newly created pipeline never runs until
+  explicitly started.
+  """
   use Ecto.Schema
   import Ecto.Changeset
 

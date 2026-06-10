@@ -1194,12 +1194,9 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp extract_sink_ids(ir) do
     case ir["nodes"] do
       nodes when is_list(nodes) ->
-        nodes
-        |> Enum.filter(fn n -> n["type"] == "sink" end)
-        |> Enum.map(fn n -> n["sinkId"] end)
-        |> Enum.reject(&is_nil/1)
-        |> Enum.map(&to_integer/1)
-        |> Enum.uniq()
+        for n <- nodes, n["type"] == "sink", sink_id = n["sinkId"], sink_id != nil, uniq: true do
+          to_integer(sink_id)
+        end
 
       _ ->
         []

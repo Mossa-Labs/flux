@@ -277,8 +277,7 @@ defmodule FluxWeb.AnomalyLive.Index do
 
       max_score =
         field_scores
-        |> Enum.map(& &1.z_score)
-        |> Enum.map(&abs/1)
+        |> Enum.map(&abs(&1.z_score))
         |> Enum.max(fn -> 0.0 end)
 
       %{
@@ -365,21 +364,6 @@ defmodule FluxWeb.AnomalyLive.Index do
     end
   end
 
-  defp pipeline_status_badge(assigns) do
-    {color, label} =
-      case assigns.status do
-        "active" -> {"badge-success", "Active"}
-        "paused" -> {"badge-warning", "Paused"}
-        "stopped" -> {"badge-ghost", "Stopped"}
-        _ -> {"badge-ghost", assigns.status}
-      end
-
-    assigns = assign(assigns, color: color, label: label)
-
-    ~H"""
-    <span class={"badge #{@color}"}>{@label}</span>
-    """
-  end
 
   defp score_color(score) when is_number(score) do
     cond do

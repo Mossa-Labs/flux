@@ -71,60 +71,30 @@ defmodule FluxWeb.SinkLive.Form do
                 <span class="label-text font-medium">Sink Type</span>
               </label>
               <div class="grid grid-cols-3 gap-3">
-                <label class={[
-                  "cursor-pointer border-2 rounded-lg p-4 text-center transition-all",
-                  @selected_type == "http" && "border-primary bg-primary/5",
-                  @selected_type != "http" && "border-base-300 hover:border-primary/50"
-                ]}>
-                  <input
-                    type="radio"
-                    name={@form[:type].name}
-                    value="http"
-                    checked={@selected_type == "http"}
-                    class="hidden"
-                    phx-click="select_type"
-                    phx-value-type="http"
-                  />
-                  <.icon name="hero-globe-alt" class="w-8 h-8 mx-auto text-primary" />
-                  <p class="font-medium mt-2">HTTP</p>
-                  <p class="text-xs text-base-content/60">Webhook</p>
-                </label>
-                <label class={[
-                  "cursor-pointer border-2 rounded-lg p-4 text-center transition-all",
-                  @selected_type == "s3" && "border-primary bg-primary/5",
-                  @selected_type != "s3" && "border-base-300 hover:border-primary/50"
-                ]}>
-                  <input
-                    type="radio"
-                    name={@form[:type].name}
-                    value="s3"
-                    checked={@selected_type == "s3"}
-                    class="hidden"
-                    phx-click="select_type"
-                    phx-value-type="s3"
-                  />
-                  <.icon name="hero-cloud-arrow-up" class="w-8 h-8 mx-auto text-primary" />
-                  <p class="font-medium mt-2">S3</p>
-                  <p class="text-xs text-base-content/60">Object Storage</p>
-                </label>
-                <label class={[
-                  "cursor-pointer border-2 rounded-lg p-4 text-center transition-all",
-                  @selected_type == "postgres" && "border-primary bg-primary/5",
-                  @selected_type != "postgres" && "border-base-300 hover:border-primary/50"
-                ]}>
-                  <input
-                    type="radio"
-                    name={@form[:type].name}
-                    value="postgres"
-                    checked={@selected_type == "postgres"}
-                    class="hidden"
-                    phx-click="select_type"
-                    phx-value-type="postgres"
-                  />
-                  <.icon name="hero-circle-stack" class="w-8 h-8 mx-auto text-primary" />
-                  <p class="font-medium mt-2">Postgres</p>
-                  <p class="text-xs text-base-content/60">Database</p>
-                </label>
+                <.sink_type_option
+                  field={@form[:type]}
+                  selected_type={@selected_type}
+                  type="http"
+                  icon="hero-globe-alt"
+                  label="HTTP"
+                  sublabel="Webhook"
+                />
+                <.sink_type_option
+                  field={@form[:type]}
+                  selected_type={@selected_type}
+                  type="s3"
+                  icon="hero-cloud-arrow-up"
+                  label="S3"
+                  sublabel="Object Storage"
+                />
+                <.sink_type_option
+                  field={@form[:type]}
+                  selected_type={@selected_type}
+                  type="postgres"
+                  icon="hero-circle-stack"
+                  label="Postgres"
+                  sublabel="Database"
+                />
               </div>
             </div>
           </div>
@@ -153,6 +123,38 @@ defmodule FluxWeb.SinkLive.Form do
         </div>
       </.form>
     </div>
+    """
+  end
+
+  attr :field, Phoenix.HTML.FormField, required: true
+  attr :selected_type, :string, required: true
+  attr :type, :string, required: true
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+  attr :sublabel, :string, required: true
+
+  # One selectable tile in the sink-type picker. The hidden radio keeps the
+  # selection in the form while `select_type` drives the highlighted state.
+  defp sink_type_option(assigns) do
+    ~H"""
+    <label class={[
+      "cursor-pointer border-2 rounded-lg p-4 text-center transition-all",
+      @selected_type == @type && "border-primary bg-primary/5",
+      @selected_type != @type && "border-base-300 hover:border-primary/50"
+    ]}>
+      <input
+        type="radio"
+        name={@field.name}
+        value={@type}
+        checked={@selected_type == @type}
+        class="hidden"
+        phx-click="select_type"
+        phx-value-type={@type}
+      />
+      <.icon name={@icon} class="w-8 h-8 mx-auto text-primary" />
+      <p class="font-medium mt-2">{@label}</p>
+      <p class="text-xs text-base-content/60">{@sublabel}</p>
+    </label>
     """
   end
 

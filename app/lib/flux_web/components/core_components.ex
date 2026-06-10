@@ -117,6 +117,33 @@ defmodule FluxWeb.CoreComponents do
   end
 
   @doc """
+  Renders a colored badge for a pipeline's lifecycle status.
+
+  Unknown statuses fall back to a neutral badge showing the raw value.
+
+  ## Examples
+
+      <.pipeline_status_badge status={@pipeline.status} />
+  """
+  attr :status, :string, required: true
+
+  def pipeline_status_badge(assigns) do
+    {color, label} =
+      case assigns.status do
+        "active" -> {"badge-success", "Active"}
+        "paused" -> {"badge-warning", "Paused"}
+        "stopped" -> {"badge-ghost", "Stopped"}
+        other -> {"badge-ghost", other}
+      end
+
+    assigns = assign(assigns, color: color, label: label)
+
+    ~H"""
+    <span class={"badge #{@color}"}>{@label}</span>
+    """
+  end
+
+  @doc """
   Renders an input with label and error messages.
 
   A `Phoenix.HTML.FormField` may be passed as argument,

@@ -87,7 +87,7 @@ defmodule FluxWeb.PipelineLive.Index do
                   </p>
                 </td>
                 <td>
-                  <.status_badge status={pipeline.status} />
+                  <.pipeline_status_badge status={pipeline.status} />
                 </td>
                 <td class="font-mono text-sm">{pipeline.source_queue}</td>
                 <td>
@@ -123,22 +123,6 @@ defmodule FluxWeb.PipelineLive.Index do
         </div>
       </div>
     </div>
-    """
-  end
-
-  defp status_badge(assigns) do
-    {color, label} =
-      case assigns.status do
-        "active" -> {"badge-success", "Active"}
-        "paused" -> {"badge-warning", "Paused"}
-        "stopped" -> {"badge-ghost", "Stopped"}
-        _ -> {"badge-ghost", assigns.status}
-      end
-
-    assigns = assign(assigns, color: color, label: label)
-
-    ~H"""
-    <span class={"badge #{@color}"}>{@label}</span>
     """
   end
 
