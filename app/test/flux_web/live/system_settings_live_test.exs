@@ -82,17 +82,26 @@ defmodule FluxWeb.SystemSettingsLiveTest do
 
       {:ok, lv, _html} = live(conn, ~p"/system/settings")
 
-      assert render_click(lv, "disable_member", %{"id" => to_string(tm.id), "kind" => "team_centric"}) =~
+      assert render_click(lv, "disable_member", %{
+               "id" => to_string(tm.id),
+               "kind" => "team_centric"
+             }) =~
                "Member disabled."
 
       assert Structure.get_team_member!(tm.id) |> Flux.Structure.TeamMember.disabled?()
 
-      assert render_click(lv, "enable_member", %{"id" => to_string(tm.id), "kind" => "team_centric"}) =~
+      assert render_click(lv, "enable_member", %{
+               "id" => to_string(tm.id),
+               "kind" => "team_centric"
+             }) =~
                "Member re-enabled."
 
       refute Structure.get_team_member!(tm.id) |> Flux.Structure.TeamMember.disabled?()
 
-      assert render_click(lv, "remove_member", %{"id" => to_string(tm.id), "kind" => "team_centric"}) =~
+      assert render_click(lv, "remove_member", %{
+               "id" => to_string(tm.id),
+               "kind" => "team_centric"
+             }) =~
                "Member removed."
 
       assert_raise Ecto.NoResultsError, fn -> Structure.get_team_member!(tm.id) end
@@ -101,7 +110,10 @@ defmodule FluxWeb.SystemSettingsLiveTest do
     test "refuses to remove your own account", %{conn: conn, own_membership: own} do
       {:ok, lv, _html} = live(conn, ~p"/system/settings")
 
-      assert render_click(lv, "remove_member", %{"id" => to_string(own.id), "kind" => "team_centric"}) =~
+      assert render_click(lv, "remove_member", %{
+               "id" => to_string(own.id),
+               "kind" => "team_centric"
+             }) =~
                "You cannot remove your own account."
 
       # The membership is still there.

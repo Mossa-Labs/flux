@@ -149,7 +149,6 @@ defmodule FluxWeb.PipelineLive.Show do
     """
   end
 
-
   defp status_actions(assigns) do
     ~H"""
     <div :if={@pipeline.status == "stopped"}>
