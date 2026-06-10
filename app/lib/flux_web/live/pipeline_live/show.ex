@@ -48,7 +48,7 @@ defmodule FluxWeb.PipelineLive.Show do
               <h1 class="text-2xl font-bold bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
                 {@pipeline.name}
               </h1>
-              <.status_badge status={@pipeline.status} />
+              <.pipeline_status_badge status={@pipeline.status} />
             </div>
             <p :if={@pipeline.description} class="text-base-content/60 mt-1">
               {@pipeline.description}
@@ -149,21 +149,6 @@ defmodule FluxWeb.PipelineLive.Show do
     """
   end
 
-  defp status_badge(assigns) do
-    {color, label} =
-      case assigns.status do
-        "active" -> {"badge-success", "Active"}
-        "paused" -> {"badge-warning", "Paused"}
-        "stopped" -> {"badge-ghost", "Stopped"}
-        _ -> {"badge-ghost", assigns.status}
-      end
-
-    assigns = assign(assigns, color: color, label: label)
-
-    ~H"""
-    <span class={"badge #{@color}"}>{@label}</span>
-    """
-  end
 
   defp status_actions(assigns) do
     ~H"""
