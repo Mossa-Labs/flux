@@ -364,7 +364,6 @@ defmodule FluxWeb.AnomalyLive.Index do
     end
   end
 
-
   defp score_color(score) when is_number(score) do
     cond do
       abs(score) > 3.0 -> "text-error"
