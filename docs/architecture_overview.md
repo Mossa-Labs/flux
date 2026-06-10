@@ -1,5 +1,8 @@
 # Flux Architecture Overview
 
+> *New to the terms here?* See [Concepts & Background](concepts.md) for a glossary
+> and links to further reading on the patterns and technologies below.
+
 ## Executive Summary
 Flux is a self-hosted, high-performance ETL/ELT platform designed for dynamic data pipelining. It combines the reliability of the BEAM (Erlang VM) with modern stream processing capabilities to provide a robust "Data Mover" solution.
 
@@ -19,7 +22,7 @@ The system is composed of two primary planes:
 
 ### 2. Data Plane (FluxEngine)
 *   **Role**: Execution and Processing.
-*   **Tech**: Broadway, **Oban (Scheduler)**.
+*   **Tech**: [Broadway](concepts.md#further-reading), **[Oban](concepts.md#further-reading) (Scheduler)**.
 *   **Responsibilities**:
     *   Ingestion.
     *   Buffering & Flow Control.
@@ -42,12 +45,12 @@ Each user-defined pipeline spawns a dedicated supervised Broadway tree.
 *   **Processors (Concurrency: High)** execute the pipeline's steps:
     1.  **Map / Rename**: Rename keys, cast types, deep merge.
     2.  **Filter**: Drop records that don't match a predicate.
-    3.  **Script**: User-defined Lua logic for safe custom transformations, run in the `Luerl` sandbox.
+    3.  **Script**: User-defined Lua logic for safe custom transformations, run in the [`Luerl`](concepts.md#further-reading) sandbox.
 *   **Batcher**: Aggregates records for efficient bulk writing.
 *   **Consumer**: Writes to the configured destination via a sink adapter (HTTP, Postgres).
 
 ### D. Visual Builder & Execution Strategy (Hybrid IR)
-Flux uses a **JSON-based Intermediate Representation (IR)** to decouple the UI from execution.
+Flux uses a **JSON-based [Intermediate Representation (IR)](concepts.md#further-reading)** to decouple the UI from execution.
 *   **CSS Framework**: **Tailwind CSS v4** for high-performance styling.
 *   **Frontend (React Flow)** — *only* for the pipeline builder canvas/flow chart:
     *   **Lazy Loading**: React and React Flow are **only loaded** on the Builder route (`/pipelines/builder`). They are not bundled into the main `app.js`.

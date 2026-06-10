@@ -7,6 +7,11 @@ scheduled sources, transform with composable steps (including Lua scripting),
 and deliver to your sinks — reliably, on the Erlang VM, with a live visual
 builder.
 
+New to data pipelines or the BEAM? Start with
+[**Concepts & Background**](docs/concepts.md) — it explains the [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load)
+and streaming ideas behind Flux, defines the vocabulary used in these docs, and
+links out to further reading.
+
 > **This is the Community edition (Apache 2.0).** Pro and Enterprise features
 > ship as a **separate licensed distribution** maintained by the Flux team — not
 > in this repository. See [open-core model](#open-core) below and the
@@ -27,12 +32,14 @@ Everything you need to run real pipelines in production, free and open source:
 | **Pipeline builder** | Visual React-Flow canvas on `/pipelines/builder` |
 | **REST API** | Full developer API (8 endpoints) with per-organization API keys |
 | **Multi-tenancy** | Organizations + team role-based access control (RBAC) |
-| **High availability** | Cluster-aware engine (Horde-based distribution, cluster-wide metrics) |
+| **Resilient execution** | Each pipeline runs in its own supervised, self-healing Broadway process (single node) |
 | **Monitoring** | Real-time metrics dashboard (Phoenix PubSub) |
 
-Pro and Enterprise add advanced capabilities and commercial support, shipped as a
-separate licensed edition — see the [pricing page](https://mossa.io/flux/pricing).
-None of that source lives here — see the [open-core model](#open-core).
+Pro and Enterprise add advanced capabilities — including clustered, highly
+available execution (Horde-based distribution with cluster-wide metrics) — plus
+commercial support, shipped as a separate licensed edition. See the
+[pricing page](https://mossa.io/flux/pricing). None of that source lives here —
+see the [open-core model](#open-core).
 
 ## Quick start
 
@@ -48,6 +55,7 @@ to run it in production.
 
 ## Documentation
 
+- [Concepts & background](docs/concepts.md) — **start here** if you're new: vocabulary, "why Flux", and further reading
 - [User guide](docs/user_guide.md) — build and run pipelines
 - [Developer guide](docs/developer_guide.md) — extend Flux (add a sink, queue, or step)
 - [Architecture overview](docs/architecture_overview.md)
