@@ -3,6 +3,9 @@ defmodule FluxWeb.SystemSettingsLiveTest do
 
   import Phoenix.LiveViewTest
   import Ecto.Query
+  import Flux.AccountsFixtures
+
+  alias Flux.Structure
 
   describe "owner access" do
     setup :register_and_log_in_user
@@ -26,14 +29,14 @@ defmodule FluxWeb.SystemSettingsLiveTest do
 
       {:ok, team} = Flux.Structure.create_team(owner_scope, %{name: "Default Team"})
 
-      {:ok, _tm} =
+      {:ok, own_membership} =
         Flux.Structure.create_team_member(%{
           user_id: user.id,
           team_id: team.id,
           role: "admin"
         })
 
-      :ok
+      %{team: team, owner_scope: owner_scope, own_membership: own_membership}
     end
 
     test "owner can access and sees 'System Settings' heading", %{conn: conn} do
@@ -69,6 +72,40 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/system/settings")
 
       assert html =~ user.email
+    end
+
+    test "disables, re-enables, and removes a team member", %{conn: conn, team: team} do
+      other = user_fixture()
+
+      {:ok, tm} =
+        Structure.create_team_member(%{user_id: other.id, team_id: team.id, role: "member"})
+
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      assert render_click(lv, "disable_member", %{"id" => to_string(tm.id), "kind" => "team_centric"}) =~
+               "Member disabled."
+
+      assert Structure.get_team_member!(tm.id) |> Flux.Structure.TeamMember.disabled?()
+
+      assert render_click(lv, "enable_member", %{"id" => to_string(tm.id), "kind" => "team_centric"}) =~
+               "Member re-enabled."
+
+      refute Structure.get_team_member!(tm.id) |> Flux.Structure.TeamMember.disabled?()
+
+      assert render_click(lv, "remove_member", %{"id" => to_string(tm.id), "kind" => "team_centric"}) =~
+               "Member removed."
+
+      assert_raise Ecto.NoResultsError, fn -> Structure.get_team_member!(tm.id) end
+    end
+
+    test "refuses to remove your own account", %{conn: conn, own_membership: own} do
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      assert render_click(lv, "remove_member", %{"id" => to_string(own.id), "kind" => "team_centric"}) =~
+               "You cannot remove your own account."
+
+      # The membership is still there.
+      assert Structure.get_team_member!(own.id)
     end
 
     test "shows the API Keys section", %{conn: conn} do

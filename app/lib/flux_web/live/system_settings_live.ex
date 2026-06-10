@@ -1244,13 +1244,11 @@ defmodule FluxWeb.SystemSettingsLive do
 
     case result do
       {:ok, _} ->
-        members = load_members(scope, org_id, rbac_mode)
-
         {:noreply,
          socket
          |> assign(:member_form, nil)
          |> assign(:editing_member_id, nil)
-         |> assign(:members, members)
+         |> reload_members()
          |> put_flash(:info, if(editing, do: "Member updated.", else: "Member added."))}
 
       {:error, msg} when is_binary(msg) ->
@@ -1262,92 +1260,58 @@ defmodule FluxWeb.SystemSettingsLive do
     end
   end
 
-  def handle_event("remove_member", %{"id" => id, "kind" => "org_centric"}, socket) do
-    om = Repo.get!(OrganizationMember, String.to_integer(id))
+  # remove/disable/enable share the same shape across both RBAC modes: look the
+  # member up by kind, guard against acting on your own account (except enable),
+  # run the action, then reload the list. The org_centric/team_centric specifics
+  # are isolated in the fetch_member/2 and *_member/1 helpers below.
+  def handle_event("remove_member", %{"id" => id, "kind" => kind}, socket) do
+    guarded_member_action(socket, id, kind, "remove", &delete_member/1, "Member removed.")
+  end
 
-    if om.user_id == socket.assigns.current_scope.user.id do
-      {:noreply, put_flash(socket, :error, "You cannot remove your own account.")}
+  def handle_event("disable_member", %{"id" => id, "kind" => kind}, socket) do
+    guarded_member_action(socket, id, kind, "disable", &disable_member/1, "Member disabled.")
+  end
+
+  def handle_event("enable_member", %{"id" => id, "kind" => kind}, socket) do
+    member = fetch_member(socket, kind, id)
+    {:ok, _} = enable_member(member)
+    {:noreply, socket |> reload_members() |> put_flash(:info, "Member re-enabled.")}
+  end
+
+  # Runs `action` on the member unless it is the current user's own account, in
+  # which case it refuses with a "You cannot <verb> your own account." flash.
+  defp guarded_member_action(socket, id, kind, verb, action, success_message) do
+    member = fetch_member(socket, kind, id)
+
+    if own_account?(member, socket) do
+      {:noreply, put_flash(socket, :error, "You cannot #{verb} your own account.")}
     else
-      {:ok, _} = Structure.delete_organization_member(om)
-      members = Structure.list_organization_members(socket.assigns.org_id)
-
-      {:noreply,
-       socket
-       |> assign(:members, members)
-       |> put_flash(:info, "Member removed.")}
+      {:ok, _} = action.(member)
+      {:noreply, socket |> reload_members() |> put_flash(:info, success_message)}
     end
   end
 
-  def handle_event("remove_member", %{"id" => id, "kind" => "team_centric"}, socket) do
+  defp fetch_member(_socket, "org_centric", id),
+    do: Repo.get!(OrganizationMember, String.to_integer(id))
+
+  defp fetch_member(socket, "team_centric", id),
+    do: Structure.get_team_member!(socket.assigns.current_scope, String.to_integer(id))
+
+  defp own_account?(member, socket),
+    do: member_user_id(member) == socket.assigns.current_scope.user.id
+
+  defp delete_member(%OrganizationMember{} = m), do: Structure.delete_organization_member(m)
+  defp delete_member(%TeamMember{} = m), do: Structure.delete_team_member(m)
+
+  defp disable_member(%OrganizationMember{} = m), do: Structure.disable_organization_member(m)
+  defp disable_member(%TeamMember{} = m), do: Structure.disable_team_member(m)
+
+  defp enable_member(%OrganizationMember{} = m), do: Structure.enable_organization_member(m)
+  defp enable_member(%TeamMember{} = m), do: Structure.enable_team_member(m)
+
+  defp reload_members(socket) do
     scope = socket.assigns.current_scope
-    tm = Structure.get_team_member!(scope, String.to_integer(id))
-
-    if tm.user_id == scope.user.id do
-      {:noreply, put_flash(socket, :error, "You cannot remove your own account.")}
-    else
-      {:ok, _} = Structure.delete_team_member(tm)
-      members = Structure.list_team_members(scope)
-
-      {:noreply,
-       socket
-       |> assign(:members, members)
-       |> put_flash(:info, "Member removed.")}
-    end
-  end
-
-  def handle_event("disable_member", %{"id" => id, "kind" => "org_centric"}, socket) do
-    om = Repo.get!(OrganizationMember, String.to_integer(id))
-
-    if om.user_id == socket.assigns.current_scope.user.id do
-      {:noreply, put_flash(socket, :error, "You cannot disable your own account.")}
-    else
-      {:ok, _} = Structure.disable_organization_member(om)
-      members = Structure.list_organization_members(socket.assigns.org_id)
-
-      {:noreply,
-       socket
-       |> assign(:members, members)
-       |> put_flash(:info, "Member disabled.")}
-    end
-  end
-
-  def handle_event("disable_member", %{"id" => id, "kind" => "team_centric"}, socket) do
-    scope = socket.assigns.current_scope
-    tm = Structure.get_team_member!(scope, String.to_integer(id))
-
-    if tm.user_id == scope.user.id do
-      {:noreply, put_flash(socket, :error, "You cannot disable your own account.")}
-    else
-      {:ok, _} = Structure.disable_team_member(tm)
-      members = Structure.list_team_members(scope)
-
-      {:noreply,
-       socket
-       |> assign(:members, members)
-       |> put_flash(:info, "Member disabled.")}
-    end
-  end
-
-  def handle_event("enable_member", %{"id" => id, "kind" => "org_centric"}, socket) do
-    om = Repo.get!(OrganizationMember, String.to_integer(id))
-    {:ok, _} = Structure.enable_organization_member(om)
-    members = Structure.list_organization_members(socket.assigns.org_id)
-
-    {:noreply,
-     socket
-     |> assign(:members, members)
-     |> put_flash(:info, "Member re-enabled.")}
-  end
-
-  def handle_event("enable_member", %{"id" => id, "kind" => "team_centric"}, socket) do
-    scope = socket.assigns.current_scope
-    tm = Structure.get_team_member!(scope, String.to_integer(id))
-    {:ok, _} = Structure.enable_team_member(tm)
-    members = Structure.list_team_members(scope)
-
-    {:noreply,
-     socket
-     |> assign(:members, members)
-     |> put_flash(:info, "Member re-enabled.")}
+    members = load_members(scope, scope.organization_id, socket.assigns.rbac_mode)
+    assign(socket, :members, members)
   end
 end
