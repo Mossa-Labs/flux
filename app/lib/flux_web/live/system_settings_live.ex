@@ -1123,7 +1123,7 @@ defmodule FluxWeb.SystemSettingsLive do
 
   def handle_event("edit_member", %{"id" => id, "kind" => "team_centric"}, socket) do
     scope = socket.assigns.current_scope
-    tm = Structure.get_team_member!(scope, String.to_integer(id)) |> Repo.preload([:user, :team])
+    tm = Structure.get_team_member!(scope, String.to_integer(id))
     email = if tm.user, do: tm.user.email, else: ""
 
     form =

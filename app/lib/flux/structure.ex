@@ -392,8 +392,6 @@ defmodule Flux.Structure do
   Returns team members for teams in the scope's current organization.
   """
   def list_team_members(%Scope{organization_id: org_id}) when is_integer(org_id) do
-    import Ecto.Query
-
     from(tm in TeamMember,
       join: t in Team,
       on: tm.team_id == t.id,
@@ -424,11 +422,19 @@ defmodule Flux.Structure do
 
   @doc """
   Gets a single team_member, ensuring the member's team is in the scope's organization.
+
+  Loads the member, its team, and its user in a single query and preloads the
+  associations callers render, raising `Ecto.NoResultsError` when the member
+  either does not exist or belongs to another organization.
   """
   def get_team_member!(%Scope{organization_id: org_id}, id) when is_integer(org_id) do
-    tm = Repo.get!(TeamMember, id)
-    team = Repo.get!(Team, tm.team_id)
-    if team.organization_id == org_id, do: tm, else: raise(Ecto.NoResultsError)
+    from(tm in TeamMember,
+      join: t in Team,
+      on: tm.team_id == t.id,
+      where: tm.id == ^id and t.organization_id == ^org_id,
+      preload: [:user, :team]
+    )
+    |> Repo.one!()
   end
 
   def get_team_member!(_scope, id), do: get_team_member!(id)
