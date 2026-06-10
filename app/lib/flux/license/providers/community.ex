@@ -10,7 +10,16 @@ defmodule Flux.License.Providers.Community do
 
   @impl Flux.License.Provider
   def fetch,
-    do: {:ok, %{tier: :community, features: [], org: nil, valid_until: nil, node_count: nil}}
+    do:
+      {:ok,
+       %{
+         tier: :community,
+         features: [],
+         org: nil,
+         valid_until: nil,
+         node_count: nil,
+         status: :active
+       }}
 
   @impl Flux.License.Provider
   def tier, do: :community

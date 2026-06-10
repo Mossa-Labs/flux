@@ -54,4 +54,47 @@ defmodule Flux.License do
 
   @spec tier() :: Flux.License.Provider.tier()
   def tier, do: provider().tier()
+
+  @doc """
+  The current license lifecycle status (`:active | :near_expiry | :grace |
+  :expired`) reported by the provider, defaulting to `:active` when the provider
+  does not supply one.
+  """
+  @spec status() :: Flux.License.Provider.status()
+  def status do
+    case fetch() do
+      {:ok, license} -> Map.get(license, :status, :active)
+      {:error, _} -> :active
+    end
+  end
+
+  @doc """
+  Whether the configured provider supports applying a license at runtime. The
+  Community stub does not, so the activation UI is only offered when an
+  activation-capable provider (the commercial edition) is configured.
+  """
+  @spec activation_supported?() :: boolean()
+  def activation_supported?, do: supports_apply?(provider())
+
+  @doc """
+  Applies a signed license token via the configured provider (verify + persist),
+  returning the resolved license. Returns `{:error, :unsupported}` when the
+  provider can't activate licenses (e.g. the Community build).
+  """
+  @spec apply_license(String.t()) ::
+          {:ok, Flux.License.Provider.license()} | {:error, term()}
+  def apply_license(token) when is_binary(token) do
+    mod = provider()
+
+    if supports_apply?(mod) do
+      mod.apply_license(token)
+    else
+      {:error, :unsupported}
+    end
+  end
+
+  # `function_exported?/3` does not auto-load the module, so ensure it's loaded
+  # before checking (the provider is referenced only as an atom in config).
+  defp supports_apply?(mod),
+    do: Code.ensure_loaded?(mod) and function_exported?(mod, :apply_license, 1)
 end
