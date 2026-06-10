@@ -58,12 +58,18 @@ defmodule FluxWeb.Components.UpgradePrompt do
           <p class="mt-1 text-sm text-amber-900/80">
             Unlock {@label} and the rest of the Pro suite to scale your pipelines beyond the Community tier.
           </p>
-          <div class="mt-4">
+          <div class="mt-4 flex flex-wrap items-center gap-4">
             <.link
               href={@upgrade_url}
               class="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700"
             >
               View pricing <CoreComponents.icon name="hero-arrow-right" class="size-4" />
+            </.link>
+            <.link
+              navigate="/system/settings"
+              class="text-sm font-medium text-amber-900 underline hover:no-underline"
+            >
+              Already have a license? Activate it
             </.link>
           </div>
         </div>

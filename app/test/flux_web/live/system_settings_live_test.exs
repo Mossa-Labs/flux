@@ -121,5 +121,62 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       refute html =~ "Revoke"
       assert Flux.Repo.reload(key).revoked_at != nil
     end
+
+    test "hides the Activate Pro form in a Community build", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+      refute has_element?(lv, "#activate-license-form")
+    end
+
+    test "shows the Activate Pro form when the provider supports activation", %{conn: conn} do
+      use_activation_provider()
+
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+      assert has_element?(lv, "#activate-license-form")
+    end
+
+    test "activating a license flashes the restart message", %{conn: conn} do
+      use_activation_provider()
+
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      html =
+        lv
+        |> form("#activate-license-form", license: %{token: "a-signed-token"})
+        |> render_submit()
+
+      assert html =~ "Pro activated"
+      assert html =~ "restart"
+    end
+
+    test "renders a near-expiry banner from the license status", %{conn: conn} do
+      use_activation_provider()
+      soon = DateTime.add(DateTime.utc_now(), 10 * 24 * 3600, :second)
+
+      Application.put_env(:flux, :test_activation_license, %{
+        tier: :pro,
+        features: [],
+        org: "Acme",
+        valid_until: soon,
+        node_count: 3,
+        status: :near_expiry
+      })
+
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+      assert html =~ "Renew soon"
+    end
+  end
+
+  # Swap in the activation-capable provider for one test, restoring afterwards.
+  defp use_activation_provider do
+    prev = Application.get_env(:flux, Flux.License)
+    Application.put_env(:flux, Flux.License, provider: Flux.LicenseActivationTestProvider)
+
+    ExUnit.Callbacks.on_exit(fn ->
+      if prev,
+        do: Application.put_env(:flux, Flux.License, prev),
+        else: Application.delete_env(:flux, Flux.License)
+
+      Application.delete_env(:flux, :test_activation_license)
+    end)
   end
 end
