@@ -122,6 +122,14 @@
             <.icon name="hero-wrench-screwdriver" class="w-5 h-5" /> System Settings
           </.link>
         </li>
+        <li>
+          <.link
+            navigate={~p"/system/alerts"}
+            class={if assigns[:active_tab] == :alerts, do: "active", else: ""}
+          >
+            <.icon name="hero-bell-alert" class="w-5 h-5" /> Alerts
+          </.link>
+        </li>
       <% end %>
       <li>
         <.link

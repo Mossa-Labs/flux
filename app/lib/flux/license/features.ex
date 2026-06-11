@@ -24,6 +24,7 @@ defmodule Flux.License.Features do
     * `:org_rbac` - organization-centric RBAC
     * `:api_key_scopes` - fine-grained (below-role) API key scopes
     * `:usage_metering` - per-org usage metering, usage card, and quota enforcement
+    * `:alerting` - configurable alert rules + multi-channel notifications
     * `:sso`, `:audit_log`, `:white_label`, `:mfa` - enterprise auth/compliance
   """
 
@@ -48,7 +49,9 @@ defmodule Flux.License.Features do
       # Restricting an API key's scopes below its role (least-privilege keys).
       :api_key_scopes,
       # Per-organization usage metering, the usage card, and quota enforcement.
-      :usage_metering
+      :usage_metering,
+      # Configurable alert rules + email/webhook/Slack notifications (MOS-452).
+      :alerting
     ],
     enterprise: [
       :sso,

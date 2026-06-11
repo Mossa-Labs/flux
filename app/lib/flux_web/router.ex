@@ -109,6 +109,9 @@ defmodule FluxWeb.Router do
       # Dead-letter queue management (owner only + Pro-gated)
       live("/system/dlq", DLQLive.Index, :index)
 
+      # Alerting & notifications (owner only + Pro-gated)
+      live("/system/alerts", AlertsLive.Index, :index)
+
       # Settings (sudo mode enforced at module level in Settings LiveView)
       live("/users/settings", UserLive.Settings, :edit)
       live("/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email)

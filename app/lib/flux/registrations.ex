@@ -34,6 +34,7 @@ defmodule Flux.Registrations do
     :ok = register_auth_strategies()
     :ok = register_ai_provider()
     :ok = register_metering_provider()
+    :ok = register_alerts_provider()
     :ok = seed_active_queue()
 
     Logger.info("[Flux.Registrations] Community adapters registered")
@@ -77,6 +78,14 @@ defmodule Flux.Registrations do
       Application.get_env(:flux, Flux.Metering)[:provider] || Flux.Metering.Providers.Community
 
     Flux.Metering.Registry.set_active(provider)
+    :ok
+  end
+
+  defp register_alerts_provider do
+    provider =
+      Application.get_env(:flux, Flux.Alerts)[:provider] || Flux.Alerts.Providers.Community
+
+    Flux.Alerts.Registry.set_active(provider)
     :ok
   end
 
