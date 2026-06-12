@@ -833,7 +833,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp anomaly_config(assigns) do
     config = assigns.node.data["config"] || %{}
     mode = config["mode"] || "numeric"
-    algorithm = config["algorithm"] || "ensemble"
+    algorithm = config["algorithm"] || default_algorithm(mode)
 
     assigns =
       assigns
@@ -886,6 +886,21 @@ defmodule FluxWeb.PipelineLive.Builder do
       <%!-- Mode-specific parameters (Pro) --%>
       <div :if={@advanced_ai and @mode == "seasonal"} class="form-control">
         <.field_label
+          text="Algorithm"
+          tooltip="Decomposition recomputes the seasonal shape over the window; adaptive smoothing updates it continuously and tracks drift."
+        />
+        <select name="config[algorithm]" class="select select-bordered select-sm w-full">
+          <option value="decomposition" selected={@algorithm == "decomposition"}>
+            Decomposition (default)
+          </option>
+          <option value="adaptive" selected={@algorithm == "adaptive"}>
+            Adaptive smoothing
+          </option>
+        </select>
+      </div>
+
+      <div :if={@advanced_ai and @mode == "seasonal"} class="form-control">
+        <.field_label
           text="Seasonal Period"
           tooltip="Number of samples in one full cycle (e.g. 7 for daily samples with a weekly cycle, 24 for hourly with a daily cycle)."
         />
@@ -897,6 +912,48 @@ defmodule FluxWeb.PipelineLive.Builder do
           step="1"
           class="input input-bordered input-sm w-full"
         />
+      </div>
+
+      <div
+        :if={@advanced_ai and @mode == "seasonal" and @algorithm == "adaptive"}
+        class="grid grid-cols-3 gap-2"
+      >
+        <div class="form-control">
+          <.field_label text="Level (α)" tooltip="How fast the baseline level adapts (0–1)." />
+          <input
+            type="number"
+            name="config[alpha]"
+            value={@config["alpha"] || 0.3}
+            min="0"
+            max="1"
+            step="0.05"
+            class="input input-bordered input-sm w-full"
+          />
+        </div>
+        <div class="form-control">
+          <.field_label text="Trend (β)" tooltip="How fast the trend adapts (0–1)." />
+          <input
+            type="number"
+            name="config[beta]"
+            value={@config["beta"] || 0.1}
+            min="0"
+            max="1"
+            step="0.05"
+            class="input input-bordered input-sm w-full"
+          />
+        </div>
+        <div class="form-control">
+          <.field_label text="Season (γ)" tooltip="How fast the seasonal shape adapts (0–1)." />
+          <input
+            type="number"
+            name="config[gamma]"
+            value={@config["gamma"] || 0.3}
+            min="0"
+            max="1"
+            step="0.05"
+            class="input input-bordered input-sm w-full"
+          />
+        </div>
       </div>
 
       <div :if={@advanced_ai and @mode == "categorical"} class="form-control">
@@ -978,6 +1035,11 @@ defmodule FluxWeb.PipelineLive.Builder do
 
   defp pro_suffix(true), do: ""
   defp pro_suffix(false), do: "(Pro)"
+
+  # Default algorithm wire value per mode (the picker's first option).
+  defp default_algorithm("multivariate"), do: "ensemble"
+  defp default_algorithm("seasonal"), do: "decomposition"
+  defp default_algorithm(_), do: ""
 
   defp fields_placeholder("categorical"), do: "country, plan_tier"
   defp fields_placeholder("multivariate"), do: "amount, lat, lng"
