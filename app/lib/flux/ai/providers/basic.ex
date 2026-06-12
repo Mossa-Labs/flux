@@ -14,6 +14,12 @@ defmodule Flux.AI.Providers.Basic do
   def record(_pipeline_id, _field, _value), do: :ok
 
   @impl Flux.AI.Provider
+  def configure(_pipeline_id, _mode, _params), do: :ok
+
+  @impl Flux.AI.Provider
+  def record_observation(_pipeline_id, _data), do: :ok
+
+  @impl Flux.AI.Provider
   def score(_pipeline_id, _data, _fields), do: {:ok, 0.0}
 
   @impl Flux.AI.Provider

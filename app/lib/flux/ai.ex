@@ -10,6 +10,46 @@ defmodule Flux.AI do
   @spec record(Flux.AI.Provider.pipeline_id(), Flux.AI.Provider.field(), number()) :: :ok
   def record(pipeline_id, field, value), do: Registry.active().record(pipeline_id, field, value)
 
+  @doc """
+  Registers the detection mode + params for a pipeline. Called once at pipeline
+  start. Providers that don't implement `configure/3` (e.g. the Basic stub) are
+  treated as a no-op.
+  """
+  @spec configure(
+          Flux.AI.Provider.pipeline_id(),
+          Flux.AI.Provider.mode(),
+          Flux.AI.Provider.mode_params()
+        ) :: :ok
+  def configure(pipeline_id, mode, params) do
+    provider = Registry.active()
+
+    if function_exported?(provider, :configure, 3) do
+      provider.configure(pipeline_id, mode, params)
+    else
+      :ok
+    end
+  end
+
+  @doc """
+  Ingests a whole data row; the active provider extracts what it needs based on the
+  pipeline's configured mode. Falls back to recording each numeric field individually
+  for providers that don't implement `record_observation/2` (e.g. the Basic stub).
+  """
+  @spec record_observation(Flux.AI.Provider.pipeline_id(), map()) :: :ok
+  def record_observation(pipeline_id, data) when is_map(data) do
+    provider = Registry.active()
+
+    if function_exported?(provider, :record_observation, 2) do
+      provider.record_observation(pipeline_id, data)
+    else
+      for {field, value} <- data, is_number(value) do
+        provider.record(pipeline_id, field, value)
+      end
+
+      :ok
+    end
+  end
+
   @spec score(Flux.AI.Provider.pipeline_id(), map(), [Flux.AI.Provider.field()]) :: {:ok, float()}
   def score(pipeline_id, data, fields), do: Registry.active().score(pipeline_id, data, fields)
 
