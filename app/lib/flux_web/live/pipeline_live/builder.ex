@@ -833,11 +833,13 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp anomaly_config(assigns) do
     config = assigns.node.data["config"] || %{}
     mode = config["mode"] || "numeric"
+    algorithm = config["algorithm"] || "ensemble"
 
     assigns =
       assigns
       |> assign(:config, config)
       |> assign(:mode, mode)
+      |> assign(:algorithm, algorithm)
 
     ~H"""
     <div class="space-y-3">
@@ -912,7 +914,25 @@ defmodule FluxWeb.PipelineLive.Builder do
         />
       </div>
 
-      <div :if={@advanced_ai and @mode == "multivariate"} class="grid grid-cols-2 gap-2">
+      <div :if={@advanced_ai and @mode == "multivariate"} class="form-control">
+        <.field_label
+          text="Algorithm"
+          tooltip="Ensemble suits irregular/multimodal data; distance-based suits roughly elliptical data and is the lightest to fit and reload."
+        />
+        <select name="config[algorithm]" class="select select-bordered select-sm w-full">
+          <option value="ensemble" selected={@algorithm == "ensemble"}>
+            Ensemble (default)
+          </option>
+          <option value="distance" selected={@algorithm == "distance"}>
+            Distance-based
+          </option>
+        </select>
+      </div>
+
+      <div
+        :if={@advanced_ai and @mode == "multivariate" and @algorithm == "ensemble"}
+        class="grid grid-cols-2 gap-2"
+      >
         <div class="form-control">
           <.field_label text="Trees" tooltip="Number of trees in the detection ensemble." />
           <input
@@ -940,12 +960,12 @@ defmodule FluxWeb.PipelineLive.Builder do
       <div class="form-control">
         <.field_label
           text="Threshold"
-          tooltip={threshold_tooltip(@mode)}
+          tooltip={threshold_tooltip(@mode, @algorithm)}
         />
         <input
           type="number"
           name="config[threshold]"
-          value={@config["threshold"] || default_threshold(@mode)}
+          value={@config["threshold"] || default_threshold(@mode, @algorithm)}
           step="0.05"
           min="0"
           max="10"
@@ -963,10 +983,19 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp fields_placeholder("multivariate"), do: "amount, lat, lng"
   defp fields_placeholder(_), do: "cpu_usage, memory, latency"
 
+  # Multivariate threshold depends on the algorithm (ensemble score 0–1 vs distance).
+  defp default_threshold("multivariate", "distance"), do: 3.0
+  defp default_threshold(mode, _algorithm), do: default_threshold(mode)
+
   defp default_threshold("seasonal"), do: 3.0
   defp default_threshold("multivariate"), do: 0.65
   defp default_threshold("categorical"), do: 4.0
   defp default_threshold(_), do: 2.0
+
+  defp threshold_tooltip("multivariate", "distance"),
+    do: "Distance from the joint centre; values above this are flagged (≈3 is typical)."
+
+  defp threshold_tooltip(mode, _algorithm), do: threshold_tooltip(mode)
 
   defp threshold_tooltip("multivariate"),
     do: "Anomaly score in 0–1; values above this are flagged (≈0.6–0.7 is typical)."
