@@ -92,7 +92,7 @@ defmodule Flux.Pipeline.Interpreter do
   end
 
   defp run_anomaly_detect(data, config) do
-    fields = Map.get(config, "fields", [])
+    fields = parse_fields(Map.get(config, "fields", []))
     threshold = Map.get(config, "threshold", 2.0)
     pipeline_id = Map.get(config, "pipeline_id")
 
@@ -108,4 +108,13 @@ defmodule Flux.Pipeline.Interpreter do
         {:ok, data}
     end
   end
+
+  # The builder stores `fields` as a comma-separated string; the scorer needs a list.
+  defp parse_fields(fields) when is_list(fields), do: fields
+
+  defp parse_fields(fields) when is_binary(fields) do
+    fields |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+  end
+
+  defp parse_fields(_), do: []
 end
