@@ -27,6 +27,8 @@ defmodule Flux.Pipeline.Runner do
   Starts a Broadway pipeline for the given pipeline configuration.
   """
   def start_link(%Pipeline{} = pipeline) do
+    configure_detector(pipeline)
+
     Broadway.start_link(__MODULE__,
       name: via_tuple(pipeline.id),
       producer: producer_config(pipeline),
@@ -96,6 +98,57 @@ defmodule Flux.Pipeline.Runner do
         %{}
     end
   end
+
+  # Registers this pipeline's anomaly-detection mode with the active AI provider
+  # once at startup, so record-time ingestion and score-time dispatch know the mode
+  # without re-reading the step config on the hot path. No-op when there is no
+  # `anomaly_detect` step or the active provider is the Community stub.
+  defp configure_detector(pipeline) do
+    case extract_ai_config(pipeline) do
+      nil ->
+        :ok
+
+      config ->
+        mode = mode_atom(Map.get(config, "mode", "numeric"))
+        Flux.AI.configure(pipeline.id, mode, mode_params(config))
+    end
+  end
+
+  # Mode-specific params, normalized from the (flat, string-valued) step config the
+  # builder produces. `fields` is parsed from its comma-separated form into a list.
+  defp mode_params(config) do
+    %{
+      "fields" => parse_fields(Map.get(config, "fields")),
+      "period" => Map.get(config, "period"),
+      "smoothing" => Map.get(config, "smoothing"),
+      "n_trees" => Map.get(config, "n_trees"),
+      "subsample" => Map.get(config, "subsample")
+    }
+  end
+
+  defp parse_fields(fields) when is_list(fields), do: fields
+
+  defp parse_fields(fields) when is_binary(fields) do
+    fields |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+  end
+
+  defp parse_fields(_), do: []
+
+  # Finds the `anomaly_detect` step's config in the compiled IR (`steps["steps"]`),
+  # the same config the Interpreter runs. Returns nil when absent.
+  defp extract_ai_config(%Pipeline{steps: %{"steps" => steps}}) when is_list(steps) do
+    Enum.find_value(steps, fn
+      %{"type" => "ai", "operation" => "anomaly_detect"} = step -> Map.get(step, "config", %{})
+      _ -> nil
+    end)
+  end
+
+  defp extract_ai_config(_pipeline), do: nil
+
+  defp mode_atom("seasonal"), do: :seasonal
+  defp mode_atom("multivariate"), do: :multivariate
+  defp mode_atom("categorical"), do: :categorical
+  defp mode_atom(_), do: :numeric
 
   defp processors_config(pipeline) do
     config = Map.get(pipeline.config, "processors", %{})
@@ -190,12 +243,12 @@ defmodule Flux.Pipeline.Runner do
   defp parse_data(data) when is_map(data), do: data
   defp parse_data(data), do: %{"raw" => data}
 
+  # Hands the whole row to the active provider, which extracts what it needs based
+  # on the pipeline's configured mode (numeric per-field, categorical strings, or a
+  # joint multivariate vector). The Community stub no-ops; the facade falls back to
+  # per-numeric-field recording for providers without `record_observation/2`.
   defp record_metrics(pipeline_id, data) when is_map(data) do
-    for {key, value} <- data, is_number(value) do
-      Flux.AI.record(pipeline_id, key, value)
-    end
-
-    :ok
+    Flux.AI.record_observation(pipeline_id, data)
   end
 
   defp record_metrics(_pipeline_id, _data), do: :ok
