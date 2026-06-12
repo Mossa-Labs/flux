@@ -121,6 +121,7 @@ defmodule Flux.Pipeline.Runner do
       "fields" => parse_fields(Map.get(config, "fields")),
       "period" => Map.get(config, "period"),
       "smoothing" => Map.get(config, "smoothing"),
+      "algorithm" => Map.get(config, "algorithm"),
       "n_trees" => Map.get(config, "n_trees"),
       "subsample" => Map.get(config, "subsample")
     }
