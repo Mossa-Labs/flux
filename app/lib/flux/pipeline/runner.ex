@@ -122,6 +122,9 @@ defmodule Flux.Pipeline.Runner do
       "period" => Map.get(config, "period"),
       "smoothing" => Map.get(config, "smoothing"),
       "algorithm" => Map.get(config, "algorithm"),
+      "alpha" => Map.get(config, "alpha"),
+      "beta" => Map.get(config, "beta"),
+      "gamma" => Map.get(config, "gamma"),
       "n_trees" => Map.get(config, "n_trees"),
       "subsample" => Map.get(config, "subsample")
     }
