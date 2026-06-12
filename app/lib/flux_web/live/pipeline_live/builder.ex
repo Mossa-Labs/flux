@@ -24,6 +24,7 @@ defmodule FluxWeb.PipelineLive.Builder do
      |> assign(:initial_ir, initial_ir)
      |> assign(:selected_node, nil)
      |> assign(:selected_edge, nil)
+     |> assign(:advanced_ai, Flux.License.has_feature?(:advanced_ai))
      |> assign(:page_title, "Pipeline Builder")}
   end
 
@@ -114,7 +115,7 @@ defmodule FluxWeb.PipelineLive.Builder do
         <div class="flex-1 overflow-y-auto p-4">
           <%= cond do %>
             <% @selected_node -> %>
-              <.node_config_form node={@selected_node} />
+              <.node_config_form node={@selected_node} advanced_ai={@advanced_ai} />
             <% @selected_edge -> %>
               <.edge_config_form edge={@selected_edge} ir={@initial_ir} />
             <% true -> %>
@@ -259,7 +260,9 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp node_config_form(%{node: %{type: "source"}} = assigns),
     do: ~H"<.source_config node={@node} />"
 
-  defp node_config_form(%{node: %{type: "step"}} = assigns), do: ~H"<.step_config node={@node} />"
+  defp node_config_form(%{node: %{type: "step"}} = assigns),
+    do: ~H"<.step_config node={@node} advanced_ai={@advanced_ai} />"
+
   defp node_config_form(%{node: %{type: "sink"}} = assigns), do: ~H"<.sink_config node={@node} />"
   defp node_config_form(assigns), do: ~H"<.empty_config_state />"
 
@@ -606,7 +609,7 @@ defmodule FluxWeb.PipelineLive.Builder do
           <% "script" -> %>
             <.script_config node={@node} />
           <% "anomaly" -> %>
-            <.anomaly_config node={@node} />
+            <.anomaly_config node={@node} advanced_ai={@advanced_ai} />
           <% _ -> %>
             <p class="text-sm text-base-content/60">Unknown step type</p>
         <% end %>
@@ -829,35 +832,122 @@ defmodule FluxWeb.PipelineLive.Builder do
   # Anomaly detection step configuration
   defp anomaly_config(assigns) do
     config = assigns.node.data["config"] || %{}
-    assigns = assign(assigns, :config, config)
+    mode = config["mode"] || "numeric"
+
+    assigns =
+      assigns
+      |> assign(:config, config)
+      |> assign(:mode, mode)
 
     ~H"""
     <div class="space-y-3">
       <div class="form-control">
         <.field_label
+          text="Detection Mode"
+          tooltip="How anomalies are scored. Advanced modes (seasonal, multivariate, categorical) are a Pro feature."
+        />
+        <select
+          name="config[mode]"
+          disabled={!@advanced_ai}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="numeric" selected={@mode == "numeric"}>Numeric — rolling z-score</option>
+          <option value="seasonal" selected={@mode == "seasonal"} disabled={!@advanced_ai}>
+            Seasonal — cycle-aware {pro_suffix(@advanced_ai)}
+          </option>
+          <option value="multivariate" selected={@mode == "multivariate"} disabled={!@advanced_ai}>
+            Multivariate — joint outliers {pro_suffix(@advanced_ai)}
+          </option>
+          <option value="categorical" selected={@mode == "categorical"} disabled={!@advanced_ai}>
+            Categorical — rare-value {pro_suffix(@advanced_ai)}
+          </option>
+        </select>
+        <p :if={!@advanced_ai} class="text-xs text-base-content/50 mt-1">
+          Advanced detection modes require a Pro license.
+        </p>
+      </div>
+
+      <div class="form-control">
+        <.field_label
           text="Fields to Monitor"
-          tooltip="Comma-separated list of numeric fields to analyze for anomalies"
+          tooltip="Comma-separated fields to analyze. Multivariate scores them jointly as one feature vector; the others score each field independently."
         />
         <input
           type="text"
           name="config[fields]"
           value={format_values(@config["fields"])}
-          placeholder="cpu_usage, memory, latency"
+          placeholder={fields_placeholder(@mode)}
           class="input input-bordered input-sm w-full"
         />
+      </div>
+
+      <%!-- Mode-specific parameters (Pro) --%>
+      <div :if={@advanced_ai and @mode == "seasonal"} class="form-control">
+        <.field_label
+          text="Seasonal Period"
+          tooltip="Number of samples in one full cycle (e.g. 7 for daily samples with a weekly cycle, 24 for hourly with a daily cycle)."
+        />
+        <input
+          type="number"
+          name="config[period]"
+          value={@config["period"] || 7}
+          min="2"
+          step="1"
+          class="input input-bordered input-sm w-full"
+        />
+      </div>
+
+      <div :if={@advanced_ai and @mode == "categorical"} class="form-control">
+        <.field_label
+          text="Smoothing (α)"
+          tooltip="Smoothing constant. Higher values are more forgiving of unseen values."
+        />
+        <input
+          type="number"
+          name="config[smoothing]"
+          value={@config["smoothing"] || 1.0}
+          min="0.01"
+          step="0.1"
+          class="input input-bordered input-sm w-full"
+        />
+      </div>
+
+      <div :if={@advanced_ai and @mode == "multivariate"} class="grid grid-cols-2 gap-2">
+        <div class="form-control">
+          <.field_label text="Trees" tooltip="Number of trees in the detection ensemble." />
+          <input
+            type="number"
+            name="config[n_trees]"
+            value={@config["n_trees"] || 100}
+            min="10"
+            step="10"
+            class="input input-bordered input-sm w-full"
+          />
+        </div>
+        <div class="form-control">
+          <.field_label text="Subsample" tooltip="Vectors sampled per tree when fitting." />
+          <input
+            type="number"
+            name="config[subsample]"
+            value={@config["subsample"] || 256}
+            min="16"
+            step="16"
+            class="input input-bordered input-sm w-full"
+          />
+        </div>
       </div>
 
       <div class="form-control">
         <.field_label
           text="Threshold"
-          tooltip="Number of standard deviations from the mean. Values beyond this are flagged as anomalies."
+          tooltip={threshold_tooltip(@mode)}
         />
         <input
           type="number"
           name="config[threshold]"
-          value={@config["threshold"] || 2.0}
-          step="0.1"
-          min="0.5"
+          value={@config["threshold"] || default_threshold(@mode)}
+          step="0.05"
+          min="0"
           max="10"
           class="input input-bordered input-sm w-full"
         />
@@ -865,6 +955,27 @@ defmodule FluxWeb.PipelineLive.Builder do
     </div>
     """
   end
+
+  defp pro_suffix(true), do: ""
+  defp pro_suffix(false), do: "(Pro)"
+
+  defp fields_placeholder("categorical"), do: "country, plan_tier"
+  defp fields_placeholder("multivariate"), do: "amount, lat, lng"
+  defp fields_placeholder(_), do: "cpu_usage, memory, latency"
+
+  defp default_threshold("seasonal"), do: 3.0
+  defp default_threshold("multivariate"), do: 0.65
+  defp default_threshold("categorical"), do: 4.0
+  defp default_threshold(_), do: 2.0
+
+  defp threshold_tooltip("multivariate"),
+    do: "Anomaly score in 0–1; values above this are flagged (≈0.6–0.7 is typical)."
+
+  defp threshold_tooltip("categorical"),
+    do: "Rarity score in bits; rarer values score higher. Above this is flagged."
+
+  defp threshold_tooltip(_),
+    do: "Standard deviations from the (de-seasonalized) mean. Beyond this is flagged."
 
   # ── Edge configuration ────────────────────────────────────────────
 
