@@ -35,6 +35,7 @@ defmodule Flux.Pipeline.Runner do
       processors: processors_config(pipeline),
       context: %{
         pipeline_id: pipeline.id,
+        version: pipeline.current_version,
         steps: pipeline.steps,
         destination_queue: pipeline.destination_queue,
         sink_ids: pipeline.sink_ids || []
@@ -165,6 +166,7 @@ defmodule Flux.Pipeline.Runner do
   def handle_message(_processor, %Message{data: data} = message, context) do
     %{
       pipeline_id: pipeline_id,
+      version: version,
       steps: steps,
       destination_queue: destination_queue,
       sink_ids: sink_ids
@@ -180,7 +182,7 @@ defmodule Flux.Pipeline.Runner do
         :telemetry.execute(
           [:flux, :pipeline, :message, :processed],
           %{duration: duration, count: 1},
-          %{pipeline_id: pipeline_id}
+          %{pipeline_id: pipeline_id, version: version}
         )
 
         record_metrics(pipeline_id, transformed_data)
@@ -194,7 +196,7 @@ defmodule Flux.Pipeline.Runner do
         :telemetry.execute(
           [:flux, :pipeline, :message, :skipped],
           %{count: 1},
-          %{pipeline_id: pipeline_id}
+          %{pipeline_id: pipeline_id, version: version}
         )
 
         Logger.debug("Message skipped in pipeline #{pipeline_id}: #{inspect(reason)}")
@@ -207,7 +209,7 @@ defmodule Flux.Pipeline.Runner do
         :telemetry.execute(
           [:flux, :pipeline, :message, :failed],
           %{count: 1},
-          %{pipeline_id: pipeline_id}
+          %{pipeline_id: pipeline_id, version: version}
         )
 
         Logger.error("Message failed in pipeline #{pipeline_id}: #{inspect(reason)}")

@@ -176,8 +176,12 @@ defmodule Flux.Pipeline.Manager do
           Supervision.terminate_pipeline(pid)
 
           case Pipelines.get_pipeline!(pipeline_id) do
-            nil -> :ok
-            pipeline -> Pipelines.update_status(pipeline, "stopped")
+            nil ->
+              :ok
+
+            pipeline ->
+              Pipelines.update_status(pipeline, "stopped")
+              Pipelines.set_running_version(pipeline, nil)
           end
 
           :ok
@@ -193,9 +197,19 @@ defmodule Flux.Pipeline.Manager do
   end
 
   defp do_start_pipeline(pipeline) do
-    pipeline
-    |> Runner.child_spec()
-    |> Supervision.start_pipeline()
+    result =
+      pipeline
+      |> Runner.child_spec()
+      |> Supervision.start_pipeline()
+
+    # Stamp which config version this runner loaded, so the UI/telemetry can show
+    # whether a running pipeline lags the latest saved version.
+    case result do
+      {:ok, _pid} -> Pipelines.set_running_version(pipeline, pipeline.current_version)
+      _ -> :ok
+    end
+
+    result
   end
 
   # Per-org fairness + a node-wide ceiling on user-initiated pipeline starts.
