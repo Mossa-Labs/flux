@@ -25,6 +25,12 @@ defmodule Flux.Pipelines.Pipeline do
     field :steps, :map, default: %{}
     field :sink_ids, {:array, :integer}, default: []
 
+    # Set programmatically by Flux.Pipelines (never via changeset cast):
+    # `current_version` tracks the live config's version; `running_version`
+    # is the version the live Broadway runner loaded (nil when stopped).
+    field :current_version, :integer
+    field :running_version, :integer
+
     belongs_to :organization, Organization
 
     timestamps(type: :utc_datetime)

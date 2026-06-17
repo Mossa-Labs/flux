@@ -38,6 +38,8 @@ defmodule FluxWeb.API.PipelineJSON do
       config: p.config,
       steps: p.steps,
       sink_ids: p.sink_ids || [],
+      current_version: p.current_version,
+      running_version: p.running_version,
       metrics: metrics,
       inserted_at: p.inserted_at,
       updated_at: p.updated_at

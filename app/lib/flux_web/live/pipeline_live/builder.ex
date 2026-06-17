@@ -1183,10 +1183,12 @@ defmodule FluxWeb.PipelineLive.Builder do
         organization_id: socket.assigns.current_scope.organization_id
       }
 
+      opts = [actor_id: socket.assigns.current_scope.user.id]
+
       result =
         case socket.assigns.action do
-          :new -> Pipelines.create_pipeline(attrs)
-          :edit -> Pipelines.update_pipeline(socket.assigns.pipeline, attrs)
+          :new -> Pipelines.create_pipeline(attrs, opts)
+          :edit -> Pipelines.update_pipeline(socket.assigns.pipeline, attrs, opts)
         end
 
       case result do

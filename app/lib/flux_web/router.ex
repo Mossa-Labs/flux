@@ -49,6 +49,8 @@ defmodule FluxWeb.Router do
     get("/pipelines/:id", PipelineController, :show)
     post("/pipelines/:id/start", PipelineController, :start)
     post("/pipelines/:id/stop", PipelineController, :stop)
+    get("/pipelines/:id/versions", PipelineVersionController, :index)
+    post("/pipelines/:id/rollback", PipelineVersionController, :rollback)
 
     get("/sinks", SinkController, :index)
 
