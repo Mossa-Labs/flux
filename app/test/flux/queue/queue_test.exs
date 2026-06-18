@@ -58,5 +58,9 @@ defmodule Flux.QueueTest do
     test "discard_message/1 returns pro_required" do
       assert {:error, {:pro_required, :dlq}} = Queue.discard_message(1)
     end
+
+    test "replay_dlq/2 returns pro_required" do
+      assert {:error, {:pro_required, :dlq}} = Queue.replay_dlq(%{}, 100)
+    end
   end
 end

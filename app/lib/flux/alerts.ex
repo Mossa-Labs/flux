@@ -56,4 +56,12 @@ defmodule Flux.Alerts do
 
   @spec test_channel(Provider.channel()) :: :ok | {:error, term()}
   def test_channel(channel), do: Registry.active().test_channel(channel)
+
+  @doc """
+  Records a rule-less event (e.g. a bulk DLQ replay) in alert history. No-op in
+  Community builds.
+  """
+  @spec record_event(Provider.organization_id(), map()) :: :ok
+  def record_event(organization_id, event),
+    do: Registry.active().record_event(organization_id, event)
 end
