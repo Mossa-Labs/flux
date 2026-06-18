@@ -108,6 +108,9 @@ defmodule Flux.AlertsTestProvider do
   @impl true
   def test_channel(_channel), do: :ok
 
+  @impl true
+  def record_event(_org_id, _event), do: :ok
+
   defp update(org_id, rule_id, fun) do
     Agent.get_and_update(@agent, fn st ->
       case Enum.find_index(

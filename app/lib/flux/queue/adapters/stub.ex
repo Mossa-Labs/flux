@@ -47,6 +47,9 @@ defmodule Flux.Queue.Adapters.Stub do
   @impl Flux.Queue.Adapter
   def discard_message(_delivery_tag), do: dlq_required()
 
+  @impl Flux.Queue.Adapter
+  def replay_dlq(_filters, _limit), do: dlq_required()
+
   @impl GenServer
   def init(opts) do
     feature = Keyword.get(opts, :feature, :pro_queue)

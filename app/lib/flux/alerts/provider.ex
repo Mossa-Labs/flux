@@ -51,4 +51,14 @@ defmodule Flux.Alerts.Provider do
               {:ok, rule()} | {:error, term()}
   @callback list_history(organization_id(), opts :: keyword()) :: [history_entry()]
   @callback test_channel(channel()) :: :ok | {:error, term()}
+
+  @doc """
+  Records a rule-less event in alert history (e.g. a bulk DLQ replay run).
+
+  Unlike a fired rule, these events have no `alert_rule` association; the
+  `event` map carries its own `trigger_type` plus `trigger_data`/`channels_sent`.
+  Community is a no-op returning `:ok`, keeping callers total in builds without a
+  Postgres-backed provider.
+  """
+  @callback record_event(organization_id(), event :: map()) :: :ok
 end

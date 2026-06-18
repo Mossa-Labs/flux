@@ -35,4 +35,7 @@ defmodule Flux.Alerts.Providers.Community do
 
   @impl true
   def test_channel(_channel), do: @pro_required
+
+  @impl true
+  def record_event(_organization_id, _event), do: :ok
 end

@@ -113,6 +113,20 @@ defmodule Flux.Queue do
     dlq_call(:discard_message, [delivery_tag])
   end
 
+  @doc """
+  Bulk-replays up to `limit` dead-lettered messages matching `filters` back to
+  their original queues. Non-matching messages are left in the DLQ.
+
+  Drives one batch; `Flux.Workers.ReplayWorker` loops until the returned
+  `exhausted?` flag is `true`. Returns `{:error, {:pro_required, :dlq}}` when the
+  active adapter does not implement DLQ replay.
+  """
+  @spec replay_dlq(Flux.Queue.Adapter.replay_filters(), pos_integer()) ::
+          {:ok, Flux.Queue.Adapter.replay_result()} | error()
+  def replay_dlq(filters, limit) do
+    dlq_call(:replay_dlq, [filters, limit])
+  end
+
   # DLQ callbacks are optional on the adapter behaviour. Guard with
   # function_exported?/3 so an adapter that omits them (e.g. Memory) yields a
   # clean upgrade-prompt error instead of an UndefinedFunctionError.

@@ -9,7 +9,9 @@ defmodule FluxWeb.DLQLive.Index do
   """
   use FluxWeb, :live_view
 
+  alias Flux.Pipelines
   alias Flux.Queue
+  alias Flux.Queue.Replay
   alias FluxWeb.Components.UpgradePrompt
 
   @refresh_interval_ms 10_000
@@ -43,6 +45,7 @@ defmodule FluxWeb.DLQLive.Index do
         {:ok,
          socket
          |> base_assigns(entitled?: true)
+         |> assign(:pipelines, list_pipelines(scope))
          |> load_dlq()}
 
       true ->
@@ -62,7 +65,21 @@ defmodule FluxWeb.DLQLive.Index do
     |> assign(:expanded_tag, nil)
     |> assign(:loading, entitled?)
     |> assign(:unsupported, false)
+    |> assign(:per_page, @per_page)
+    |> assign(:filters, %{})
+    |> assign(:pipelines, [])
+    |> assign(:selected, MapSet.new())
+    |> assign(:replay_job_id, nil)
+    |> assign(:replay_progress, nil)
   end
+
+  defp list_pipelines(%{organization_id: org_id}) when not is_nil(org_id) do
+    Pipelines.list_pipelines(org_id)
+  rescue
+    _ -> []
+  end
+
+  defp list_pipelines(_), do: []
 
   @impl true
   def handle_info(:refresh, socket) do
@@ -86,6 +103,23 @@ defmodule FluxWeb.DLQLive.Index do
         {:noreply, assign(socket, :seconds_left, secs - 1)}
       end
     end
+  end
+
+  def handle_info({:replay_progress, progress}, socket) do
+    {:noreply, assign(socket, :replay_progress, progress)}
+  end
+
+  def handle_info({:replay_done, progress}, socket) do
+    {:noreply,
+     socket
+     |> assign(:replay_progress, progress)
+     |> assign(:replay_job_id, nil)
+     |> assign(:selected, MapSet.new())
+     |> put_flash(
+       :info,
+       "Replay finished: #{progress.processed} replayed, #{progress.skipped} skipped, #{progress.failed} failed."
+     )
+     |> load_dlq()}
   end
 
   def handle_info(_msg, socket), do: {:noreply, socket}
@@ -131,6 +165,81 @@ defmodule FluxWeb.DLQLive.Index do
     {:noreply, run_dlq_bulk(socket, &Queue.discard_message/1, "Discarded")}
   end
 
+  def handle_event("filter", %{"filters" => filters}, socket) do
+    {:noreply,
+     socket
+     |> assign(:filters, prune_filters(filters))
+     |> assign(:page, 0)
+     |> assign(:selected, MapSet.new())
+     |> load_dlq()}
+  end
+
+  def handle_event("clear_filters", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:filters, %{})
+     |> assign(:page, 0)
+     |> assign(:selected, MapSet.new())
+     |> load_dlq()}
+  end
+
+  def handle_event("toggle_select", %{"tag" => tag}, socket) do
+    selected =
+      if MapSet.member?(socket.assigns.selected, tag) do
+        MapSet.delete(socket.assigns.selected, tag)
+      else
+        MapSet.put(socket.assigns.selected, tag)
+      end
+
+    {:noreply, assign(socket, :selected, selected)}
+  end
+
+  def handle_event("replay_selected", _params, socket) do
+    delivery_tags =
+      socket.assigns.messages
+      |> Enum.filter(&MapSet.member?(socket.assigns.selected, to_string(&1.delivery_tag)))
+      |> Enum.map(& &1.delivery_tag)
+
+    {ok, failed} =
+      Enum.reduce(delivery_tags, {0, 0}, fn tag, {ok, failed} ->
+        case Queue.retry_message(tag) do
+          :ok -> {ok + 1, failed}
+          {:error, _} -> {ok, failed + 1}
+        end
+      end)
+
+    socket = socket |> assign(:selected, MapSet.new()) |> load_dlq()
+
+    socket =
+      if failed == 0 do
+        put_flash(socket, :info, "Replayed #{ok} selected message(s).")
+      else
+        put_flash(socket, :error, "Replayed #{ok} message(s); #{failed} failed.")
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("replay_all_filtered", _params, socket) do
+    scope = socket.assigns.current_scope
+
+    replay_filters = to_replay_filters(socket.assigns.filters)
+
+    case Replay.replay_messages(replay_filters, organization_id: scope.organization_id) do
+      {:ok, %Oban.Job{id: job_id}} ->
+        if connected?(socket), do: Phoenix.PubSub.subscribe(Flux.PubSub, Replay.topic(job_id))
+
+        {:noreply,
+         socket
+         |> assign(:replay_job_id, job_id)
+         |> assign(:replay_progress, Replay.zero_progress())
+         |> put_flash(:info, "Bulk replay started.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not start replay: #{inspect(reason)}")}
+    end
+  end
+
   def handle_event("prev_page", _params, socket) do
     page = max(socket.assigns.page - 1, 0)
     {:noreply, socket |> assign(:page, page) |> load_dlq()}
@@ -154,8 +263,15 @@ defmodule FluxWeb.DLQLive.Index do
 
     socket =
       case Queue.list_dlq_messages(@per_page, page * @per_page) do
-        {:ok, messages} -> assign(socket, :messages, messages)
-        {:error, _} -> assign(socket, :messages, [])
+        {:ok, messages} ->
+          assign(
+            socket,
+            :messages,
+            filter_messages(messages, socket.assigns.filters, socket.assigns.pipelines)
+          )
+
+        {:error, _} ->
+          assign(socket, :messages, [])
       end
 
     assign(socket, :loading, false)
@@ -228,18 +344,34 @@ defmodule FluxWeb.DLQLive.Index do
         </div>
         <div :if={@dlq_entitled && !@unsupported && @messages != []} class="flex items-center gap-2">
           <button
+            :if={MapSet.size(@selected) > 0}
+            class="btn btn-sm btn-primary"
+            phx-click="replay_selected"
+          >
+            <.icon name="hero-arrow-uturn-left" class="w-4 h-4" />
+            Replay selected ({MapSet.size(@selected)})
+          </button>
+          <button
+            class="btn btn-sm btn-outline"
+            phx-click="replay_all_filtered"
+            disabled={@replay_job_id != nil}
+            data-confirm="Replay every dead-lettered message matching the current filters back to its original queue?"
+          >
+            <.icon name="hero-arrow-path" class="w-4 h-4" /> Replay all (filtered)
+          </button>
+          <button
             class="btn btn-sm btn-outline"
             phx-click="retry_all"
             data-confirm="Replay all messages on this page back to their original queues?"
           >
-            <.icon name="hero-arrow-path" class="w-4 h-4" /> Retry all
+            <.icon name="hero-arrow-path" class="w-4 h-4" /> Retry page
           </button>
           <button
             class="btn btn-sm btn-outline btn-error"
             phx-click="discard_all"
             data-confirm="Permanently discard all messages on this page? This cannot be undone."
           >
-            <.icon name="hero-trash" class="w-4 h-4" /> Discard all
+            <.icon name="hero-trash" class="w-4 h-4" /> Discard page
           </button>
         </div>
       </div>
@@ -252,6 +384,102 @@ defmodule FluxWeb.DLQLive.Index do
       >
         The active queue backend does not support dead-letter management.
         Configure a Pro broker (RabbitMQ) to enable it.
+      </div>
+
+      <%!-- Filter bar --%>
+      <.form
+        :if={@dlq_entitled && !@unsupported}
+        for={%{}}
+        as={:filters}
+        id="dlq-filters"
+        phx-change="filter"
+        phx-submit="filter"
+        class="card bg-base-100 shadow-sm border border-base-200"
+      >
+        <div class="card-body p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+          <label class="form-control">
+            <span class="label-text text-xs">Original queue</span>
+            <input
+              type="text"
+              name="filters[queue]"
+              value={@filters["queue"]}
+              placeholder="any"
+              class="input input-sm input-bordered"
+            />
+          </label>
+          <label class="form-control">
+            <span class="label-text text-xs">Source</span>
+            <input
+              type="text"
+              name="filters[source]"
+              value={@filters["source"]}
+              placeholder="any"
+              class="input input-sm input-bordered"
+            />
+          </label>
+          <label class="form-control">
+            <span class="label-text text-xs">Pipeline</span>
+            <select name="filters[pipeline_id]" class="select select-sm select-bordered">
+              <option value="">Any pipeline</option>
+              <option
+                :for={pipeline <- @pipelines}
+                value={pipeline.id}
+                selected={to_string(pipeline.id) == @filters["pipeline_id"]}
+              >
+                {pipeline.name}
+              </option>
+            </select>
+          </label>
+          <label class="form-control">
+            <span class="label-text text-xs">From</span>
+            <input
+              type="datetime-local"
+              name="filters[from]"
+              value={@filters["from"]}
+              class="input input-sm input-bordered"
+            />
+          </label>
+          <label class="form-control">
+            <span class="label-text text-xs">To</span>
+            <input
+              type="datetime-local"
+              name="filters[to]"
+              value={@filters["to"]}
+              class="input input-sm input-bordered"
+            />
+          </label>
+        </div>
+        <div :if={@filters != %{}} class="px-4 pb-4 -mt-1">
+          <button type="button" class="btn btn-xs btn-ghost" phx-click="clear_filters">
+            <.icon name="hero-x-mark" class="w-3 h-3" /> Clear filters
+          </button>
+        </div>
+      </.form>
+
+      <%!-- Bulk replay progress --%>
+      <div
+        :if={@dlq_entitled && !@unsupported && @replay_progress != nil}
+        id="dlq-replay-progress"
+        class="card bg-base-100 shadow-sm border border-base-200"
+      >
+        <div class="card-body p-4 space-y-2">
+          <div class="flex items-center justify-between text-sm">
+            <span class="font-medium inline-flex items-center gap-2">
+              <span :if={@replay_job_id != nil} class="loading loading-spinner loading-xs"></span>
+              {if @replay_job_id != nil, do: "Replaying…", else: "Replay complete"}
+            </span>
+            <span class="text-base-content/60">
+              {@replay_progress.processed} / {@replay_progress.total} replayed
+              · {@replay_progress.skipped} skipped · {@replay_progress.failed} failed
+            </span>
+          </div>
+          <progress
+            class="progress progress-primary w-full"
+            value={@replay_progress.processed}
+            max={max(@replay_progress.total, 1)}
+          >
+          </progress>
+        </div>
       </div>
 
       <%!-- Depth counter --%>
@@ -303,7 +531,9 @@ defmodule FluxWeb.DLQLive.Index do
           <table :if={!@loading && @messages != []} class="table">
             <thead>
               <tr>
+                <th class="w-8"></th>
                 <th>Original queue</th>
+                <th>Source</th>
                 <th>Failure reason</th>
                 <th>Timestamp</th>
                 <th>Payload</th>
@@ -313,7 +543,19 @@ defmodule FluxWeb.DLQLive.Index do
             <tbody>
               <%= for msg <- @messages do %>
                 <tr id={"dlq-row-#{msg.delivery_tag}"} class="hover">
+                  <td>
+                    <input
+                      type="checkbox"
+                      class="checkbox checkbox-sm"
+                      phx-click="toggle_select"
+                      phx-value-tag={to_string(msg.delivery_tag)}
+                      checked={MapSet.member?(@selected, to_string(msg.delivery_tag))}
+                    />
+                  </td>
                   <td class="font-mono text-sm">{msg.original_queue || "—"}</td>
+                  <td class="font-mono text-sm text-base-content/70">
+                    {Map.get(msg, :source) || "—"}
+                  </td>
                   <td class="text-sm text-error">{msg.reason || "—"}</td>
                   <td class="text-sm text-base-content/70">{format_timestamp(msg.timestamp)}</td>
                   <td>
@@ -356,7 +598,7 @@ defmodule FluxWeb.DLQLive.Index do
                   :if={@expanded_tag == to_string(msg.delivery_tag)}
                   id={"dlq-json-#{msg.delivery_tag}"}
                 >
-                  <td colspan="5" class="bg-base-200/30">
+                  <td colspan="7" class="bg-base-200/30">
                     <pre class="text-xs overflow-x-auto p-2 whitespace-pre-wrap break-all">{full_json(msg.payload)}</pre>
                   </td>
                 </tr>
@@ -386,6 +628,98 @@ defmodule FluxWeb.DLQLive.Index do
     </div>
     """
   end
+
+  # -- Filtering helpers --
+
+  # Drop blank inputs so the table/replay treat them as "no filter".
+  defp prune_filters(filters) do
+    filters
+    |> Enum.reject(fn {_k, v} -> blank?(v) end)
+    |> Map.new()
+  end
+
+  # Convert the flat UI filter map into the shape `Flux.Queue.Replay` expects:
+  # `time_range` becomes a nested map of `DateTime`s (parsed as UTC).
+  defp to_replay_filters(filters) do
+    base = Map.take(filters, ["queue", "source", "pipeline_id"])
+    from = parse_dt(filters["from"])
+    to = parse_dt(filters["to"])
+
+    if from && to do
+      Map.put(base, "time_range", %{"from" => from, "to" => to})
+    else
+      base
+    end
+  end
+
+  # In-memory filter applied to the current page for preview. The authoritative
+  # whole-DLQ filtered replay runs in `Flux.Workers.ReplayWorker`.
+  defp filter_messages(messages, filters, _pipelines) when filters == %{}, do: messages
+
+  defp filter_messages(messages, filters, pipelines) do
+    queue = effective_queue(filters, pipelines)
+    source = filters["source"]
+    from = parse_dt(filters["from"])
+    to = parse_dt(filters["to"])
+
+    Enum.filter(messages, fn msg ->
+      queue_match?(msg, queue) and source_match?(msg, source) and time_match?(msg, from, to)
+    end)
+  end
+
+  defp effective_queue(filters, pipelines) do
+    case blank?(filters["pipeline_id"]) do
+      true ->
+        filters["queue"]
+
+      false ->
+        pid = filters["pipeline_id"]
+
+        case Enum.find(pipelines, fn p -> to_string(p.id) == to_string(pid) end) do
+          nil -> filters["queue"]
+          pipeline -> pipeline.source_queue
+        end
+    end
+  end
+
+  defp queue_match?(_msg, nil), do: true
+  defp queue_match?(msg, queue), do: Map.get(msg, :original_queue) == queue
+
+  defp source_match?(_msg, nil), do: true
+  defp source_match?(msg, source), do: Map.get(msg, :source) == source
+
+  defp time_match?(_msg, nil, _to), do: true
+  defp time_match?(_msg, _from, nil), do: true
+  defp time_match?(%{timestamp: nil}, _from, _to), do: false
+
+  defp time_match?(%{timestamp: ts}, from, to) do
+    DateTime.compare(ts, from) != :lt and DateTime.compare(ts, to) != :gt
+  end
+
+  defp time_match?(_msg, _from, _to), do: false
+
+  # datetime-local inputs are `YYYY-MM-DDTHH:MM[:SS]`, naive; treat as UTC.
+  defp parse_dt(value) do
+    if blank?(value) do
+      nil
+    else
+      case NaiveDateTime.from_iso8601(pad_seconds(value)) do
+        {:ok, naive} -> DateTime.from_naive!(naive, "Etc/UTC")
+        _ -> nil
+      end
+    end
+  end
+
+  defp pad_seconds(str) do
+    case String.split(str, ":") do
+      [_h, _m] -> str <> ":00"
+      _ -> str
+    end
+  end
+
+  defp blank?(nil), do: true
+  defp blank?(value) when is_binary(value), do: String.trim(value) == ""
+  defp blank?(_), do: false
 
   # -- Formatting helpers --
 
