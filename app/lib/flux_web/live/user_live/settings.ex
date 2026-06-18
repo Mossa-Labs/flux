@@ -61,6 +61,17 @@ defmodule FluxWeb.UserLive.Settings do
           Save Password
         </.button>
       </.form>
+
+      <div class="divider" />
+
+      <section id="appearance">
+        <h2 class="text-lg font-semibold tracking-tight text-base-content">Appearance</h2>
+        <p class="text-sm text-base-content/70 mb-3">
+          Choose how Flux looks on this device. <span class="font-medium">System</span>
+          follows your operating system setting.
+        </p>
+        <Layouts.theme_toggle />
+      </section>
     </div>
     """
   end
