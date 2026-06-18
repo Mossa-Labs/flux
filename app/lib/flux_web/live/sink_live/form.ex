@@ -43,7 +43,7 @@ defmodule FluxWeb.SinkLive.Form do
         <.link navigate={~p"/sinks"} class="btn btn-ghost btn-sm">
           <.icon name="hero-arrow-left" class="w-4 h-4" />
         </.link>
-        <h1 class="text-2xl font-bold bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
+        <h1 class="text-2xl font-bold tracking-tight text-base-content">
           {@page_title}
         </h1>
       </div>

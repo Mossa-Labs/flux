@@ -3,14 +3,14 @@
   <div class="navbar bg-base-100/80 backdrop-blur-md border-b border-base-200 flex-shrink-0 relative z-[100]">
     <div class="flex-none pl-4">
       <.link navigate={~p"/pipelines"} class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white font-bold">
+        <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold">
           F
         </div>
         <span class="text-2xl font-black tracking-tighter text-base-content">FLUX</span>
       </.link>
     </div>
     <div class="flex-1 px-4">
-      <h1 class="text-xl font-bold bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
+      <h1 class="text-xl font-bold tracking-tight text-base-content">
         {assigns[:page_title] || "Pipeline Builder"}
       </h1>
     </div>

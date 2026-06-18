@@ -54,7 +54,7 @@ defmodule FluxWeb.PipelineLive.Show do
           </.link>
           <div>
             <div class="flex items-center gap-3">
-              <h1 class="text-2xl font-bold bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
+              <h1 class="text-2xl font-bold tracking-tight text-base-content">
                 {@pipeline.name}
               </h1>
               <.pipeline_status_badge status={@pipeline.status} />

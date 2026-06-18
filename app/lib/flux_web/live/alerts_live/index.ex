@@ -334,7 +334,7 @@ defmodule FluxWeb.AlertsLive.Index do
     <div class="space-y-6">
       <div class="flex items-start justify-between gap-4">
         <div>
-          <h1 class="text-2xl font-bold bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
+          <h1 class="text-2xl font-bold tracking-tight text-base-content">
             Alerts
           </h1>
           <p class="text-base-content/60 mt-1">

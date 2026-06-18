@@ -21,74 +21,122 @@
   curl -sLO https://github.com/saadeghi/daisyui/releases/latest/download/daisyui-theme.js
   We ship with two themes, a light one inspired on Phoenix colors and a dark one inspired
   on Elixir colors. Build your own at: https://daisyui.com/theme-generator/ */
+/* Flux dark theme — Linear-derived (see DESIGN.md). Dark is the default surface.
+   Canvas #010102, four-step surface ladder, scarce lavender accent #5e6ad2. */
 @plugin "../vendor/daisyui-theme" {
   name: "dark";
-  default: false;
+  default: true;
   prefersdark: true;
   color-scheme: "dark";
-  --color-base-100: oklch(30.33% 0.016 252.42);
-  --color-base-200: oklch(25.26% 0.014 253.1);
-  --color-base-300: oklch(20.15% 0.012 254.09);
-  --color-base-content: oklch(97.807% 0.029 256.847);
-  --color-primary: oklch(58% 0.233 277.117);
-  --color-primary-content: oklch(96% 0.018 272.314);
-  --color-secondary: oklch(58% 0.233 277.117);
-  --color-secondary-content: oklch(96% 0.018 272.314);
-  --color-accent: oklch(60% 0.25 292.717);
-  --color-accent-content: oklch(96% 0.016 293.756);
-  --color-neutral: oklch(37% 0.044 257.287);
-  --color-neutral-content: oklch(98% 0.003 247.858);
-  --color-info: oklch(58% 0.158 241.966);
-  --color-info-content: oklch(97% 0.013 236.62);
-  --color-success: oklch(60% 0.118 184.704);
-  --color-success-content: oklch(98% 0.014 180.72);
+  --color-base-100: #010102; /* canvas */
+  --color-base-200: #08090b; /* surface-1 */
+  --color-base-300: #0e1014; /* surface-2 */
+  --color-base-content: #f7f8f8; /* ink */
+  --color-primary: #5e6ad2; /* lavender-blue */
+  --color-primary-content: #ffffff;
+  /* No second chromatic accent — secondary & accent reuse the lavender. */
+  --color-secondary: #5e6ad2;
+  --color-secondary-content: #ffffff;
+  --color-accent: #5e6ad2;
+  --color-accent-content: #ffffff;
+  --color-neutral: #16181d; /* surface-3 — avatar/tooltip fills */
+  --color-neutral-content: #f7f8f8;
+  --color-info: #5e69d1;
+  --color-info-content: #ffffff;
+  --color-success: #27a644;
+  --color-success-content: #ffffff;
   --color-warning: oklch(66% 0.179 58.318);
   --color-warning-content: oklch(98% 0.022 95.277);
   --color-error: oklch(58% 0.253 17.585);
   --color-error-content: oklch(96% 0.015 12.422);
-  --radius-selector: 0.25rem;
-  --radius-field: 0.25rem;
-  --radius-box: 0.5rem;
+  --radius-selector: 0.5rem; /* 8px */
+  --radius-field: 0.5rem; /* 8px — buttons, inputs */
+  --radius-box: 0.75rem; /* 12px — cards */
   --size-selector: 0.21875rem;
   --size-field: 0.21875rem;
-  --border: 1.5px;
-  --depth: 1;
+  --border: 1px; /* hairline */
+  --depth: 0;
   --noise: 0;
 }
 
+/* Flux light theme — outside the DESIGN.md spec (Flux ships no light marketing
+   surface), kept functional with the lavender accent for brand consistency. */
 @plugin "../vendor/daisyui-theme" {
   name: "light";
-  default: true;
+  default: false;
   prefersdark: false;
   color-scheme: "light";
   --color-base-100: oklch(98% 0 0);
   --color-base-200: oklch(96% 0.001 286.375);
   --color-base-300: oklch(92% 0.004 286.32);
   --color-base-content: oklch(21% 0.006 285.885);
-  --color-primary: oklch(70% 0.213 47.604);
-  --color-primary-content: oklch(98% 0.016 73.684);
-  --color-secondary: oklch(55% 0.027 264.364);
-  --color-secondary-content: oklch(98% 0.002 247.839);
-  --color-accent: oklch(0% 0 0);
-  --color-accent-content: oklch(100% 0 0);
+  --color-primary: #5e6ad2;
+  --color-primary-content: #ffffff;
+  --color-secondary: #5e6ad2;
+  --color-secondary-content: #ffffff;
+  --color-accent: #5e6ad2;
+  --color-accent-content: #ffffff;
   --color-neutral: oklch(44% 0.017 285.786);
   --color-neutral-content: oklch(98% 0 0);
-  --color-info: oklch(62% 0.214 259.815);
-  --color-info-content: oklch(97% 0.014 254.604);
-  --color-success: oklch(70% 0.14 182.503);
-  --color-success-content: oklch(98% 0.014 180.72);
+  --color-info: #5e69d1;
+  --color-info-content: #ffffff;
+  --color-success: #27a644;
+  --color-success-content: #ffffff;
   --color-warning: oklch(66% 0.179 58.318);
   --color-warning-content: oklch(98% 0.022 95.277);
   --color-error: oklch(58% 0.253 17.585);
   --color-error-content: oklch(96% 0.015 12.422);
-  --radius-selector: 0.25rem;
-  --radius-field: 0.25rem;
-  --radius-box: 0.5rem;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
   --size-selector: 0.21875rem;
   --size-field: 0.21875rem;
-  --border: 1.5px;
-  --depth: 1;
+  --border: 1px;
+  --depth: 0;
   --noise: 0;
+}
+
+/* Self-hosted fonts (no external <link>) — Inter for sans, JetBrains Mono for
+   code/IDs. Served from priv/static/fonts via the "fonts" static path. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-latin-variable.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-latin-variable.woff2") format("woff2");
+}
+
+/* Flux design tokens (see DESIGN.md). The daisyUI base ladder only carries three
+   surface steps, so the deeper surfaces, hairlines, and ink tiers live here as
+   Tailwind theme tokens — generating bg-surface-3, border-hairline,
+   text-ink-subtle, etc. */
+@theme {
+  --font-sans: "Inter", "SF Pro Display", -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --color-canvas: #010102;
+  --color-surface-1: #08090b;
+  --color-surface-2: #0e1014;
+  --color-surface-3: #16181d;
+  --color-surface-4: #1e2127;
+  --color-hairline: #23252a;
+  --color-hairline-strong: #2e3036;
+  --color-hairline-tertiary: #1a1c20;
+  --color-ink: #f7f8f8;
+  --color-ink-muted: #d0d6e0;
+  --color-ink-subtle: #8a8f98;
+  --color-ink-tertiary: #62666d;
+  --color-lavender: #5e6ad2;
+  --color-lavender-hover: #828fff;
+  --color-lavender-focus: #5e69d1;
 }
 
 /* Add variants based on LiveView classes */
