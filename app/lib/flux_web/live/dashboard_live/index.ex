@@ -82,7 +82,7 @@ defmodule FluxWeb.DashboardLive.Index do
   def render(assigns) do
     ~H"""
     <div class="mb-6">
-      <h1 class="text-2xl font-bold bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
+      <h1 class="text-2xl font-bold tracking-tight text-base-content">
         Dashboard
       </h1>
     </div>
