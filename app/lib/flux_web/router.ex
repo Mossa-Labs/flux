@@ -46,7 +46,9 @@ defmodule FluxWeb.Router do
 
     get("/pipelines", PipelineController, :index)
     post("/pipelines", PipelineController, :create)
+    post("/pipelines/import", PipelineController, :import)
     get("/pipelines/:id", PipelineController, :show)
+    get("/pipelines/:id/export", PipelineController, :export)
     post("/pipelines/:id/start", PipelineController, :start)
     post("/pipelines/:id/stop", PipelineController, :stop)
     get("/pipelines/:id/versions", PipelineVersionController, :index)

@@ -101,6 +101,23 @@ defmodule Flux.SinksTest do
     end
   end
 
+  describe "get_sinks_by_names/2" do
+    test "resolves enabled and disabled sinks, scoped to the org", %{org_id: org_id, scope: scope} do
+      enabled = sink_fixture(org_id, %{name: "enabled-sink"})
+      disabled = sink_fixture(org_id, %{name: "disabled-sink", enabled: false})
+
+      other_org = organization_fixture(scope)
+      sink_fixture(other_org.id, %{name: "enabled-sink"})
+
+      result = Sinks.get_sinks_by_names(["enabled-sink", "disabled-sink"], org_id)
+      assert Enum.map(result, & &1.id) |> Enum.sort() == Enum.sort([enabled.id, disabled.id])
+    end
+
+    test "returns empty list when no names match", %{org_id: org_id} do
+      assert Sinks.get_sinks_by_names(["nope"], org_id) == []
+    end
+  end
+
   describe "get_sink!/1" do
     test "returns the sink with given id", %{org_id: org_id} do
       sink = sink_fixture(org_id)

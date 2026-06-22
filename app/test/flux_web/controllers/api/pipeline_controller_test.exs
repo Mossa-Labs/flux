@@ -149,4 +149,98 @@ defmodule FluxWeb.API.PipelineControllerTest do
              |> json_response(404)
     end
   end
+
+  describe "export" do
+    test "200 returns the portable envelope with a download header", %{conn: conn, org: o} do
+      p = pipeline(o.id, "exportable")
+
+      resp = conn |> auth(key(o.id, "viewer")) |> get(~p"/api/pipelines/#{p.id}/export")
+      body = json_response(resp, 200)
+
+      assert body["flux_export"] == "1.0"
+      assert body["pipeline"]["name"] == "exportable"
+      refute Map.has_key?(body["pipeline"], "sink_ids")
+      assert [disposition] = get_resp_header(resp, "content-disposition")
+      assert disposition =~ "exportable.flux.json"
+    end
+
+    test "404 for another org's pipeline", %{conn: conn, org: o, other: other} do
+      p = pipeline(other.id, "elsewhere")
+
+      assert conn
+             |> auth(key(o.id, "viewer"))
+             |> get(~p"/api/pipelines/#{p.id}/export")
+             |> json_response(404)
+    end
+  end
+
+  describe "import" do
+    test "201 creates a stopped pipeline", %{conn: conn, org: o} do
+      body =
+        conn
+        |> auth(key(o.id, "admin"))
+        |> post(~p"/api/pipelines/import", envelope("imported"))
+        |> json_response(201)
+
+      assert body["data"]["name"] == "imported"
+      assert body["data"]["status"] == "stopped"
+    end
+
+    test "422 for an unsupported version", %{conn: conn, org: o} do
+      bad = %{"flux_export" => "9.9", "pipeline" => %{"name" => "x", "source_queue" => "q"}}
+
+      body =
+        conn
+        |> auth(key(o.id, "admin"))
+        |> post(~p"/api/pipelines/import", bad)
+        |> json_response(422)
+
+      assert body["error"] == "unsupported_version"
+    end
+
+    test "422 with a clear message for missing sinks", %{conn: conn, org: o} do
+      env = envelope("needs-sinks", %{"sink_names" => ["ghost"]})
+
+      body =
+        conn
+        |> auth(key(o.id, "admin"))
+        |> post(~p"/api/pipelines/import", env)
+        |> json_response(422)
+
+      assert body["error"] == "missing_sinks"
+      assert body["message"] =~ "ghost"
+    end
+
+    test "422 for a name collision", %{conn: conn, org: o} do
+      pipeline(o.id, "dup")
+
+      assert conn
+             |> auth(key(o.id, "admin"))
+             |> post(~p"/api/pipelines/import", envelope("dup"))
+             |> json_response(422)
+    end
+
+    test "403 for a viewer key", %{conn: conn, org: o} do
+      assert conn
+             |> auth(key(o.id, "viewer"))
+             |> post(~p"/api/pipelines/import", envelope("nope"))
+             |> json_response(403)
+    end
+  end
+
+  defp envelope(name, pipeline_extra \\ %{}) do
+    %{
+      "flux_export" => "1.0",
+      "exported_at" => "2026-01-01T00:00:00Z",
+      "pipeline" =>
+        Map.merge(
+          %{
+            "name" => name,
+            "source_queue" => "q",
+            "steps" => %{"version" => "1.0", "steps" => []}
+          },
+          pipeline_extra
+        )
+    }
+  end
 end

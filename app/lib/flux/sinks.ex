@@ -79,6 +79,20 @@ defmodule Flux.Sinks do
   end
 
   @doc """
+  Gets an organization's sinks by name.
+
+  Unlike `get_sinks_by_ids/1`, this resolves a sink regardless of its `enabled`
+  flag: it backs pipeline import (resolving `sink_names` → ids), where a
+  present-but-disabled sink should still satisfy the reference — the imported
+  pipeline starts stopped and the operator controls enabling.
+  """
+  def get_sinks_by_names(names, organization_id) when is_list(names) do
+    Sink
+    |> where([s], s.organization_id == ^organization_id and s.name in ^names)
+    |> Repo.all()
+  end
+
+  @doc """
   Gets a single sink.
 
   Raises `Ecto.NoResultsError` if the Sink does not exist.

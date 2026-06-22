@@ -10,6 +10,7 @@ defmodule FluxWeb.API.PipelineController do
 
   alias Flux.Pipeline.{Manager, Metrics}
   alias Flux.Pipelines
+  alias Flux.Pipelines.PortableConfig
 
   action_fallback FluxWeb.API.FallbackController
 
@@ -38,6 +39,49 @@ defmodule FluxWeb.API.PipelineController do
       conn
       |> put_status(:created)
       |> render(:show, pipeline: pipeline, metrics: nil)
+    end
+  end
+
+  def export(conn, %{"id" => id}) do
+    with :ok <- require_scope(conn, "read:pipelines"),
+         {:ok, pipeline} <- fetch(conn, id) do
+      envelope = PortableConfig.export_pipeline(pipeline)
+      filename = PortableConfig.suggested_filename(pipeline)
+
+      conn
+      |> put_resp_header("content-disposition", ~s(attachment; filename="#{filename}"))
+      |> json(envelope)
+    end
+  end
+
+  def import(conn, params) do
+    with :ok <- require_scope(conn, "write:pipelines"),
+         :ok <- authorize(conn, :create_pipeline),
+         {:ok, pipeline} <- PortableConfig.import_pipeline(params, org_id(conn)) do
+      conn
+      |> put_status(:created)
+      |> render(:show, pipeline: pipeline, metrics: nil)
+    else
+      {:error, {:unsupported_version, version}} ->
+        import_error(conn, "unsupported_version", "Unsupported export version: #{version}")
+
+      {:error, {:invalid_format, message}} ->
+        import_error(conn, "invalid_format", message)
+
+      {:error, {:invalid_steps, message}} ->
+        import_error(conn, "invalid_steps", message)
+
+      {:error, {:missing_sinks, names}} ->
+        import_error(
+          conn,
+          "missing_sinks",
+          "Unknown sinks in this organization: #{Enum.join(names, ", ")}"
+        )
+
+      other ->
+        # {:error, %Ecto.Changeset{}} (incl. name collision) and {:error, :forbidden}
+        # are handled by FallbackController.
+        other
     end
   end
 
@@ -99,6 +143,12 @@ defmodule FluxWeb.API.PipelineController do
 
   defp to_string_reason(reason) when is_binary(reason), do: reason
   defp to_string_reason(reason), do: inspect(reason)
+
+  defp import_error(conn, code, message) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: code, message: message})
+  end
 
   defp org_id(conn), do: conn.assigns.current_scope.organization_id
 end
