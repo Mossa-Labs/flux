@@ -5,6 +5,7 @@ defmodule FluxWeb.PipelineLive.Show do
   import FluxWeb.Authorization
 
   alias Flux.Pipelines
+  alias Flux.Pipelines.PortableConfig
   alias Flux.Sinks
   alias Flux.Pipeline.Manager
 
@@ -66,6 +67,14 @@ defmodule FluxWeb.PipelineLive.Show do
         </div>
         <div class="flex items-center gap-2">
           <.status_actions pipeline={@pipeline} />
+          <button
+            id="export-pipeline"
+            phx-hook=".DownloadPipeline"
+            phx-click="export"
+            class="btn btn-ghost btn-sm"
+          >
+            <.icon name="hero-arrow-down-tray" class="w-4 h-4" /> Export
+          </button>
           <.link navigate={~p"/pipelines/#{@pipeline.id}/builder"} class="btn btn-primary btn-sm">
             <.icon name="hero-pencil-square" class="w-4 h-4" /> Edit in Builder
           </.link>
@@ -183,6 +192,24 @@ defmodule FluxWeb.PipelineLive.Show do
           expanded_version={@expanded_version}
         />
       </div>
+
+      <script :type={Phoenix.LiveView.ColocatedHook} name=".DownloadPipeline">
+        export default {
+          mounted() {
+            this.handleEvent("download_pipeline", ({ filename, json }) => {
+              const blob = new Blob([json], { type: "application/json" })
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement("a")
+              a.href = url
+              a.download = filename
+              document.body.appendChild(a)
+              a.click()
+              a.remove()
+              URL.revokeObjectURL(url)
+            })
+          }
+        }
+      </script>
     </div>
     """
   end
@@ -410,6 +437,17 @@ defmodule FluxWeb.PipelineLive.Show do
   @impl true
   def handle_event("switch_tab", %{"tab" => tab}, socket) when tab in ~w(overview history) do
     {:noreply, assign(socket, :tab, tab)}
+  end
+
+  def handle_event("export", _params, socket) do
+    pipeline = socket.assigns.pipeline
+    json = pipeline |> PortableConfig.export_pipeline() |> Jason.encode!(pretty: true)
+
+    {:noreply,
+     push_event(socket, "download_pipeline", %{
+       filename: PortableConfig.suggested_filename(pipeline),
+       json: json
+     })}
   end
 
   def handle_event("toggle_diff", %{"version" => version}, socket) do
