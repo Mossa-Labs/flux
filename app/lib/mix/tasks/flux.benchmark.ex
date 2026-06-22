@@ -26,6 +26,11 @@ defmodule Mix.Tasks.Flux.Benchmark do
     * `--concurrency` / `-c` — Broadway processor concurrency per pipeline (default 10)
     * `--benchmark` / `-b` — run a named preset (or `all`) instead of ad-hoc steps
     * `--report`           — output path for the Markdown report
+    * `--log-level`        — log level during the run (default `warning`); one of
+                             `debug`, `info`, `warning`, `error`, `none`. The run
+                             is quiet by default so per-query/per-request debug
+                             logs don't clutter output or skew the numbers; pass
+                             `--log-level debug` to see them.
 
   ## A note on `--duration` with `--benchmark all`
 
@@ -54,26 +59,60 @@ defmodule Mix.Tasks.Flux.Benchmark do
     rate: :integer,
     concurrency: :integer,
     benchmark: :string,
-    report: :string
+    report: :string,
+    log_level: :string
   ]
 
   @aliases [p: :pipelines, d: :duration, s: :steps, r: :rate, c: :concurrency, b: :benchmark]
+
+  # Whitelisted so user input never reaches String.to_atom/1. Quiet by default:
+  # at :debug the per-query/per-request log lines both clutter output and skew the
+  # numbers (formatting + stdout writes on the hot path).
+  @log_levels %{
+    "debug" => :debug,
+    "info" => :info,
+    "warning" => :warning,
+    "warn" => :warning,
+    "error" => :error,
+    "none" => :none
+  }
 
   @impl Mix.Task
   def run(args) do
     Mix.Task.run("app.start")
     {opts, _, _} = OptionParser.parse(args, strict: @switches, aliases: @aliases)
 
-    results =
-      case opts[:benchmark] do
-        nil -> [ad_hoc(opts)]
-        "all" -> Benchmarks.run_all(preset_opts(opts))
-        name -> [run_named(name, opts)]
-      end
+    with_log_level(log_level(opts), fn ->
+      results =
+        case opts[:benchmark] do
+          nil -> [ad_hoc(opts)]
+          "all" -> Benchmarks.run_all(preset_opts(opts))
+          name -> [run_named(name, opts)]
+        end
 
-    IO.puts("\n" <> Report.table(results))
-    path = Report.write(results, report_opts(opts))
-    IO.puts("Report written to #{path}")
+      IO.puts("\n" <> Report.table(results))
+      path = Report.write(results, report_opts(opts))
+      IO.puts("Report written to #{path}")
+    end)
+  end
+
+  # Raise the log level for the run (quieter, more accurate) and restore it after.
+  defp with_log_level(level, fun) do
+    previous = Logger.level()
+    Logger.configure(level: level)
+
+    try do
+      fun.()
+    after
+      Logger.configure(level: previous)
+    end
+  end
+
+  defp log_level(opts) do
+    case opts[:log_level] do
+      nil -> :warning
+      value -> Map.get(@log_levels, String.downcase(value), :warning)
+    end
   end
 
   defp run_named(name, opts) do
