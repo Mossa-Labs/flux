@@ -13,8 +13,8 @@ defmodule Mix.Tasks.Flux.Benchmark do
       # A named preset
       mix flux.benchmark --benchmark webhook_ingestion
 
-      # The whole suite
-      mix flux.benchmark --benchmark all --duration 60
+      # The whole suite — count-based, bounded and reproducible (recommended)
+      mix flux.benchmark --benchmark all
 
   ## Options
 
@@ -26,6 +26,21 @@ defmodule Mix.Tasks.Flux.Benchmark do
     * `--concurrency` / `-c` — Broadway processor concurrency per pipeline (default 10)
     * `--benchmark` / `-b` — run a named preset (or `all`) instead of ad-hoc steps
     * `--report`           — output path for the Markdown report
+
+  ## A note on `--duration` with `--benchmark all`
+
+  `--duration` is a **per-preset** window, not a total budget for the suite —
+  `all` runs the presets sequentially, so a duration applies to each one in turn.
+  It is also only honored by the engine presets (the latency and concurrency
+  runs); the count-based presets (`webhook_ingestion`, `http_sink_delivery`,
+  `postgres_sink_delivery`) use a fixed message count and ignore it.
+
+  For the full suite, prefer the **count-based** form (`--benchmark all` with no
+  `--duration`): it uses each preset's default message count, which is bounded
+  and reproducible and finishes in ~1–2 minutes. Reserve `--duration` for a
+  single ad-hoc or named-preset run when you want a timed window — note that a
+  long duration at max rate (`--rate 0`) builds a large in-memory producer
+  backlog that is then drained after the window closes.
   """
 
   use Mix.Task
