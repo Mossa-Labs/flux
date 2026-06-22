@@ -154,5 +154,55 @@ defmodule Flux.Pipelines.PortableConfigTest do
 
       assert imported.name == "taken (copy)"
     end
+
+    test "rejects an envelope with no pipeline object", %{org: org} do
+      assert {:error, {:invalid_format, _}} =
+               PortableConfig.import_pipeline(%{"flux_export" => "1.0"}, org.id)
+    end
+
+    test "rejects non-list sink_names", %{org: org} do
+      envelope = %{
+        "flux_export" => "1.0",
+        "pipeline" => %{"name" => "p", "source_queue" => "q", "sink_names" => "not-a-list"}
+      }
+
+      assert {:error, {:invalid_format, message}} =
+               PortableConfig.import_pipeline(envelope, org.id)
+
+      assert message =~ "sink_names"
+    end
+
+    test "skips script steps during IR validation", %{org: org} do
+      envelope = %{
+        "flux_export" => "1.0",
+        "pipeline" => %{
+          "name" => "scripted",
+          "source_queue" => "q",
+          "steps" => %{
+            "version" => "1.0",
+            "steps" => [%{"type" => "script", "language" => "lua", "code" => "return data"}]
+          }
+        }
+      }
+
+      assert {:ok, imported} = PortableConfig.import_pipeline(envelope, org.id)
+      assert imported.name == "scripted"
+    end
+  end
+
+  describe "suggested_filename/1" do
+    test "slugifies a pipeline name" do
+      assert PortableConfig.suggested_filename("Webhook Processor!") ==
+               "webhook-processor.flux.json"
+    end
+
+    test "falls back to 'pipeline' for a name with no slug characters" do
+      assert PortableConfig.suggested_filename("!!!") == "pipeline.flux.json"
+    end
+
+    test "accepts a pipeline struct", %{org: org} do
+      pipeline = pipeline_fixture(org.id, %{name: "from-struct"})
+      assert PortableConfig.suggested_filename(pipeline) == "from-struct.flux.json"
+    end
   end
 end
