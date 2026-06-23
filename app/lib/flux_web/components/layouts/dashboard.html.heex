@@ -106,6 +106,16 @@
           </.link>
         </li>
       <% end %>
+      <%= if @current_scope && Flux.Permissions.can?(@current_scope, :view_dashboard) do %>
+        <li>
+          <.link
+            navigate={~p"/observability"}
+            class={if assigns[:active_tab] == :observability, do: "active", else: ""}
+          >
+            <.icon name="hero-signal" class="w-5 h-5" /> Observability
+          </.link>
+        </li>
+      <% end %>
       <li>
         <a class="text-base-content/50 cursor-not-allowed">
           <.icon name="hero-chart-bar" class="w-5 h-5" /> Analytics

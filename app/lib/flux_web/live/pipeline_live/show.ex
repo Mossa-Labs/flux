@@ -4,10 +4,13 @@ defmodule FluxWeb.PipelineLive.Show do
 
   import FluxWeb.Authorization
 
+  alias Flux.Observability
   alias Flux.Pipelines
   alias Flux.Pipelines.PortableConfig
   alias Flux.Sinks
   alias Flux.Pipeline.Manager
+  alias FluxWeb.Components.ObservabilityCards
+  alias FluxWeb.Components.UpgradePrompt
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -20,6 +23,8 @@ defmodule FluxWeb.PipelineLive.Show do
        |> assign(:page_title, pipeline.name)
        |> assign(:tab, "overview")
        |> assign(:expanded_version, nil)
+       |> assign(:observability_entitled, Flux.License.has_feature?(:observability))
+       |> assign(:source_health, nil)
        |> load_pipeline(pipeline)}
     else
       {:ok,
@@ -99,6 +104,14 @@ defmodule FluxWeb.PipelineLive.Show do
           phx-value-tab="history"
         >
           History <span :if={@versions != []} class="badge badge-sm ml-2">{length(@versions)}</span>
+        </button>
+        <button
+          role="tab"
+          class={["tab", @tab == "observability" && "tab-active"]}
+          phx-click="switch_tab"
+          phx-value-tab="observability"
+        >
+          Observability
         </button>
       </div>
 
@@ -191,6 +204,31 @@ defmodule FluxWeb.PipelineLive.Show do
           versions={@versions}
           expanded_version={@expanded_version}
         />
+      </div>
+
+      <div :if={@tab == "observability"} class="space-y-4">
+        <UpgradePrompt.upgrade_prompt :if={!@observability_entitled} feature={:observability} />
+
+        <div
+          :if={@observability_entitled && is_nil(@source_health)}
+          class="card bg-base-100 shadow-sm border border-base-200"
+        >
+          <div class="card-body py-12 text-center text-base-content/60">
+            No messages observed yet for source <span class="font-mono">{source_name(@pipeline)}</span>.
+          </div>
+        </div>
+
+        <ObservabilityCards.source_card
+          :if={@observability_entitled && @source_health}
+          health={@source_health}
+          editable={false}
+        />
+
+        <p :if={@observability_entitled} class="text-sm text-base-content/60">
+          Configure freshness SLOs and review drift history on the
+          <.link navigate={~p"/observability"} class="link link-primary">Observability</.link>
+          page.
+        </p>
       </div>
 
       <script :type={Phoenix.LiveView.ColocatedHook} name=".DownloadPipeline">
@@ -435,8 +473,18 @@ defmodule FluxWeb.PipelineLive.Show do
   end
 
   @impl true
-  def handle_event("switch_tab", %{"tab" => tab}, socket) when tab in ~w(overview history) do
-    {:noreply, assign(socket, :tab, tab)}
+  def handle_event("switch_tab", %{"tab" => tab}, socket)
+      when tab in ~w(overview history observability) do
+    socket = assign(socket, :tab, tab)
+
+    socket =
+      if tab == "observability" and socket.assigns.observability_entitled do
+        load_source_health(socket)
+      else
+        socket
+      end
+
+    {:noreply, socket}
   end
 
   def handle_event("export", _params, socket) do
@@ -553,4 +601,22 @@ defmodule FluxWeb.PipelineLive.Show do
   # The Manager writes `running_version` out-of-band on start/stop, so reload the
   # row to reflect it in the banner.
   defp reload(pipeline), do: Pipelines.get_pipeline!(pipeline.id)
+
+  # Finds the health entry for this pipeline's source among the org's sources.
+  defp load_source_health(socket) do
+    org_id = socket.assigns.current_scope.organization_id
+    source = source_name(socket.assigns.pipeline)
+
+    health =
+      org_id
+      |> Observability.list_source_health()
+      |> Enum.find(&(&1.source == source))
+
+    assign(socket, :source_health, health)
+  end
+
+  # Derives the source identifier from a "webhooks.<source>" source queue.
+  defp source_name(%{source_queue: "webhooks." <> source}), do: source
+  defp source_name(%{source_queue: queue}) when is_binary(queue), do: queue
+  defp source_name(_), do: nil
 end

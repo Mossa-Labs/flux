@@ -107,6 +107,9 @@ defmodule FluxWeb.Router do
       # Intelligence
       live("/intelligence/signals", AnomalyLive.Index, :index)
 
+      # Observability — freshness SLO / volume baseline / schema drift (Pro-gated)
+      live("/observability", ObservabilityLive.Index, :index)
+
       # System settings (owner only; 403 + redirect when unauthorized)
       live("/system/settings", SystemSettingsLive, :index)
 
