@@ -88,6 +88,7 @@ to run it in production.
 - [API reference](docs/api_reference.md)
 - [Lua scripting](docs/lua_scripting.md)
 - [RBAC](docs/rbac.md)
+- [Observability](docs/observability.md) — freshness SLOs, volume baselines & schema drift (Pro)
 - [Operator manual](docs/operator_manual.md)
 
 ## <a id="open-core"></a>Open-core model

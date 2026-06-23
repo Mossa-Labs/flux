@@ -487,8 +487,12 @@ Flux emits the following telemetry events that can be consumed by external monit
 | `[:flux, :pipeline, :message, :processed]` | `duration` | `pipeline_id` |
 | `[:flux, :pipeline, :message, :failed]` | -- | `pipeline_id` |
 | `[:flux, :pipeline, :message, :skipped]` | -- | `pipeline_id` |
+| `[:flux, :queue, :published]` | `count` | `organization_id`, `source`, `queue` |
+| `[:flux, :webhook, :received]` | `field_count` | `organization_id`, `source`, `fingerprint` |
 
 These events are attached by `Flux.Pipeline.Metrics` at startup and can also be used to feed external observability tools (Prometheus, Datadog, etc.) via standard telemetry reporter libraries.
+
+`[:flux, :queue, :published]` and `[:flux, :webhook, :received]` fire on every accepted webhook (`POST /api/webhooks/:source`). The latter carries only a lightweight shape **fingerprint** (a stable hash of the payload's top-level keys and value types, via `Flux.Observability.SchemaFingerprint`) and the field count — never the payload itself — so downstream handlers can track schema drift without ever seeing message contents. The Pro [Observability](observability.md) feature attaches to both events to power freshness SLOs, volume baselines, and schema-drift detection.
 
 ---
 
