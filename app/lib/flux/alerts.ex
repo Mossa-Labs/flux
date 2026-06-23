@@ -13,7 +13,17 @@ defmodule Flux.Alerts do
   alias Flux.Alerts.Provider
   alias Flux.Alerts.Registry
 
-  @trigger_types [:anomaly, :failure_rate, :pipeline_stopped, :dlq_depth]
+  @trigger_types [
+    :anomaly,
+    :failure_rate,
+    :pipeline_stopped,
+    :dlq_depth,
+    # Observability detectors (MOS-472): fired by the Pro evaluator from
+    # per-source detector state rather than payload metrics.
+    :freshness_slo,
+    :volume_anomaly,
+    :schema_drift
+  ]
   @channel_types [:email, :webhook, :slack]
 
   @doc "Trigger types an alert rule can use."

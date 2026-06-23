@@ -137,6 +137,36 @@ defmodule FluxWeb.API.WebhookControllerTest do
                       %{source: "github", queue: "webhooks.github"}}
     end
 
+    test "emits [:flux, :webhook, :received] with a shape fingerprint (not the payload)", %{
+      conn: conn
+    } do
+      ref = make_ref()
+      parent = self()
+
+      :telemetry.attach(
+        "test-webhook-received-#{inspect(ref)}",
+        [:flux, :webhook, :received],
+        fn _event, measurements, metadata, _ ->
+          send(parent, {:received, ref, measurements, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach("test-webhook-received-#{inspect(ref)}") end)
+
+      conn
+      |> put_req_header("content-type", "application/json")
+      |> put_req_header("x-api-key", "test-api-key")
+      |> post(~p"/api/webhooks/github", %{"action" => "opened", "number" => 42})
+      |> json_response(202)
+
+      assert_receive {:received, ^ref, %{field_count: 2}, metadata}
+      assert metadata.source == "github"
+      assert is_integer(metadata.fingerprint)
+      # The raw payload must never travel on the event — only its shape.
+      refute Map.has_key?(metadata, :payload)
+    end
+
     test "returns 429 + Retry-After when the org is over quota", %{conn: conn} do
       Flux.Metering.Registry.set_active(Flux.MeteringTestProvider)
       Application.put_env(:flux, :test_metering_quota, {:error, {:quota_exceeded, 30}})

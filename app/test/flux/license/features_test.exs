@@ -24,6 +24,7 @@ defmodule Flux.License.FeaturesTest do
     assert :advanced_ai in pro
     assert :live_signals in pro
     assert :cron_polling in pro
+    assert :observability in pro
     # Org-centric RBAC is "Pro+", entitled from the Pro tier up.
     assert :org_rbac in pro
 
