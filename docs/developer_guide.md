@@ -10,6 +10,7 @@ This guide covers the internal architecture, extension points, and development c
 - [Adding a New Pipeline Step](#adding-a-new-pipeline-step)
 - [Adding a New Sink Adapter](#adding-a-new-sink-adapter)
 - [Adding a New Queue Adapter](#adding-a-new-queue-adapter)
+- [Provider Extension Points](#provider-extension-points)
 - [Testing Conventions](#testing-conventions)
 - [AI Assistant Context Files](#ai-assistant-context-files)
 - [Code Style](#code-style)
@@ -501,6 +502,48 @@ config :flux, Flux.Queue.Adapters.Redis,
   url: System.get_env("REDIS_URL") || "redis://localhost:6379",
   stream_prefix: "flux:"
 ```
+
+---
+
+## Provider Extension Points
+
+Beyond sinks, queues, and steps, several subsystems follow the same
+**behaviour + single-provider registry + facade** shape. The Community edition
+ships a no-op (or basic) provider; the commercial edition swaps in a real one at
+boot via `Registry.set_active/1` once the license entitles the feature. Callers
+always go through the facade, so they never know (or care) which provider is live:
+
+| Subsystem | Behaviour | Registry | Facade | Community provider |
+| -- | -- | -- | -- | -- |
+| AI scoring | `Flux.AI.Provider` | `Flux.AI.Registry` | `Flux.AI` | `Flux.AI.Providers.Basic` |
+| Usage metering | `Flux.Metering.Provider` | `Flux.Metering.Registry` | `Flux.Metering` | `Flux.Metering.Providers.Community` |
+| Alerting | `Flux.Alerts.Provider` | `Flux.Alerts.Registry` | `Flux.Alerts` | `Flux.Alerts.Providers.Community` |
+| Observability | `Flux.Observability.Provider` | `Flux.Observability.Registry` | `Flux.Observability` | `Flux.Observability.Providers.Community` |
+
+### Example: the Observability provider
+
+[Observability](observability.md) (freshness SLO, volume baseline, schema drift)
+is a Pro feature. The public repo holds only the contract and a stub:
+
+- `Flux.Observability.Provider` — the read/write callbacks the gated UI needs
+  (`list_source_health/1`, `get_slo/2`, `upsert_slo/3`, `delete_slo/2`,
+  `list_recent_drift/2`).
+- `Flux.Observability.Providers.Community` — listing returns `[]`; mutations
+  return `{:error, {:pro_required, :observability}}`.
+- `Flux.Observability.Registry` — an ETS single-entry table; seeded to the
+  Community stub by `Flux.Registrations`.
+
+The actual detectors (telemetry handlers, change-point detection,
+fingerprint comparison) live in the commercial edition. The one piece that stays
+public is `Flux.Observability.SchemaFingerprint` — a deliberately dumb helper that
+hashes a payload's top-level keys and value types so the
+`[:flux, :webhook, :received]` telemetry event can carry a shape fingerprint
+without the payload. It makes **no** judgement about drift; all comparison and
+scoring is proprietary.
+
+To add a new provider-backed subsystem, follow the same four-part shape: define
+the behaviour, register the stub in `Flux.Registrations`, start the registry in
+`lib/flux/application.ex`, and route callers through a facade module.
 
 ---
 
