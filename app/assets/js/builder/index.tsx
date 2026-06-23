@@ -25,6 +25,7 @@ interface MountOptions {
 export interface BuilderInstance {
   updateNodeData: (nodeId: string, data: Partial<PipelineNodeData>) => void;
   updateEdgeLabel: (edgeId: string, label: string) => void;
+  addNode: (nodeType: string, sinkId?: number) => void;
 }
 
 // Store roots and refs for cleanup
@@ -73,6 +74,9 @@ export function mountBuilder(options: MountOptions): BuilderInstance {
     },
     updateEdgeLabel: (edgeId: string, label: string) => {
       canvasRef.current?.updateEdgeLabel(edgeId, label);
+    },
+    addNode: (nodeType: string, sinkId?: number) => {
+      canvasRef.current?.addNode(nodeType, sinkId);
     },
   };
 }

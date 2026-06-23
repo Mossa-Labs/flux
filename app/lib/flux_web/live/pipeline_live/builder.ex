@@ -37,8 +37,11 @@ defmodule FluxWeb.PipelineLive.Builder do
   def render(assigns) do
     ~H"""
     <div class="h-full flex">
-      <%!-- Sidebar with node palette --%>
-      <div class="w-64 bg-base-100 border-r border-base-300 flex flex-col">
+      <%!-- Sidebar with node palette. `relative z-50` keeps it above the React
+      Flow canvas, whose absolutely-positioned container (see pipeline_builder.js)
+      would otherwise paint over the palette and swallow its clicks/drags — the
+      right-hand config panel already guards itself the same way. --%>
+      <div class="w-64 bg-base-100 border-r border-base-300 flex flex-col relative z-50">
         <div class="p-4 border-b border-base-300">
           <h2 class="font-semibold text-sm text-base-content/60 uppercase tracking-wider">Nodes</h2>
         </div>
@@ -92,6 +95,8 @@ defmodule FluxWeb.PipelineLive.Builder do
           data-initial-ir={Jason.encode!(@initial_ir)}
           data-available-sinks={Jason.encode!(Enum.map(@available_sinks, &sink_to_json/1))}
           data-pipeline-id={@pipeline.id}
+          data-builder-src={~p"/assets/js/index.js"}
+          data-builder-css={~p"/assets/js/index.css"}
           class="flex-1 bg-base-200"
         >
           <div class="h-full flex items-center justify-center text-base-content/40">
