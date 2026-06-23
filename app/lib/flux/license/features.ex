@@ -25,6 +25,7 @@ defmodule Flux.License.Features do
     * `:api_key_scopes` - fine-grained (below-role) API key scopes
     * `:usage_metering` - per-org usage metering, usage card, and quota enforcement
     * `:alerting` - configurable alert rules + multi-channel notifications
+    * `:observability` - freshness SLO, volume baseline & schema drift detectors
     * `:sso`, `:audit_log`, `:white_label`, `:mfa` - enterprise auth/compliance
   """
 
@@ -51,7 +52,9 @@ defmodule Flux.License.Features do
       # Per-organization usage metering, the usage card, and quota enforcement.
       :usage_metering,
       # Configurable alert rules + email/webhook/Slack notifications (MOS-452).
-      :alerting
+      :alerting,
+      # Freshness SLO, volume baseline & schema drift detection (MOS-472).
+      :observability
     ],
     enterprise: [
       :sso,

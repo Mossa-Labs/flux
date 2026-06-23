@@ -15,6 +15,7 @@ defmodule FluxWeb.API.WebhookController do
 
   use FluxWeb, :controller
 
+  alias Flux.Observability.SchemaFingerprint
   alias Flux.Queue
   alias Flux.Queue.Message
 
@@ -66,6 +67,19 @@ defmodule FluxWeb.API.WebhookController do
           [:flux, :queue, :published],
           %{count: 1},
           %{organization_id: org_id, source: source, queue: queue_name}
+        )
+
+        # Schema-drift hook point: a Pro observability handler attaches here. The
+        # raw payload never leaves this process — only a stable shape fingerprint
+        # (top-level keys + value types) and the field count travel on the event.
+        :telemetry.execute(
+          [:flux, :webhook, :received],
+          %{field_count: SchemaFingerprint.field_count(message.payload)},
+          %{
+            organization_id: org_id,
+            source: source,
+            fingerprint: SchemaFingerprint.compute(message.payload)
+          }
         )
 
         Logger.info("Webhook received",

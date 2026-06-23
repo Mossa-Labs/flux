@@ -11,7 +11,16 @@ defmodule Flux.AlertsTest do
 
   describe "catalogs" do
     test "trigger and channel types" do
-      assert Alerts.trigger_types() == [:anomaly, :failure_rate, :pipeline_stopped, :dlq_depth]
+      assert Alerts.trigger_types() == [
+               :anomaly,
+               :failure_rate,
+               :pipeline_stopped,
+               :dlq_depth,
+               :freshness_slo,
+               :volume_anomaly,
+               :schema_drift
+             ]
+
       assert Alerts.channel_types() == [:email, :webhook, :slack]
     end
   end

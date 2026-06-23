@@ -20,7 +20,8 @@ defmodule Flux.Alerts.Provider do
       %{
         id: term(),
         name: String.t(),
-        trigger_type: :anomaly | :failure_rate | :pipeline_stopped | :dlq_depth,
+        trigger_type: :anomaly | :failure_rate | :pipeline_stopped | :dlq_depth
+                       | :freshness_slo | :volume_anomaly | :schema_drift,
         trigger_config: map(),         # e.g. %{"threshold" => 3.0}
         channels: [channel()],         # array of %{"type" => ..., "config" => ...}
         enabled: boolean(),
