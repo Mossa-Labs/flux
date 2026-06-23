@@ -131,4 +131,7 @@ export interface BuilderProps {
 export interface PipelineCanvasHandle {
   updateNodeData: (nodeId: string, data: Partial<PipelineNodeData>) => void;
   updateEdgeLabel: (edgeId: string, label: string) => void;
+  // Add a node from the palette via click (companion to drag-and-drop). Places
+  // the node near the center of the visible canvas.
+  addNode: (nodeType: string, sinkId?: number) => void;
 }

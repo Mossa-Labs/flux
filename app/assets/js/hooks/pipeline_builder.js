@@ -10,13 +10,13 @@ let builderModule = null;
 let cssLoaded = false;
 
 // Load the React Flow CSS dynamically
-function loadBuilderCSS() {
+function loadBuilderCSS(href) {
   if (cssLoaded) return Promise.resolve();
 
   return new Promise((resolve) => {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = '/assets/js/index.css';
+    link.href = href || '/assets/js/index.css';
     link.onload = () => {
       cssLoaded = true;
       resolve();
@@ -44,14 +44,18 @@ const PipelineBuilder = {
     this.el.innerHTML = '';
     this.el.appendChild(this.container);
 
-    // Load and mount React Flow
+    // Load and mount React Flow.
+    // Import via the server-provided (digested, cache-busted) URLs so a new deploy
+    // always loads the matching bundle — the digest changes with the content, so
+    // the browser can't serve a stale builder bundle against a fresh app.js hook.
+    const builderSrc = this.el.dataset.builderSrc || '/assets/js/index.js';
+    const builderCss = this.el.dataset.builderCss || '/assets/js/index.css';
+
     try {
-      // Load CSS and JS in parallel
-      // Note: Dynamic import uses absolute URL path for runtime loading
       if (!builderModule) {
         const [module] = await Promise.all([
-          import('/assets/js/index.js'),
-          loadBuilderCSS(),
+          import(builderSrc),
+          loadBuilderCSS(builderCss),
         ]);
         builderModule = module;
       }
@@ -146,7 +150,8 @@ const PipelineBuilder = {
     `;
   },
 
-  // Set up drag listeners for sidebar nodes
+  // Set up drag + click listeners for sidebar palette nodes. Palette items can be
+  // either dragged onto the canvas or simply clicked to add at the canvas center.
   setupDragListeners() {
     this.handleDragStart = (event) => {
       const nodeType = event.target.closest('[data-node-type]')?.dataset.nodeType;
@@ -161,13 +166,35 @@ const PipelineBuilder = {
       }
     };
 
-    // Listen on the entire document for sidebar drag events
+    // Click-to-add: a plain click on a palette item adds the node without a drag.
+    // (A completed drag does not fire a click, so the two interactions don't clash.)
+    this.handlePaletteClick = (event) => {
+      const item = event.target.closest('[data-node-type]');
+      if (!item) return;
+
+      // Guard against a stale builder bundle that predates addNode (e.g. a cached
+      // index.js). Drag-and-drop still works; warn rather than throw.
+      if (typeof this.builderInstance?.addNode !== 'function') {
+        console.warn('PipelineBuilder: addNode unavailable — drag a node instead, or hard-refresh to load the latest builder.');
+        return;
+      }
+
+      const nodeType = item.dataset.nodeType;
+      const sinkIdRaw = item.closest('[data-sink-id]')?.dataset.sinkId;
+      this.builderInstance.addNode(nodeType, sinkIdRaw ? parseInt(sinkIdRaw, 10) : undefined);
+    };
+
+    // Listen on the entire document for sidebar drag/click events
     document.addEventListener('dragstart', this.handleDragStart);
+    document.addEventListener('click', this.handlePaletteClick);
   },
 
   removeDragListeners() {
     if (this.handleDragStart) {
       document.removeEventListener('dragstart', this.handleDragStart);
+    }
+    if (this.handlePaletteClick) {
+      document.removeEventListener('click', this.handlePaletteClick);
     }
   },
 };

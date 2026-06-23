@@ -79,13 +79,33 @@ const PipelineCanvasInner = forwardRef<PipelineCanvasHandle, PipelineCanvasInner
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
+  // Build a node of the given palette type at a flow-space position. Shared by
+  // drag-and-drop (onDrop) and click-to-add (addNode); returns null for an
+  // unknown type or a sink whose id can't be resolved.
+  const buildNode = useCallback(
+    (nodeType: string, sinkId: number | null, position: { x: number; y: number }): Node | null => {
+      if (nodeType === 'source') {
+        return createSourceNode(getId(), position);
+      } else if (nodeType === 'queue') {
+        return createQueueNode(getId(), position);
+      } else if (nodeType === 'sink' && sinkId != null) {
+        const sink = availableSinks.find((s) => s.id === sinkId);
+        return sink ? createSinkNode(getId(), sink, position) : null;
+      } else if (['filter', 'map', 'rename', 'script', 'anomaly'].includes(nodeType)) {
+        return createStepNode(getId(), nodeType as StepNodeData['stepType'], position);
+      }
+      return null;
+    },
+    [availableSinks]
+  );
+
   // Handle drop of new nodes
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
 
       const nodeType = event.dataTransfer.getData('application/reactflow/type');
-      const sinkId = event.dataTransfer.getData('application/reactflow/sinkId');
+      const sinkIdRaw = event.dataTransfer.getData('application/reactflow/sinkId');
 
       if (!nodeType) {
         return;
@@ -96,33 +116,40 @@ const PipelineCanvasInner = forwardRef<PipelineCanvasHandle, PipelineCanvasInner
         y: event.clientY,
       });
 
-      let newNode: Node;
+      const newNode = buildNode(nodeType, sinkIdRaw ? parseInt(sinkIdRaw, 10) : null, position);
 
-      if (nodeType === 'source') {
-        // Create a new source node
-        newNode = createSourceNode(getId(), position);
-      } else if (nodeType === 'queue') {
-        // Create a queue output node
-        newNode = createQueueNode(getId(), position);
-      } else if (nodeType === 'sink' && sinkId) {
-        // Create a configured sink node
-        const sink = availableSinks.find((s) => s.id === parseInt(sinkId, 10));
-        if (sink) {
-          newNode = createSinkNode(getId(), sink, position);
-        } else {
-          return;
-        }
-      } else if (['filter', 'map', 'rename', 'script', 'anomaly'].includes(nodeType)) {
-        // Create a step node
-        newNode = createStepNode(getId(), nodeType as StepNodeData['stepType'], position);
-      } else {
-        return;
+      if (newNode) {
+        setNodes((nds) => nds.concat(newNode));
+        setTimeout(updateIR, 0);
       }
-
-      setNodes((nds) => nds.concat(newNode));
-      setTimeout(updateIR, 0);
     },
-    [screenToFlowPosition, availableSinks, setNodes, updateIR]
+    [screenToFlowPosition, buildNode, setNodes, updateIR]
+  );
+
+  // Add a node from a palette click (companion to drag-and-drop). Places it near
+  // the center of the visible canvas, with a small per-node offset so repeated
+  // clicks don't stack exactly on top of each other.
+  const addNode = useCallback(
+    (nodeType: string, sinkId?: number) => {
+      const wrapper = reactFlowWrapper.current;
+      const rect = wrapper?.getBoundingClientRect();
+      const jitter = (idCounter % 6) * 28;
+
+      const position = rect
+        ? screenToFlowPosition({
+            x: rect.left + rect.width / 2 + jitter,
+            y: rect.top + rect.height / 2 + jitter,
+          })
+        : { x: 250 + jitter, y: 150 + jitter };
+
+      const newNode = buildNode(nodeType, sinkId ?? null, position);
+
+      if (newNode) {
+        setNodes((nds) => nds.concat(newNode));
+        setTimeout(updateIR, 0);
+      }
+    },
+    [screenToFlowPosition, buildNode, setNodes, updateIR]
   );
 
   // Handle node changes (position, selection, etc.)
@@ -187,7 +214,8 @@ const PipelineCanvasInner = forwardRef<PipelineCanvasHandle, PipelineCanvasInner
       }));
       setTimeout(updateIR, 0);
     },
-  }), [setNodes, setEdges, updateIR]);
+    addNode,
+  }), [setNodes, setEdges, updateIR, addNode]);
 
   return (
     <div ref={reactFlowWrapper} className="w-full h-full">
