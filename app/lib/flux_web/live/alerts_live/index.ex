@@ -526,6 +526,9 @@ defmodule FluxWeb.AlertsLive.Index do
   defp trigger_label(:failure_rate), do: "Pipeline failure rate"
   defp trigger_label(:pipeline_stopped), do: "Pipeline stopped unexpectedly"
   defp trigger_label(:dlq_depth), do: "DLQ depth"
+  defp trigger_label(:freshness_slo), do: "Source freshness SLO missed"
+  defp trigger_label(:volume_anomaly), do: "Source volume anomaly"
+  defp trigger_label(:schema_drift), do: "Source schema drift"
 
   defp trigger_label(other) when is_binary(other),
     do: other |> String.to_existing_atom() |> trigger_label()
