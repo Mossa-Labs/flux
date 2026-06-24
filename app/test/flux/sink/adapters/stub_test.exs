@@ -21,4 +21,15 @@ defmodule Flux.Sink.Adapters.StubTest do
   test "test_connection/1 also returns pro_required" do
     assert {:error, {:pro_required, :s3_sink}} = Stub.test_connection(%{"type" => "s3"})
   end
+
+  test "deliver/3 maps each known Pro sink type to its feature atom" do
+    for {type, feature} <- [
+          {"s3", :s3_sink},
+          {"snowflake", :snowflake_sink},
+          {"bigquery", :bigquery_sink},
+          {"kafka", :kafka_sink}
+        ] do
+      assert {:error, {:pro_required, ^feature}} = Stub.deliver(%{}, %{"type" => type}, [])
+    end
+  end
 end

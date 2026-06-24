@@ -142,5 +142,52 @@ defmodule Flux.Pipeline.InterpreterTest do
 
       assert {:error, "Unknown operation: unknown"} = Interpreter.execute(data, config)
     end
+
+    test "returns error for an invalid pipeline configuration" do
+      assert {:error, "Invalid pipeline configuration"} = Interpreter.execute(%{"a" => 1}, "nope")
+    end
+
+    test "defaults config to an empty map for a native step without config" do
+      data = %{"old" => "v"}
+
+      config = %{
+        "version" => "1.0",
+        "steps" => [%{"id" => "s1", "type" => "native", "operation" => "rename"}]
+      }
+
+      # The missing-config clause dispatches with config => %{}; rename then
+      # reports the absent from/to — exercising the default-config branch.
+      assert {:error, "Rename step requires 'from' and 'to' in config"} =
+               Interpreter.execute(data, config)
+    end
+
+    test "executes a lua script step" do
+      data = %{"name" => "Jane"}
+
+      config = %{
+        "version" => "1.0",
+        "steps" => [
+          %{
+            "id" => "s1",
+            "type" => "script",
+            "language" => "lua",
+            "code" => """
+            function transform(data)
+              data.processed = true
+              return data
+            end
+            """
+          }
+        ]
+      }
+
+      assert {:ok, result} = Interpreter.execute(data, config)
+      assert result["processed"] == true
+    end
+
+    test "returns error for a structurally invalid step" do
+      config = %{"version" => "1.0", "steps" => [%{"id" => "s1"}]}
+      assert {:error, "Invalid step format:" <> _} = Interpreter.execute(%{"a" => 1}, config)
+    end
   end
 end

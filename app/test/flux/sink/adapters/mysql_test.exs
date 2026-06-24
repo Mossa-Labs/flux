@@ -93,6 +93,60 @@ defmodule Flux.Sink.Adapters.MySQLTest do
     end
   end
 
+  describe "build_row/2" do
+    test "maps dot-path source fields to column names" do
+      row =
+        MySQL.build_row(
+          %{"event_type" => "signup", "payload" => %{"user_id" => "u-1"}},
+          %{"event_type" => "type", "payload.user_id" => "user_id"}
+        )
+
+      assert row["type"] == "signup"
+      assert row["user_id"] == "u-1"
+    end
+
+    test "missing source path resolves to nil" do
+      row = MySQL.build_row(%{"a" => 1}, %{"missing.path" => "col"})
+      assert row["col"] == nil
+    end
+
+    test "adds inserted_at/updated_at when unmapped" do
+      row = MySQL.build_row(%{"a" => 1}, %{"a" => "col"})
+      assert %DateTime{} = row["inserted_at"]
+      assert %DateTime{} = row["updated_at"]
+    end
+
+    test "does not overwrite explicitly mapped timestamps" do
+      row =
+        MySQL.build_row(
+          %{"a" => 1, "ts" => "2020-01-01"},
+          %{"a" => "col", "ts" => "inserted_at"}
+        )
+
+      assert row["inserted_at"] == "2020-01-01"
+    end
+  end
+
+  describe "retryable?/1" do
+    test "connection failures are retryable" do
+      assert MySQL.retryable?({:connection_failed, :econnrefused})
+    end
+
+    test "deadlock and lock-wait-timeout MySQL errors are retryable" do
+      assert MySQL.retryable?({:mysql_error, %MyXQL.Error{mysql: %{code: 1213}}})
+      assert MySQL.retryable?({:mysql_error, %MyXQL.Error{mysql: %{code: 1205}}})
+    end
+
+    test "other MySQL error codes are not retryable" do
+      refute MySQL.retryable?({:mysql_error, %MyXQL.Error{mysql: %{code: 1062}}})
+    end
+
+    test "arbitrary reasons are not retryable" do
+      refute MySQL.retryable?({:unexpected_result, :anything})
+      refute MySQL.retryable?(:boom)
+    end
+  end
+
   describe "coerce_value/1" do
     test "JSON-encodes maps" do
       assert MySQL.coerce_value(%{"a" => 1}) == ~s({"a":1})

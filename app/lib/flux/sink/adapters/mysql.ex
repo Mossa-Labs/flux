@@ -184,7 +184,14 @@ defmodule Flux.Sink.Adapters.MySQL do
 
   # ── Row building / coercion ─────────────────────────────────────────────
 
-  defp build_row(data, columns) do
+  @doc """
+  Maps `data` into a column-keyed row using the `columns` mapping (keys are
+  dot-separated source paths, values are target column names). Missing paths
+  resolve to `nil`, and `inserted_at`/`updated_at` timestamps are added unless
+  already mapped. Pure — unit-tested without a DB.
+  """
+  @spec build_row(map(), map()) :: map()
+  def build_row(data, columns) do
     now = DateTime.utc_now()
 
     # Column names stay strings — they come from user config and interning them
@@ -310,11 +317,17 @@ defmodule Flux.Sink.Adapters.MySQL do
     end
   end
 
-  defp retryable?({:connection_failed, _}), do: true
+  @doc """
+  Whether an error reason from a delivery attempt is worth retrying: connection
+  failures and MySQL deadlock (1213) / lock-wait-timeout (1205) are transient;
+  everything else is terminal. Pure — unit-tested without a DB.
+  """
+  @spec retryable?(term()) :: boolean()
+  def retryable?({:connection_failed, _}), do: true
 
-  defp retryable?({:mysql_error, %MyXQL.Error{mysql: %{code: code}}})
-       when code in [@deadlock, @lock_wait_timeout],
-       do: true
+  def retryable?({:mysql_error, %MyXQL.Error{mysql: %{code: code}}})
+      when code in [@deadlock, @lock_wait_timeout],
+      do: true
 
-  defp retryable?(_), do: false
+  def retryable?(_), do: false
 end

@@ -47,6 +47,32 @@ defmodule Flux.Observability.SchemaFingerprintTest do
     test "non-map payloads collapse to the empty fingerprint" do
       assert SchemaFingerprint.compute(nil) == SchemaFingerprint.compute("not a map")
     end
+
+    test "distinguishes boolean from number value types" do
+      a = SchemaFingerprint.compute(%{"flag" => true})
+      b = SchemaFingerprint.compute(%{"flag" => 1})
+      refute a == b
+    end
+
+    test "distinguishes list, map, null and other value types" do
+      tags = [
+        %{"v" => [1, 2]},
+        %{"v" => %{"nested" => 1}},
+        %{"v" => nil},
+        %{"v" => "s"},
+        # an atom value falls through to the :other type tag
+        %{"v" => :sym}
+      ]
+
+      fingerprints = Enum.map(tags, &SchemaFingerprint.compute/1)
+      assert length(Enum.uniq(fingerprints)) == length(tags)
+    end
+
+    test "nested maps contribute only their :map type, not inner shape" do
+      a = SchemaFingerprint.compute(%{"v" => %{"x" => 1}})
+      b = SchemaFingerprint.compute(%{"v" => %{"y" => "different"}})
+      assert a == b
+    end
   end
 
   describe "field_count/1" do
