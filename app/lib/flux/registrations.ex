@@ -47,6 +47,7 @@ defmodule Flux.Registrations do
     Flux.Sink.Registry.register("postgres", Flux.Sink.Adapters.Postgres)
     Flux.Sink.Registry.register("mysql", Flux.Sink.Adapters.MySQL)
     Flux.Sink.Registry.register("s3", Flux.Sink.Adapters.Stub)
+    Flux.Sink.Registry.register("bigquery", Flux.Sink.Adapters.Stub)
     :ok
   end
 

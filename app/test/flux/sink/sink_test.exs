@@ -12,6 +12,10 @@ defmodule Flux.SinkTest do
       assert {:ok, Flux.Sink.Adapters.Stub} = Sink.adapter_for_type("s3")
     end
 
+    test "returns Stub adapter for \"bigquery\" in Community (real BigQuery is Pro)" do
+      assert {:ok, Flux.Sink.Adapters.Stub} = Sink.adapter_for_type("bigquery")
+    end
+
     test "returns Postgres adapter for \"postgres\"" do
       assert {:ok, Flux.Sink.Adapters.Postgres} = Sink.adapter_for_type("postgres")
     end
@@ -38,7 +42,7 @@ defmodule Flux.SinkTest do
 
   describe "available_types/0" do
     test "returns all sink types sorted alphabetically" do
-      assert Sink.available_types() == ["http", "mysql", "postgres", "s3"]
+      assert Sink.available_types() == ["bigquery", "http", "mysql", "postgres", "s3"]
     end
   end
 
@@ -51,6 +55,11 @@ defmodule Flux.SinkTest do
     test "returns error for unknown sink type" do
       config = %{"type" => "unknown"}
       assert {:error, {:unknown_sink_type, "unknown"}} = Sink.deliver(%{event: "test"}, config)
+    end
+
+    test "Community bigquery delivery returns pro_required error" do
+      config = %{"type" => "bigquery", "project_id" => "p", "dataset" => "d", "table" => "t"}
+      assert {:error, {:pro_required, :bigquery_sink}} = Sink.deliver(%{event: "test"}, config)
     end
   end
 
@@ -67,6 +76,12 @@ defmodule Flux.SinkTest do
     test "Community s3 delegates to Stub and returns pro_required error" do
       config = %{"bucket" => "my-bucket", "key_template" => "data/{id}.json"}
       assert {:error, [msg]} = Sink.validate_config("s3", config)
+      assert msg =~ "Flux Pro"
+    end
+
+    test "Community bigquery delegates to Stub and returns pro_required error" do
+      config = %{"project_id" => "p", "dataset" => "d", "table" => "t"}
+      assert {:error, [msg]} = Sink.validate_config("bigquery", config)
       assert msg =~ "Flux Pro"
     end
 

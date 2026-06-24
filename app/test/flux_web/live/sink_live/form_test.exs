@@ -19,6 +19,17 @@ defmodule FluxWeb.SinkLive.FormTest do
       assert html =~ "HTTP"
       assert html =~ "S3"
       assert html =~ "Postgres"
+      assert html =~ "BigQuery"
+    end
+
+    test "selecting BigQuery shows the Pro upgrade prompt in Community", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "bigquery"})
+
+      # Community is not entitled, so the config form is replaced by the upgrade prompt.
+      assert html =~ "Flux Pro"
+      refute html =~ "Service Account JSON"
     end
 
     test "save with valid params creates sink and redirects", %{conn: conn} do
