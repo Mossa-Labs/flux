@@ -51,9 +51,13 @@ defmodule Flux.Workers.Poller do
 
     Logger.info("Polling source", source_id: source_id, url: url)
 
+    # Queue-name convention is owned by the Poll source adapter (see
+    # Flux.Source.Adapters.Poll) so all ingestion paths share one definition.
+    queue_name = Flux.Source.queue_name("poll", %{"source_id" => source_id})
+
     with {:ok, data} <- fetch_data(url, args),
          message <- build_message(source_id, data),
-         :ok <- Queue.publish("polling.#{source_id}", message) do
+         :ok <- Queue.publish(queue_name, message) do
       Logger.info("Poll completed successfully",
         source_id: source_id,
         message_id: message.id

@@ -49,7 +49,9 @@ defmodule FluxWeb.API.WebhookController do
         metadata: build_metadata(conn)
       )
 
-    queue_name = "webhooks.#{source}"
+    # Queue-name convention is owned by the Webhook source adapter so every
+    # ingestion path derives it from one place (see Flux.Source.Adapters.Webhook).
+    queue_name = Flux.Source.queue_name("webhook", %{"source" => source})
 
     # Usage quota is a Pro feature; the Community provider always returns `:ok`,
     # so ingestion is never throttled on Community.

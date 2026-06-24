@@ -9,7 +9,7 @@ defmodule FluxWeb.SinkLive.Form do
   alias FluxWeb.Components.UpgradePrompt
 
   # Sink types gated behind a Pro/EE license, mapped to their entitlement feature.
-  @pro_sink_features %{"s3" => :s3_sink, "bigquery" => :bigquery_sink}
+  @pro_sink_features %{"s3" => :s3_sink, "bigquery" => :bigquery_sink, "kafka" => :kafka_sink}
 
   @impl true
   def mount(params, _session, socket) do
@@ -110,6 +110,14 @@ defmodule FluxWeb.SinkLive.Form do
                   icon="hero-table-cells"
                   label="BigQuery"
                   sublabel="Warehouse"
+                />
+                <.sink_type_option
+                  field={@form[:type]}
+                  selected_type={@selected_type}
+                  type="kafka"
+                  icon="hero-queue-list"
+                  label="Kafka"
+                  sublabel="Event Streaming"
                 />
               </div>
             </div>
@@ -322,6 +330,44 @@ defmodule FluxWeb.SinkLive.Form do
     """
   end
 
+  # Rendered only on a licensed build (Community shows the upgrade prompt instead).
+  defp type_config_fields(%{type: "kafka"} = assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <.input
+        field={@form[:config_bootstrap_servers]}
+        type="text"
+        label="Bootstrap Servers"
+        placeholder="broker1:9092,broker2:9092"
+      />
+      <.input field={@form[:config_topic]} type="text" label="Topic" placeholder="events" />
+      <.input
+        field={@form[:config_auth_mode]}
+        type="select"
+        label="Auth Mode"
+        options={[
+          {"PLAINTEXT", "plaintext"},
+          {"SASL/PLAIN", "sasl_plain"},
+          {"SASL/SCRAM-SHA-256", "sasl_scram_256"},
+          {"SASL/SCRAM-SHA-512", "sasl_scram_512"},
+          {"mTLS", "mtls"}
+        ]}
+      />
+      <.input
+        field={@form[:config_compression]}
+        type="select"
+        label="Compression"
+        options={[{"None", "none"}, {"snappy", "snappy"}, {"zstd", "zstd"}, {"lz4", "lz4"}]}
+      />
+      <.input
+        field={@form[:config_transactional]}
+        type="checkbox"
+        label="Transactional (exactly-once) produce"
+      />
+    </div>
+    """
+  end
+
   defp type_config_fields(assigns) do
     ~H"""
     <p class="text-base-content/60">Select a sink type to configure.</p>
@@ -456,6 +502,15 @@ defmodule FluxWeb.SinkLive.Form do
     |> maybe_put("location", params["config_location"])
   end
 
+  defp build_config(params, "kafka") do
+    %{}
+    |> maybe_put("bootstrap_servers", params["config_bootstrap_servers"])
+    |> maybe_put("topic", params["config_topic"])
+    |> maybe_put("auth_mode", params["config_auth_mode"])
+    |> maybe_put("compression", params["config_compression"])
+    |> Map.put("transactional", params["config_transactional"] == "true")
+  end
+
   defp build_config(_params, _type), do: %{}
 
   defp maybe_put(map, _key, nil), do: map
@@ -488,5 +543,6 @@ defmodule FluxWeb.SinkLive.Form do
 
   defp pro_label("s3"), do: "S3 sinks"
   defp pro_label("bigquery"), do: "BigQuery sinks"
+  defp pro_label("kafka"), do: "Kafka sinks"
   defp pro_label(type), do: "#{type} sinks"
 end

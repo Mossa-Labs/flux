@@ -24,11 +24,14 @@ defmodule Flux.Registrations do
   end
 
   # Maps a queue type identifier to the license feature it requires. Types
-  # absent from this map (e.g. "memory") are always available.
-  @queue_features %{"rabbitmq" => :rabbit_mq_queue, "kafka" => :kafka_queue}
+  # absent from this map (e.g. "memory") are always available. Kafka is a
+  # *source/sink connector* (see Flux.Source / Flux.Sink), never a core queue
+  # backend — the internal queue stays RabbitMQ — so it is intentionally absent.
+  @queue_features %{"rabbitmq" => :rabbit_mq_queue}
 
   defp register_community do
     :ok = register_sinks()
+    :ok = register_sources()
     :ok = register_queues()
     :ok = register_steps()
     :ok = register_auth_strategies()
@@ -48,6 +51,18 @@ defmodule Flux.Registrations do
     Flux.Sink.Registry.register("mysql", Flux.Sink.Adapters.MySQL)
     Flux.Sink.Registry.register("s3", Flux.Sink.Adapters.Stub)
     Flux.Sink.Registry.register("bigquery", Flux.Sink.Adapters.Stub)
+    # Pro connector — the commercial edition registers the real adapter over this stub.
+    Flux.Sink.Registry.register("kafka", Flux.Sink.Adapters.Stub)
+    :ok
+  end
+
+  defp register_sources do
+    # Community sources. Webhook and Poll are passive (push / Oban-driven);
+    # they centralize their queue-name convention through the adapter.
+    Flux.Source.Registry.register("webhook", Flux.Source.Adapters.Webhook)
+    Flux.Source.Registry.register("poll", Flux.Source.Adapters.Poll)
+    # Pro connector — the commercial edition registers the real consumer over this stub.
+    Flux.Source.Registry.register("kafka", Flux.Source.Adapters.Stub)
     :ok
   end
 
