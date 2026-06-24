@@ -16,6 +16,7 @@ defmodule Flux.Application do
       # Registries for adapters / strategies / providers — must start before
       # Flux.Registrations so boot-time registrations have somewhere to land.
       Flux.Sink.Registry,
+      Flux.Source.Registry,
       Flux.Queue.Registry,
       Flux.Pipeline.StepRegistry,
       Flux.Auth.Registry,
@@ -42,6 +43,11 @@ defmodule Flux.Application do
       # Horde-backed registry/supervisor and routes through them instead.
       {Registry, keys: :unique, name: Flux.Pipeline.Registry},
       {DynamicSupervisor, name: Flux.Pipeline.DynamicSupervisor, strategy: :one_for_one},
+      # Source ingestion: supervisor hosts active (long-lived) source consumers;
+      # the manager auto-starts enabled active sources at boot. Both no-op in
+      # Community (webhook/poll are passive); the EE Kafka source plugs in here.
+      Flux.Source.Supervisor,
+      Flux.Source.Manager,
       # Pipeline metrics aggregator (must start before Manager)
       Flux.Pipeline.Metrics,
       # Pipeline manager (auto-starts active pipelines)

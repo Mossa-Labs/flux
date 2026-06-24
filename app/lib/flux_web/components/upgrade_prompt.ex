@@ -82,8 +82,8 @@ defmodule FluxWeb.Components.UpgradePrompt do
   defp feature_label(:snowflake_sink), do: "Snowflake sink"
   defp feature_label(:bigquery_sink), do: "BigQuery sink"
   defp feature_label(:kafka_sink), do: "Kafka sink"
+  defp feature_label(:kafka_source), do: "Kafka source"
   defp feature_label(:rabbit_mq_queue), do: "RabbitMQ queue backend"
-  defp feature_label(:kafka_queue), do: "Kafka queue backend"
   defp feature_label(:dlq), do: "Dead-letter queue"
   defp feature_label(:advanced_ai), do: "Advanced anomaly detection"
   defp feature_label(:live_signals), do: "Live Signals monitoring"
@@ -98,6 +98,7 @@ defmodule FluxWeb.Components.UpgradePrompt do
   defp feature_label(:white_label), do: "White-label branding"
   defp feature_label(:mfa), do: "Multi-factor authentication"
   defp feature_label(:pro_sink), do: "This sink type"
+  defp feature_label(:pro_source), do: "This source type"
   defp feature_label(:pro_queue), do: "This queue backend"
   defp feature_label(other), do: other |> Atom.to_string() |> String.replace("_", " ")
 end

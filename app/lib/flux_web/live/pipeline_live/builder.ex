@@ -25,6 +25,7 @@ defmodule FluxWeb.PipelineLive.Builder do
      |> assign(:selected_node, nil)
      |> assign(:selected_edge, nil)
      |> assign(:advanced_ai, Flux.License.has_feature?(:advanced_ai))
+     |> assign(:kafka_source, Flux.License.has_feature?(:kafka_source))
      |> assign(:page_title, "Pipeline Builder")}
   end
 
@@ -120,7 +121,11 @@ defmodule FluxWeb.PipelineLive.Builder do
         <div class="flex-1 overflow-y-auto p-4">
           <%= cond do %>
             <% @selected_node -> %>
-              <.node_config_form node={@selected_node} advanced_ai={@advanced_ai} />
+              <.node_config_form
+                node={@selected_node}
+                advanced_ai={@advanced_ai}
+                kafka_source={@kafka_source}
+              />
             <% @selected_edge -> %>
               <.edge_config_form edge={@selected_edge} ir={@initial_ir} />
             <% true -> %>
@@ -263,7 +268,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   # ── Node config form router ───────────────────────────────────────
 
   defp node_config_form(%{node: %{type: "source"}} = assigns),
-    do: ~H"<.source_config node={@node} />"
+    do: ~H"<.source_config node={@node} kafka_source={@kafka_source} />"
 
   defp node_config_form(%{node: %{type: "step"}} = assigns),
     do: ~H"<.step_config node={@node} advanced_ai={@advanced_ai} />"
@@ -318,6 +323,9 @@ defmodule FluxWeb.PipelineLive.Builder do
             <option value="scheduled_poll" selected={@source_type == "scheduled_poll"}>
               Scheduled Poll
             </option>
+            <option value="kafka" selected={@source_type == "kafka"} disabled={!@kafka_source}>
+              Kafka Topic {pro_suffix(@kafka_source)}
+            </option>
           </select>
         </div>
 
@@ -330,6 +338,8 @@ defmodule FluxWeb.PipelineLive.Builder do
             <.webhook_source_config config={@source_config} />
           <% "scheduled_poll" -> %>
             <.scheduled_poll_source_config config={@source_config} />
+          <% "kafka" -> %>
+            <.kafka_source_config config={@source_config} kafka_source={@kafka_source} />
           <% _ -> %>
             <.queue_source_config config={@source_config} />
         <% end %>
@@ -489,6 +499,75 @@ defmodule FluxWeb.PipelineLive.Builder do
           class="textarea textarea-bordered w-full min-h-20 font-mono text-sm"
         >{format_poll_headers(@config["pollHeaders"])}</textarea>
       </div>
+    </div>
+    """
+  end
+
+  # Kafka is a Pro source connector. Fields are disabled and a note is shown when
+  # the license is not entitled, mirroring the anomaly-detection gating above.
+  defp kafka_source_config(assigns) do
+    ~H"""
+    <div class="space-y-3">
+      <div class="form-control">
+        <.field_label text="Bootstrap Servers" tooltip="Comma-separated Kafka brokers" />
+        <input
+          type="text"
+          name="sourceConfig[bootstrapServers]"
+          value={@config["bootstrapServers"] || ""}
+          placeholder="broker1:9092,broker2:9092"
+          disabled={!@kafka_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label text="Topic" tooltip="Kafka topic to consume from" />
+        <input
+          type="text"
+          name="sourceConfig[topic]"
+          value={@config["topic"] || ""}
+          placeholder="events"
+          disabled={!@kafka_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label text="Consumer Group" tooltip="Consumer group id for offset management" />
+        <input
+          type="text"
+          name="sourceConfig[consumerGroup]"
+          value={@config["consumerGroup"] || ""}
+          placeholder="flux-consumers"
+          disabled={!@kafka_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label text="Auth Mode" tooltip="Kafka cluster authentication" />
+        <select
+          name="sourceConfig[authMode]"
+          disabled={!@kafka_source}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="plaintext" selected={@config["authMode"] == "plaintext"}>PLAINTEXT</option>
+          <option value="sasl_plain" selected={@config["authMode"] == "sasl_plain"}>
+            SASL/PLAIN
+          </option>
+          <option value="sasl_scram_256" selected={@config["authMode"] == "sasl_scram_256"}>
+            SASL/SCRAM-SHA-256
+          </option>
+          <option value="sasl_scram_512" selected={@config["authMode"] == "sasl_scram_512"}>
+            SASL/SCRAM-SHA-512
+          </option>
+          <option value="mtls" selected={@config["authMode"] == "mtls"}>mTLS</option>
+        </select>
+      </div>
+
+      <p :if={!@kafka_source} class="text-xs text-base-content/50 mt-1">
+        The Kafka source connector requires a Pro license.
+      </p>
     </div>
     """
   end

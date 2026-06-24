@@ -16,8 +16,9 @@ defmodule Flux.License.Features do
 
   Feature atoms gate the following:
 
-    * `:s3_sink`, `:snowflake_sink`, `:bigquery_sink`, `:kafka_sink` - object/warehouse sinks
-    * `:rabbit_mq_queue`, `:kafka_queue`, `:dlq` - durable queue backends + dead-letter
+    * `:s3_sink`, `:snowflake_sink`, `:bigquery_sink`, `:kafka_sink` - object/warehouse/stream sinks
+    * `:kafka_source` - Kafka topic source connector (see `Flux.Source`)
+    * `:rabbit_mq_queue`, `:dlq` - durable queue backend + dead-letter
     * `:advanced_ai` - anomaly detection step in the pipeline interpreter
     * `:live_signals` - the Live Signals monitoring page
     * `:cron_polling` - scheduled (cron) source polling
@@ -39,8 +40,9 @@ defmodule Flux.License.Features do
       :snowflake_sink,
       :bigquery_sink,
       :kafka_sink,
+      # Kafka topic source connector (consume → transform/detect → produce).
+      :kafka_source,
       :rabbit_mq_queue,
-      :kafka_queue,
       :dlq,
       :advanced_ai,
       :live_signals,

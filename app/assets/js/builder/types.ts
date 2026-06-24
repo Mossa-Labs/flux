@@ -4,7 +4,7 @@
 
 // Source configuration for different source types
 export interface SourceConfig {
-  type: 'queue' | 'webhook' | 'scheduled_poll';
+  type: 'queue' | 'webhook' | 'scheduled_poll' | 'kafka';
   // Queue source
   queue?: string;
   prefetchCount?: number;
@@ -18,6 +18,11 @@ export interface SourceConfig {
   pollInterval?: number;
   pollMethod?: 'GET' | 'POST';
   pollHeaders?: Record<string, string>;
+  // Kafka source (Pro)
+  bootstrapServers?: string;
+  topic?: string;
+  consumerGroup?: string;
+  authMode?: 'plaintext' | 'sasl_plain' | 'sasl_scram_256' | 'sasl_scram_512' | 'mtls';
 }
 
 // IR node definition (source and sink nodes stored in IR)
@@ -75,7 +80,7 @@ export interface SinkConfig {
 export interface SourceNodeData {
   label: string;
   queue?: string;
-  sourceType?: 'queue' | 'webhook' | 'scheduled_poll';
+  sourceType?: 'queue' | 'webhook' | 'scheduled_poll' | 'kafka';
   sourceConfig?: SourceConfig;
   [key: string]: unknown;
 }

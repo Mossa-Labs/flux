@@ -19,6 +19,11 @@ const sourceTypeIcons: Record<string, React.ReactNode> = {
       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
     </svg>
   ),
+  kafka: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+      <path d="M3 4.25A2.25 2.25 0 015.25 2h9.5A2.25 2.25 0 0117 4.25v11.5A2.25 2.25 0 0114.75 18h-9.5A2.25 2.25 0 013 15.75V4.25zm3 .5a.75.75 0 00-.75.75v9a.75.75 0 001.5 0v-9A.75.75 0 006 4.75zm4 0a.75.75 0 00-.75.75v9a.75.75 0 001.5 0v-9a.75.75 0 00-.75-.75zm4 0a.75.75 0 00-.75.75v9a.75.75 0 001.5 0v-9a.75.75 0 00-.75-.75z" />
+    </svg>
+  ),
 };
 
 function getSourceSubtitle(nodeData: SourceNodeData): string | null {
@@ -41,6 +46,8 @@ function getSourceSubtitle(nodeData: SourceNodeData): string | null {
         }
       }
       return null;
+    case 'kafka':
+      return config.topic || null;
     default:
       return nodeData.queue || null;
   }
