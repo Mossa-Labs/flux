@@ -70,7 +70,7 @@ defmodule FluxWeb.SinkLive.Form do
               <label class="label">
                 <span class="label-text font-medium">Sink Type</span>
               </label>
-              <div class="grid grid-cols-3 gap-3">
+              <div class="grid grid-cols-2 gap-3">
                 <.sink_type_option
                   field={@form[:type]}
                   selected_type={@selected_type}
@@ -93,6 +93,14 @@ defmodule FluxWeb.SinkLive.Form do
                   type="postgres"
                   icon="hero-circle-stack"
                   label="Postgres"
+                  sublabel="Database"
+                />
+                <.sink_type_option
+                  field={@form[:type]}
+                  selected_type={@selected_type}
+                  type="mysql"
+                  icon="hero-circle-stack"
+                  label="MySQL"
                   sublabel="Database"
                 />
               </div>
@@ -240,6 +248,41 @@ defmodule FluxWeb.SinkLive.Form do
     """
   end
 
+  defp type_config_fields(%{type: "mysql"} = assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <.input
+        field={@form[:config_database_url]}
+        type="text"
+        label="Database URL"
+        placeholder="mysql://user:pass@host:3306/db"
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Flux connects out to this database — make sure its host/port allows the Flux
+        server's egress IP. See <code>docs/connectors/external-databases.md</code>.
+      </p>
+      <.input field={@form[:config_table]} type="text" label="Table Name" placeholder="events" />
+      <.input
+        field={@form[:config_columns]}
+        type="textarea"
+        label="Column Mapping (JSON)"
+        placeholder={~s({"event_type": "type", "payload.user_id": "user_id"})}
+      />
+      <.input
+        field={@form[:config_on_conflict]}
+        type="select"
+        label="On Duplicate Key"
+        options={[
+          {"Raise error", "raise"},
+          {"Ignore duplicates", "ignore"},
+          {"Update (upsert)", "update"}
+        ]}
+      />
+      <.input field={@form[:config_ssl]} type="checkbox" label="Use TLS/SSL connection" />
+    </div>
+    """
+  end
+
   defp type_config_fields(assigns) do
     ~H"""
     <p class="text-base-content/60">Select a sink type to configure.</p>
@@ -347,6 +390,21 @@ defmodule FluxWeb.SinkLive.Form do
     |> maybe_put("mode", params["config_mode"])
     |> maybe_put("table", params["config_table"])
     |> maybe_put("database_url", params["config_database_url"])
+    |> Map.put("columns", columns)
+  end
+
+  defp build_config(params, "mysql") do
+    columns =
+      case Jason.decode(params["config_columns"] || "{}") do
+        {:ok, map} when is_map(map) -> map
+        _ -> %{}
+      end
+
+    %{}
+    |> maybe_put("database_url", params["config_database_url"])
+    |> maybe_put("table", params["config_table"])
+    |> maybe_put("on_conflict", params["config_on_conflict"])
+    |> Map.put("ssl", params["config_ssl"] == "true")
     |> Map.put("columns", columns)
   end
 

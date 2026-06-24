@@ -16,6 +16,10 @@ defmodule Flux.SinkTest do
       assert {:ok, Flux.Sink.Adapters.Postgres} = Sink.adapter_for_type("postgres")
     end
 
+    test "returns MySQL adapter for \"mysql\"" do
+      assert {:ok, Flux.Sink.Adapters.MySQL} = Sink.adapter_for_type("mysql")
+    end
+
     test "returns error for unknown type" do
       assert {:error, :unknown_type} = Sink.adapter_for_type("unknown")
     end
@@ -24,6 +28,7 @@ defmodule Flux.SinkTest do
       assert {:ok, Flux.Sink.Adapters.HTTP} = Sink.adapter_for_type(:http)
       assert {:ok, Flux.Sink.Adapters.Stub} = Sink.adapter_for_type(:s3)
       assert {:ok, Flux.Sink.Adapters.Postgres} = Sink.adapter_for_type(:postgres)
+      assert {:ok, Flux.Sink.Adapters.MySQL} = Sink.adapter_for_type(:mysql)
     end
 
     test "returns error for unknown atom type" do
@@ -33,7 +38,7 @@ defmodule Flux.SinkTest do
 
   describe "available_types/0" do
     test "returns all sink types sorted alphabetically" do
-      assert Sink.available_types() == ["http", "postgres", "s3"]
+      assert Sink.available_types() == ["http", "mysql", "postgres", "s3"]
     end
   end
 
@@ -68,6 +73,16 @@ defmodule Flux.SinkTest do
     test "delegates to Postgres adapter for valid config" do
       config = %{"table" => "events", "columns" => %{"type" => "event_type"}}
       assert :ok = Sink.validate_config("postgres", config)
+    end
+
+    test "delegates to MySQL adapter for valid config" do
+      config = %{
+        "database_url" => "mysql://user:pass@host:3306/db",
+        "table" => "events",
+        "columns" => %{"type" => "event_type"}
+      }
+
+      assert :ok = Sink.validate_config("mysql", config)
     end
 
     test "returns error for unknown sink type" do
