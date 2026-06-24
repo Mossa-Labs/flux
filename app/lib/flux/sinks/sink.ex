@@ -3,7 +3,7 @@ defmodule Flux.Sinks.Sink do
   Schema for sink configurations.
 
   A sink represents an output destination for pipeline data. Each sink
-  has a type (http, s3, postgres) and a configuration map specific to
+  has a type (http, s3, postgres, mysql) and a configuration map specific to
   that type.
   """
 
@@ -12,7 +12,7 @@ defmodule Flux.Sinks.Sink do
 
   alias Flux.Structure.Organization
 
-  @sink_types ~w(http s3 postgres)
+  @sink_types ~w(http s3 postgres mysql)
 
   schema "sinks" do
     field :name, :string

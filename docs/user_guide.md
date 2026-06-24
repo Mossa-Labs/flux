@@ -226,6 +226,24 @@ Insert data directly into a PostgreSQL table.
 | Column Mapping | Map data fields to table columns (supports nested paths with dot notation) |
 | On Conflict | Strategy for duplicate keys: `nothing`, `replace_all`, or `raise` |
 
+In **External** mode Flux connects out to a database you run — see
+[Connecting to external databases](connectors/external-databases.md) for the
+port and firewall/egress-IP setup needed to reach it.
+
+#### MySQL Sink
+Insert data directly into a MySQL table (MySQL 5.7 and 8.0). Always connects to an
+external database — see [MySQL Sink](connectors/mysql.md) for the full reference
+and [Connecting to external databases](connectors/external-databases.md) for
+networking.
+
+| Field | Description |
+|-------|-------------|
+| Database URL | `mysql://user:pass@host:3306/database` |
+| Table | Target table name |
+| Column Mapping | Map data fields to table columns (supports nested paths with dot notation) |
+| On Duplicate Key | Strategy for duplicate keys: `raise`, `ignore`, or `update` (upsert) |
+| TLS/SSL | Connect to the database over TLS |
+
 ---
 
 ## System Settings
