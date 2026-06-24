@@ -9,7 +9,7 @@ defmodule FluxWeb.SinkLive.Form do
   alias FluxWeb.Components.UpgradePrompt
 
   # Sink types gated behind a Pro/EE license, mapped to their entitlement feature.
-  @pro_sink_features %{"s3" => :s3_sink}
+  @pro_sink_features %{"s3" => :s3_sink, "bigquery" => :bigquery_sink}
 
   @impl true
   def mount(params, _session, socket) do
@@ -102,6 +102,14 @@ defmodule FluxWeb.SinkLive.Form do
                   icon="hero-circle-stack"
                   label="MySQL"
                   sublabel="Database"
+                />
+                <.sink_type_option
+                  field={@form[:type]}
+                  selected_type={@selected_type}
+                  type="bigquery"
+                  icon="hero-table-cells"
+                  label="BigQuery"
+                  sublabel="Warehouse"
                 />
               </div>
             </div>
@@ -283,6 +291,37 @@ defmodule FluxWeb.SinkLive.Form do
     """
   end
 
+  defp type_config_fields(%{type: "bigquery"} = assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <.input
+        field={@form[:config_project_id]}
+        type="text"
+        label="Project ID"
+        placeholder="my-gcp-project"
+      />
+      <.input field={@form[:config_dataset]} type="text" label="Dataset" placeholder="analytics" />
+      <.input field={@form[:config_table]} type="text" label="Table" placeholder="events" />
+      <.input
+        field={@form[:config_credentials]}
+        type="textarea"
+        label="Service Account JSON"
+        placeholder="Leave blank to use GOOGLE_APPLICATION_CREDENTIALS / Workload Identity"
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Paste a service-account key, or leave blank to fall back to Application Default
+        Credentials (e.g. Workload Identity on GKE).
+      </p>
+      <.input
+        field={@form[:config_location]}
+        type="text"
+        label="Location (optional)"
+        placeholder="US"
+      />
+    </div>
+    """
+  end
+
   defp type_config_fields(assigns) do
     ~H"""
     <p class="text-base-content/60">Select a sink type to configure.</p>
@@ -408,6 +447,15 @@ defmodule FluxWeb.SinkLive.Form do
     |> Map.put("columns", columns)
   end
 
+  defp build_config(params, "bigquery") do
+    %{}
+    |> maybe_put("project_id", params["config_project_id"])
+    |> maybe_put("dataset", params["config_dataset"])
+    |> maybe_put("table", params["config_table"])
+    |> maybe_put("credentials", params["config_credentials"])
+    |> maybe_put("location", params["config_location"])
+  end
+
   defp build_config(_params, _type), do: %{}
 
   defp maybe_put(map, _key, nil), do: map
@@ -439,5 +487,6 @@ defmodule FluxWeb.SinkLive.Form do
   defp pro_feature(type), do: Map.get(@pro_sink_features, type, :pro_sink)
 
   defp pro_label("s3"), do: "S3 sinks"
+  defp pro_label("bigquery"), do: "BigQuery sinks"
   defp pro_label(type), do: "#{type} sinks"
 end

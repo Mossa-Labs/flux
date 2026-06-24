@@ -187,6 +187,26 @@ defmodule Flux.SinksTest do
       assert msg =~ "Flux Pro"
     end
 
+    test "with bigquery type in Community is rejected (Pro feature)", %{org_id: org_id} do
+      attrs = %{
+        name: "my-bq-sink",
+        type: "bigquery",
+        config: %{
+          "project_id" => "my-project",
+          "dataset" => "analytics",
+          "table" => "events"
+        },
+        organization_id: org_id
+      }
+
+      # bigquery is an accepted type (passes inclusion); the Community stub
+      # rejects it at config validation with the upgrade prompt.
+      assert {:error, %Ecto.Changeset{} = changeset} = Sinks.create_sink(attrs)
+      assert {msg, _} = changeset.errors[:config]
+      assert msg =~ "Flux Pro"
+      refute changeset.errors[:type]
+    end
+
     test "with valid postgres type creates a sink", %{org_id: org_id} do
       attrs = %{
         name: "my-pg-sink",
