@@ -190,7 +190,13 @@ defmodule Flux.Sink.Adapters.HTTP do
     end
   end
 
-  defp build_headers(config) do
+  @doc """
+  Builds the request header list from a sink config: a JSON content-type, any
+  user-supplied `headers`, and the auth header for the configured `auth` block
+  (`bearer`, `basic`, or `api_key`). Pure — unit-tested without a network call.
+  """
+  @spec build_headers(map()) :: [{String.t(), String.t()}]
+  def build_headers(config) do
     base_headers = [{"content-type", "application/json"}]
     custom_headers = config |> Map.get("headers", %{}) |> Map.to_list()
     auth_headers = build_auth_headers(Map.get(config, "auth"))

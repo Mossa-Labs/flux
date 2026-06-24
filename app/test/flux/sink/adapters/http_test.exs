@@ -116,4 +116,46 @@ defmodule Flux.Sink.Adapters.HTTPTest do
       assert :ok = HTTP.validate_config(config)
     end
   end
+
+  describe "build_headers/1" do
+    test "always includes a JSON content-type" do
+      assert {"content-type", "application/json"} in HTTP.build_headers(%{})
+    end
+
+    test "merges user-supplied custom headers" do
+      headers = HTTP.build_headers(%{"headers" => %{"X-Custom" => "v"}})
+      assert {"X-Custom", "v"} in headers
+    end
+
+    test "builds a Bearer authorization header" do
+      headers = HTTP.build_headers(%{"auth" => %{"type" => "bearer", "token" => "secret"}})
+      assert {"authorization", "Bearer secret"} in headers
+    end
+
+    test "builds a Basic authorization header with base64-encoded credentials" do
+      headers =
+        HTTP.build_headers(%{
+          "auth" => %{"type" => "basic", "username" => "u", "password" => "p"}
+        })
+
+      assert {"authorization", "Basic " <> encoded} =
+               Enum.find(headers, fn {k, _} -> k == "authorization" end)
+
+      assert Base.decode64!(encoded) == "u:p"
+    end
+
+    test "builds a custom api_key header with a downcased name" do
+      headers =
+        HTTP.build_headers(%{
+          "auth" => %{"type" => "api_key", "header_name" => "X-Api-Key", "key" => "abc"}
+        })
+
+      assert {"x-api-key", "abc"} in headers
+    end
+
+    test "omits an authorization header for an unrecognized auth block" do
+      headers = HTTP.build_headers(%{"auth" => %{"type" => "weird"}})
+      refute Enum.any?(headers, fn {k, _} -> k == "authorization" end)
+    end
+  end
 end
