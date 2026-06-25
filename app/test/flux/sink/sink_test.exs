@@ -42,7 +42,8 @@ defmodule Flux.SinkTest do
 
   describe "available_types/0" do
     test "returns all sink types sorted alphabetically" do
-      assert Sink.available_types() == ["bigquery", "http", "kafka", "mysql", "postgres", "s3"]
+      assert Sink.available_types() ==
+               ["bigquery", "http", "kafka", "mysql", "postgres", "s3", "snowflake"]
     end
   end
 

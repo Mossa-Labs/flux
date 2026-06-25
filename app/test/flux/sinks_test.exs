@@ -207,6 +207,28 @@ defmodule Flux.SinksTest do
       refute changeset.errors[:type]
     end
 
+    test "with snowflake type in Community is rejected (Pro feature)", %{org_id: org_id} do
+      attrs = %{
+        name: "my-sf-sink",
+        type: "snowflake",
+        config: %{
+          "account" => "xy12345.us-east-1",
+          "warehouse" => "compute_wh",
+          "database" => "analytics",
+          "schema" => "public",
+          "table" => "events"
+        },
+        organization_id: org_id
+      }
+
+      # snowflake is an accepted type (passes inclusion); the Community stub
+      # rejects it at config validation with the upgrade prompt.
+      assert {:error, %Ecto.Changeset{} = changeset} = Sinks.create_sink(attrs)
+      assert {msg, _} = changeset.errors[:config]
+      assert msg =~ "Flux Pro"
+      refute changeset.errors[:type]
+    end
+
     test "with valid postgres type creates a sink", %{org_id: org_id} do
       attrs = %{
         name: "my-pg-sink",
@@ -374,6 +396,25 @@ defmodule Flux.SinksTest do
 
       result = Sinks.test_connection(sink)
       assert result == :ok or match?({:error, _}, result)
+    end
+  end
+
+  describe "redact_config/1" do
+    test "masks Snowflake key-pair material" do
+      config = %{
+        "account" => "xy12345.us-east-1",
+        "user" => "flux_loader",
+        "private_key" => "-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----",
+        "private_key_passphrase" => "hunter2"
+      }
+
+      redacted = Sinks.redact_config(config)
+
+      assert redacted["private_key"] == "[REDACTED]"
+      assert redacted["private_key_passphrase"] == "[REDACTED]"
+      # Non-secret fields pass through untouched.
+      assert redacted["account"] == "xy12345.us-east-1"
+      assert redacted["user"] == "flux_loader"
     end
   end
 end
