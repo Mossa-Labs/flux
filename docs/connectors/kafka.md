@@ -96,9 +96,33 @@ Ordering is preserved within a partition. Transactional produce trades some
 throughput for exactly-once delivery; idempotent produce (the default) prevents
 duplicates on retry without the transactional overhead.
 
-## Connectivity
+## Networking & firewall
 
-Flux connects out to your Kafka brokers, so make sure the broker
-host/port and (for `mtls`) the advertised listeners are reachable from the Flux
-server's egress. Use **Test connection** on the source/sink form to verify
-reachability and authentication before saving.
+Flux **dials out** to your Kafka brokers — for both producing (sink) and
+consuming (source). A connector can save with valid credentials and still fail
+to deliver or ingest if the network path to the cluster is blocked, so get the
+networking right before attaching it to a pipeline. Use **Test connection** on
+the source/sink form to verify reachability and auth up front.
+
+The egress/allowlisting model is the same as for
+[external databases](external-databases.md): your broker's firewall sees the
+connection arriving from the **Flux server's egress IP** — in cloud deployments
+usually a **NAT gateway's Elastic/static IP**, not Flux's private IP — and that
+is the address to allowlist (on the broker security groups and on any VPC
+peering / PrivateLink / VPN route between the two networks). See that page for
+how to find the egress IP and how to handle multiple Flux nodes/subnets.
+
+Two things are specific to Kafka and catch people out:
+
+- **Allowlist every broker, not just the bootstrap server.** `bootstrap_servers`
+  is only the entry point: the client fetches cluster metadata and then connects
+  **directly to the broker that leads each partition**. Your firewall rules must
+  cover **all** brokers in the cluster and their Kafka ports (commonly `9092`,
+  or `9093` for TLS) — not only the host(s) listed in `bootstrap_servers`.
+- **Advertised listeners must be reachable.** A broker answers metadata with the
+  host/port set as its *advertised listener*, and the client reconnects to
+  **that** address. If a broker advertises an internal/private hostname that the
+  Flux server can't resolve or route to, the bootstrap connection succeeds but
+  produce/consume then times out. Make sure the cluster advertises addresses
+  reachable from Flux's egress — this is the usual cause of "connects, then
+  hangs" with managed or dockerized Kafka.
