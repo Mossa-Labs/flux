@@ -9,7 +9,12 @@ defmodule FluxWeb.SinkLive.Form do
   alias FluxWeb.Components.UpgradePrompt
 
   # Sink types gated behind a Pro/EE license, mapped to their entitlement feature.
-  @pro_sink_features %{"s3" => :s3_sink, "bigquery" => :bigquery_sink, "kafka" => :kafka_sink}
+  @pro_sink_features %{
+    "s3" => :s3_sink,
+    "bigquery" => :bigquery_sink,
+    "kafka" => :kafka_sink,
+    "snowflake" => :snowflake_sink
+  }
 
   @impl true
   def mount(params, _session, socket) do
@@ -118,6 +123,14 @@ defmodule FluxWeb.SinkLive.Form do
                   icon="hero-queue-list"
                   label="Kafka"
                   sublabel="Event Streaming"
+                />
+                <.sink_type_option
+                  field={@form[:type]}
+                  selected_type={@selected_type}
+                  type="snowflake"
+                  icon="hero-cube"
+                  label="Snowflake"
+                  sublabel="Warehouse"
                 />
               </div>
             </div>
@@ -368,6 +381,41 @@ defmodule FluxWeb.SinkLive.Form do
     """
   end
 
+  # Rendered only on a licensed build (Community shows the upgrade prompt instead).
+  defp type_config_fields(%{type: "snowflake"} = assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <.input
+        field={@form[:config_account]}
+        type="text"
+        label="Account Identifier"
+        placeholder="xy12345.us-east-1"
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Flux egresses to <code>&lt;account&gt;.snowflakecomputing.com</code> over HTTPS
+        (443) — make sure the Flux node's outbound/NAT allows it.
+      </p>
+      <.input field={@form[:config_warehouse]} type="text" label="Warehouse" placeholder="compute_wh" />
+      <.input field={@form[:config_database]} type="text" label="Database" placeholder="analytics" />
+      <.input field={@form[:config_schema]} type="text" label="Schema" placeholder="public" />
+      <.input field={@form[:config_table]} type="text" label="Table" placeholder="events" />
+      <.input field={@form[:config_user]} type="text" label="User" placeholder="flux_loader" />
+      <.input
+        field={@form[:config_private_key]}
+        type="password"
+        label="Private Key (PEM)"
+        placeholder="-----BEGIN PRIVATE KEY-----"
+      />
+      <.input
+        field={@form[:config_private_key_passphrase]}
+        type="password"
+        label="Private Key Passphrase (optional)"
+        placeholder="Only if the key is encrypted"
+      />
+    </div>
+    """
+  end
+
   defp type_config_fields(assigns) do
     ~H"""
     <p class="text-base-content/60">Select a sink type to configure.</p>
@@ -511,6 +559,18 @@ defmodule FluxWeb.SinkLive.Form do
     |> Map.put("transactional", params["config_transactional"] == "true")
   end
 
+  defp build_config(params, "snowflake") do
+    %{}
+    |> maybe_put("account", params["config_account"])
+    |> maybe_put("warehouse", params["config_warehouse"])
+    |> maybe_put("database", params["config_database"])
+    |> maybe_put("schema", params["config_schema"])
+    |> maybe_put("table", params["config_table"])
+    |> maybe_put("user", params["config_user"])
+    |> maybe_put("private_key", params["config_private_key"])
+    |> maybe_put("private_key_passphrase", params["config_private_key_passphrase"])
+  end
+
   defp build_config(_params, _type), do: %{}
 
   defp maybe_put(map, _key, nil), do: map
@@ -544,5 +604,6 @@ defmodule FluxWeb.SinkLive.Form do
   defp pro_label("s3"), do: "S3 sinks"
   defp pro_label("bigquery"), do: "BigQuery sinks"
   defp pro_label("kafka"), do: "Kafka sinks"
+  defp pro_label("snowflake"), do: "Snowflake sinks"
   defp pro_label(type), do: "#{type} sinks"
 end

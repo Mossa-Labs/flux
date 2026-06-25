@@ -32,6 +32,16 @@ defmodule FluxWeb.SinkLive.FormTest do
       refute html =~ "Service Account JSON"
     end
 
+    test "selecting Snowflake shows the Pro upgrade prompt in Community", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "snowflake"})
+
+      # Community is not entitled, so the config form is replaced by the upgrade prompt.
+      assert html =~ "Flux Pro"
+      refute html =~ "Account Identifier"
+    end
+
     test "save with valid params creates sink and redirects", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
 

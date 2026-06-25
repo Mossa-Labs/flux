@@ -51,8 +51,9 @@ defmodule Flux.Registrations do
     Flux.Sink.Registry.register("mysql", Flux.Sink.Adapters.MySQL)
     Flux.Sink.Registry.register("s3", Flux.Sink.Adapters.Stub)
     Flux.Sink.Registry.register("bigquery", Flux.Sink.Adapters.Stub)
-    # Pro connector — the commercial edition registers the real adapter over this stub.
+    # Pro connectors — the commercial edition registers the real adapters over these stubs.
     Flux.Sink.Registry.register("kafka", Flux.Sink.Adapters.Stub)
+    Flux.Sink.Registry.register("snowflake", Flux.Sink.Adapters.Stub)
     :ok
   end
 
