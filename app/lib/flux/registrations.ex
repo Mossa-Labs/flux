@@ -62,8 +62,9 @@ defmodule Flux.Registrations do
     # they centralize their queue-name convention through the adapter.
     Flux.Source.Registry.register("webhook", Flux.Source.Adapters.Webhook)
     Flux.Source.Registry.register("poll", Flux.Source.Adapters.Poll)
-    # Pro connector — the commercial edition registers the real consumer over this stub.
+    # Pro connectors — the commercial edition registers the real consumer over these stubs.
     Flux.Source.Registry.register("kafka", Flux.Source.Adapters.Stub)
+    Flux.Source.Registry.register("mqtt", Flux.Source.Adapters.Stub)
     :ok
   end
 

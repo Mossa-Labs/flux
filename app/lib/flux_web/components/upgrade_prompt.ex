@@ -100,6 +100,7 @@ defmodule FluxWeb.Components.UpgradePrompt do
   defp feature_label(:bigquery_sink), do: "BigQuery sink"
   defp feature_label(:kafka_sink), do: "Kafka sink"
   defp feature_label(:kafka_source), do: "Kafka source"
+  defp feature_label(:mqtt_source), do: "MQTT source"
   defp feature_label(:rabbit_mq_queue), do: "RabbitMQ queue backend"
   defp feature_label(:dlq), do: "Dead-letter queue"
   defp feature_label(:advanced_ai), do: "Advanced anomaly detection"
