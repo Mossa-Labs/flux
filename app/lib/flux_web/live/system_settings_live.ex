@@ -324,7 +324,7 @@ defmodule FluxWeb.SystemSettingsLive do
           type="textarea"
           rows="3"
           placeholder="flux license token…"
-          class="font-mono text-xs"
+          class="w-full textarea font-mono text-xs break-all"
         />
         <.button class="btn btn-primary btn-sm">Activate license</.button>
       </.form>

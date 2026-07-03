@@ -182,7 +182,7 @@ defmodule FluxWeb.DashboardLive.Index do
     <div class="card bg-base-100 shadow-sm border border-base-200">
       <div class="card-body">
         <h2 class="card-title text-base font-bold mb-4">System Health</h2>
-        <div class="grid grid-cols-3 gap-6">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
           <div class="text-center p-4 bg-base-200/30 rounded-lg">
             <p class="text-2xl font-bold text-primary">{format_number(@events_per_sec)}</p>
             <p class="text-sm text-base-content/60 mt-1">Events/sec</p>

@@ -43,8 +43,8 @@ defmodule FluxWeb.SinkLive.Form do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="max-w-2xl mx-auto">
-      <div class="flex items-center gap-4 mb-6">
+    <div class="space-y-6">
+      <div class="flex items-center gap-4">
         <.link navigate={~p"/sinks"} class="btn btn-ghost btn-sm">
           <.icon name="hero-arrow-left" class="w-4 h-4" />
         </.link>
@@ -75,7 +75,7 @@ defmodule FluxWeb.SinkLive.Form do
               <label class="label">
                 <span class="label-text font-medium">Sink Type</span>
               </label>
-              <div class="grid grid-cols-2 gap-3">
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <.sink_type_option
                   field={@form[:type]}
                   selected_type={@selected_type}

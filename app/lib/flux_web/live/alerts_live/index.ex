@@ -332,7 +332,7 @@ defmodule FluxWeb.AlertsLive.Index do
   def render(assigns) do
     ~H"""
     <div class="space-y-6">
-      <div class="flex items-start justify-between gap-4">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 class="text-2xl font-bold tracking-tight text-base-content">
             Alerts
@@ -434,54 +434,56 @@ defmodule FluxWeb.AlertsLive.Index do
             </p>
           </div>
 
-          <table :if={@rules != []} class="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Trigger</th>
-                <th>Channels</th>
-                <th>Cooldown</th>
-                <th>Last fired</th>
-                <th>Enabled</th>
-                <th class="text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr :for={rule <- @rules} id={"alert-rule-#{rule.id}"} class="hover">
-                <td class="font-medium">{rule.name}</td>
-                <td><span class="badge badge-ghost">{trigger_label(rule.trigger_type)}</span></td>
-                <td class="text-sm text-base-content/70">{channels_summary(rule.channels)}</td>
-                <td class="text-sm">{rule.cooldown_minutes}m</td>
-                <td class="text-sm text-base-content/70">{format_timestamp(rule.last_fired_at)}</td>
-                <td>
-                  <input
-                    type="checkbox"
-                    class="toggle toggle-sm toggle-success"
-                    checked={rule.enabled}
-                    phx-click="toggle_rule"
-                    phx-value-id={rule.id}
-                    phx-value-enabled={to_string(!rule.enabled)}
-                  />
-                </td>
-                <td class="text-right whitespace-nowrap">
-                  <button class="btn btn-xs btn-ghost" phx-click="test_rule" phx-value-id={rule.id}>
-                    <.icon name="hero-paper-airplane" class="w-4 h-4" /> Test
-                  </button>
-                  <button class="btn btn-xs btn-ghost" phx-click="edit_rule" phx-value-id={rule.id}>
-                    <.icon name="hero-pencil-square" class="w-4 h-4" /> Edit
-                  </button>
-                  <button
-                    class="btn btn-xs btn-ghost text-error"
-                    phx-click="delete_rule"
-                    phx-value-id={rule.id}
-                    data-confirm="Delete this alert rule? This cannot be undone."
-                  >
-                    <.icon name="hero-trash" class="w-4 h-4" /> Delete
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div :if={@rules != []} class="overflow-x-auto">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Trigger</th>
+                  <th>Channels</th>
+                  <th>Cooldown</th>
+                  <th>Last fired</th>
+                  <th>Enabled</th>
+                  <th class="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr :for={rule <- @rules} id={"alert-rule-#{rule.id}"} class="hover">
+                  <td class="font-medium">{rule.name}</td>
+                  <td><span class="badge badge-ghost">{trigger_label(rule.trigger_type)}</span></td>
+                  <td class="text-sm text-base-content/70">{channels_summary(rule.channels)}</td>
+                  <td class="text-sm">{rule.cooldown_minutes}m</td>
+                  <td class="text-sm text-base-content/70">{format_timestamp(rule.last_fired_at)}</td>
+                  <td>
+                    <input
+                      type="checkbox"
+                      class="toggle toggle-sm toggle-success"
+                      checked={rule.enabled}
+                      phx-click="toggle_rule"
+                      phx-value-id={rule.id}
+                      phx-value-enabled={to_string(!rule.enabled)}
+                    />
+                  </td>
+                  <td class="text-right whitespace-nowrap">
+                    <button class="btn btn-xs btn-ghost" phx-click="test_rule" phx-value-id={rule.id}>
+                      <.icon name="hero-paper-airplane" class="w-4 h-4" /> Test
+                    </button>
+                    <button class="btn btn-xs btn-ghost" phx-click="edit_rule" phx-value-id={rule.id}>
+                      <.icon name="hero-pencil-square" class="w-4 h-4" /> Edit
+                    </button>
+                    <button
+                      class="btn btn-xs btn-ghost text-error"
+                      phx-click="delete_rule"
+                      phx-value-id={rule.id}
+                      data-confirm="Delete this alert rule? This cannot be undone."
+                    >
+                      <.icon name="hero-trash" class="w-4 h-4" /> Delete
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -492,24 +494,26 @@ defmodule FluxWeb.AlertsLive.Index do
       >
         <div class="card-body">
           <h2 class="card-title text-base font-bold mb-2">Recent alerts</h2>
-          <table class="table table-sm">
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Trigger</th>
-                <th>Channels notified</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr :for={entry <- @history} id={"alert-history-#{entry.id}"}>
-                <td class="text-sm text-base-content/70">{format_timestamp(entry.inserted_at)}</td>
-                <td><span class="badge badge-ghost">{trigger_label(entry.trigger_type)}</span></td>
-                <td class="text-sm text-base-content/70">
-                  {channels_sent_summary(entry.channels_sent)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Trigger</th>
+                  <th>Channels notified</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr :for={entry <- @history} id={"alert-history-#{entry.id}"}>
+                  <td class="text-sm text-base-content/70">{format_timestamp(entry.inserted_at)}</td>
+                  <td><span class="badge badge-ghost">{trigger_label(entry.trigger_type)}</span></td>
+                  <td class="text-sm text-base-content/70">
+                    {channels_sent_summary(entry.channels_sent)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

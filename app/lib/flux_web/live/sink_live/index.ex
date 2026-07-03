@@ -22,7 +22,7 @@ defmodule FluxWeb.SinkLive.Index do
   def render(assigns) do
     ~H"""
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 class="text-2xl font-bold tracking-tight text-base-content">
             Sinks
@@ -60,81 +60,86 @@ defmodule FluxWeb.SinkLive.Index do
             </.link>
           </div>
 
-          <table :if={@has_sinks} class="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Updated</th>
-                <th class="text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="sinks" phx-update="stream">
-              <tr :for={{id, sink} <- @streams.sinks} id={id} class="hover">
-                <td>
-                  <div class="flex items-center gap-3">
-                    <.sink_icon type={sink.type} />
-                    <div>
-                      <p class="font-medium">{sink.name}</p>
-                      <p :if={sink.description} class="text-sm text-base-content/60 truncate max-w-xs">
-                        {sink.description}
-                      </p>
+          <div :if={@has_sinks} class="overflow-x-auto">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Updated</th>
+                  <th class="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="sinks" phx-update="stream">
+                <tr :for={{id, sink} <- @streams.sinks} id={id} class="hover">
+                  <td>
+                    <div class="flex items-center gap-3">
+                      <.sink_icon type={sink.type} />
+                      <div>
+                        <p class="font-medium">{sink.name}</p>
+                        <p
+                          :if={sink.description}
+                          class="text-sm text-base-content/60 truncate max-w-xs"
+                        >
+                          {sink.description}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                </td>
-                <td>
-                  <.type_badge type={sink.type} />
-                </td>
-                <td>
-                  <span :if={sink.enabled} class="badge badge-success">Enabled</span>
-                  <span :if={!sink.enabled} class="badge badge-ghost">Disabled</span>
-                </td>
-                <td class="text-sm text-base-content/60">
-                  {format_datetime(sink.updated_at)}
-                </td>
-                <td class="text-right">
-                  <div class="flex items-center justify-end gap-2">
-                    <button
-                      phx-click="test"
-                      phx-value-id={sink.id}
-                      class="btn btn-ghost btn-sm"
-                      title="Test Connection"
-                    >
-                      <.icon name="hero-signal" class="w-4 h-4" />
-                    </button>
-                    <button
-                      phx-click="toggle"
-                      phx-value-id={sink.id}
-                      class="btn btn-ghost btn-sm"
-                      title={if sink.enabled, do: "Disable", else: "Enable"}
-                    >
-                      <.icon
-                        name={if sink.enabled, do: "hero-pause", else: "hero-play"}
-                        class="w-4 h-4"
-                      />
-                    </button>
-                    <.link
-                      navigate={~p"/sinks/#{sink.id}/edit"}
-                      class="btn btn-ghost btn-sm"
-                      title="Edit"
-                    >
-                      <.icon name="hero-pencil" class="w-4 h-4" />
-                    </.link>
-                    <button
-                      phx-click="delete"
-                      phx-value-id={sink.id}
-                      class="btn btn-ghost btn-sm text-error"
-                      title="Delete"
-                      data-confirm="Are you sure you want to delete this sink?"
-                    >
-                      <.icon name="hero-trash" class="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                  </td>
+                  <td>
+                    <.type_badge type={sink.type} />
+                  </td>
+                  <td>
+                    <span :if={sink.enabled} class="badge badge-success">Enabled</span>
+                    <span :if={!sink.enabled} class="badge badge-ghost">Disabled</span>
+                  </td>
+                  <td class="text-sm text-base-content/60">
+                    {format_datetime(sink.updated_at)}
+                  </td>
+                  <td class="text-right">
+                    <div class="flex items-center justify-end gap-2">
+                      <button
+                        phx-click="test"
+                        phx-value-id={sink.id}
+                        class="btn btn-ghost btn-sm"
+                        title="Test Connection"
+                      >
+                        <.icon name="hero-signal" class="w-4 h-4" />
+                      </button>
+                      <button
+                        phx-click="toggle"
+                        phx-value-id={sink.id}
+                        class="btn btn-ghost btn-sm"
+                        title={if sink.enabled, do: "Disable", else: "Enable"}
+                      >
+                        <.icon
+                          name={if sink.enabled, do: "hero-pause", else: "hero-play"}
+                          class="w-4 h-4"
+                        />
+                      </button>
+                      <.link
+                        navigate={~p"/sinks/#{sink.id}/edit"}
+                        class="btn btn-ghost btn-sm"
+                        title="Edit"
+                      >
+                        <.icon name="hero-pencil" class="w-4 h-4" />
+                      </.link>
+                      <button
+                        phx-click="delete"
+                        phx-value-id={sink.id}
+                        class="btn btn-ghost btn-sm text-error"
+                        title="Delete"
+                        data-confirm="Are you sure you want to delete this sink?"
+                      >
+                        <.icon name="hero-trash" class="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
