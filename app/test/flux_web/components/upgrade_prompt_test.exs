@@ -34,4 +34,28 @@ defmodule FluxWeb.Components.UpgradePromptTest do
     html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :mystery_future_feature)
     assert html =~ "mystery future feature"
   end
+
+  test "shows the 'Activate it' link when license activation is supported" do
+    html =
+      render_component(&UpgradePrompt.upgrade_prompt/1,
+        feature: :usage_metering,
+        activation_supported: true
+      )
+
+    assert html =~ "Already have a license? Activate it"
+    assert html =~ "href=\"/system/settings\""
+  end
+
+  test "hides the 'Activate it' link when license activation is unsupported" do
+    # Community builds can't apply a signed key, so the link would be a dead end.
+    html =
+      render_component(&UpgradePrompt.upgrade_prompt/1,
+        feature: :usage_metering,
+        activation_supported: false
+      )
+
+    refute html =~ "Activate it"
+    # The upgrade CTA is still offered.
+    assert html =~ "View pricing"
+  end
 end

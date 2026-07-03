@@ -335,14 +335,17 @@ defmodule FluxWeb.DLQLive.Index do
   def render(assigns) do
     ~H"""
     <div class="space-y-6">
-      <div class="flex items-start justify-between gap-4">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 class="text-2xl font-bold tracking-tight text-base-content">
             Dead Letter Queue
           </h1>
           <p class="text-base-content/60 mt-1">Inspect, replay, or discard failed messages</p>
         </div>
-        <div :if={@dlq_entitled && !@unsupported && @messages != []} class="flex items-center gap-2">
+        <div
+          :if={@dlq_entitled && !@unsupported && @messages != []}
+          class="flex flex-wrap items-center gap-2"
+        >
           <button
             :if={MapSet.size(@selected) > 0}
             class="btn btn-sm btn-primary"
@@ -528,83 +531,85 @@ defmodule FluxWeb.DLQLive.Index do
             </p>
           </div>
 
-          <table :if={!@loading && @messages != []} class="table">
-            <thead>
-              <tr>
-                <th class="w-8"></th>
-                <th>Original queue</th>
-                <th>Source</th>
-                <th>Failure reason</th>
-                <th>Timestamp</th>
-                <th>Payload</th>
-                <th class="text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <%= for msg <- @messages do %>
-                <tr id={"dlq-row-#{msg.delivery_tag}"} class="hover">
-                  <td>
-                    <input
-                      type="checkbox"
-                      class="checkbox checkbox-sm"
-                      phx-click="toggle_select"
-                      phx-value-tag={to_string(msg.delivery_tag)}
-                      checked={MapSet.member?(@selected, to_string(msg.delivery_tag))}
-                    />
-                  </td>
-                  <td class="font-mono text-sm">{msg.original_queue || "—"}</td>
-                  <td class="font-mono text-sm text-base-content/70">
-                    {Map.get(msg, :source) || "—"}
-                  </td>
-                  <td class="text-sm text-error">{msg.reason || "—"}</td>
-                  <td class="text-sm text-base-content/70">{format_timestamp(msg.timestamp)}</td>
-                  <td>
-                    <button
-                      phx-click="toggle_expand"
-                      phx-value-tag={to_string(msg.delivery_tag)}
-                      class="font-mono text-xs text-base-content/60 hover:text-base-content max-w-xs truncate inline-flex items-center gap-1"
-                    >
-                      <.icon
-                        name={
-                          if @expanded_tag == to_string(msg.delivery_tag),
-                            do: "hero-chevron-down",
-                            else: "hero-chevron-right"
-                        }
-                        class="w-3 h-3 shrink-0"
+          <div :if={!@loading && @messages != []} class="overflow-x-auto">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th class="w-8"></th>
+                  <th>Original queue</th>
+                  <th>Source</th>
+                  <th>Failure reason</th>
+                  <th>Timestamp</th>
+                  <th>Payload</th>
+                  <th class="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <%= for msg <- @messages do %>
+                  <tr id={"dlq-row-#{msg.delivery_tag}"} class="hover">
+                    <td>
+                      <input
+                        type="checkbox"
+                        class="checkbox checkbox-sm"
+                        phx-click="toggle_select"
+                        phx-value-tag={to_string(msg.delivery_tag)}
+                        checked={MapSet.member?(@selected, to_string(msg.delivery_tag))}
                       />
-                      {payload_preview(msg.payload)}
-                    </button>
-                  </td>
-                  <td class="text-right whitespace-nowrap">
-                    <button
-                      class="btn btn-xs btn-ghost"
-                      phx-click="retry"
-                      phx-value-tag={to_string(msg.delivery_tag)}
-                      data-confirm="Replay this message to its original queue?"
-                    >
-                      <.icon name="hero-arrow-path" class="w-4 h-4" /> Retry
-                    </button>
-                    <button
-                      class="btn btn-xs btn-ghost text-error"
-                      phx-click="discard"
-                      phx-value-tag={to_string(msg.delivery_tag)}
-                      data-confirm="Permanently discard this message? This cannot be undone."
-                    >
-                      <.icon name="hero-trash" class="w-4 h-4" /> Discard
-                    </button>
-                  </td>
-                </tr>
-                <tr
-                  :if={@expanded_tag == to_string(msg.delivery_tag)}
-                  id={"dlq-json-#{msg.delivery_tag}"}
-                >
-                  <td colspan="7" class="bg-base-200/30">
-                    <pre class="text-xs overflow-x-auto p-2 whitespace-pre-wrap break-all">{full_json(msg.payload)}</pre>
-                  </td>
-                </tr>
-              <% end %>
-            </tbody>
-          </table>
+                    </td>
+                    <td class="font-mono text-sm">{msg.original_queue || "—"}</td>
+                    <td class="font-mono text-sm text-base-content/70">
+                      {Map.get(msg, :source) || "—"}
+                    </td>
+                    <td class="text-sm text-error">{msg.reason || "—"}</td>
+                    <td class="text-sm text-base-content/70">{format_timestamp(msg.timestamp)}</td>
+                    <td>
+                      <button
+                        phx-click="toggle_expand"
+                        phx-value-tag={to_string(msg.delivery_tag)}
+                        class="font-mono text-xs text-base-content/60 hover:text-base-content max-w-xs truncate inline-flex items-center gap-1"
+                      >
+                        <.icon
+                          name={
+                            if @expanded_tag == to_string(msg.delivery_tag),
+                              do: "hero-chevron-down",
+                              else: "hero-chevron-right"
+                          }
+                          class="w-3 h-3 shrink-0"
+                        />
+                        {payload_preview(msg.payload)}
+                      </button>
+                    </td>
+                    <td class="text-right whitespace-nowrap">
+                      <button
+                        class="btn btn-xs btn-ghost"
+                        phx-click="retry"
+                        phx-value-tag={to_string(msg.delivery_tag)}
+                        data-confirm="Replay this message to its original queue?"
+                      >
+                        <.icon name="hero-arrow-path" class="w-4 h-4" /> Retry
+                      </button>
+                      <button
+                        class="btn btn-xs btn-ghost text-error"
+                        phx-click="discard"
+                        phx-value-tag={to_string(msg.delivery_tag)}
+                        data-confirm="Permanently discard this message? This cannot be undone."
+                      >
+                        <.icon name="hero-trash" class="w-4 h-4" /> Discard
+                      </button>
+                    </td>
+                  </tr>
+                  <tr
+                    :if={@expanded_tag == to_string(msg.delivery_tag)}
+                    id={"dlq-json-#{msg.delivery_tag}"}
+                  >
+                    <td colspan="7" class="bg-base-200/30">
+                      <pre class="text-xs overflow-x-auto p-2 whitespace-pre-wrap break-all">{full_json(msg.payload)}</pre>
+                    </td>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
 
           <%!-- Pagination --%>
           <div

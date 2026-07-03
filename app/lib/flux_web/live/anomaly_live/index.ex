@@ -135,55 +135,57 @@ defmodule FluxWeb.AnomalyLive.Index do
             </p>
           </div>
 
-          <table :if={@anomaly_data != []} class="table">
-            <thead>
-              <tr>
-                <th>Pipeline</th>
-                <th>Status</th>
-                <th>Max Z-Score</th>
-                <th>Fields</th>
-                <th>Signal</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                :for={entry <- @anomaly_data}
-                class={[
-                  "hover cursor-pointer transition-colors",
-                  @selected_pipeline_id == entry.pipeline_id && "bg-base-200/50"
-                ]}
-                phx-click="select_pipeline"
-                phx-value-id={entry.pipeline_id}
-              >
-                <td class="font-medium">{entry.pipeline_name}</td>
-                <td>
-                  <.pipeline_status_badge status={entry.status} />
-                </td>
-                <td>
-                  <span class={["font-mono text-sm font-semibold", score_color(entry.max_score)]}>
-                    {format_score(entry.max_score)}
-                  </span>
-                </td>
-                <td>
-                  <span class="badge badge-ghost">{entry.field_count} fields</span>
-                </td>
-                <td>
-                  <div :if={entry.anomaly} class="flex items-center gap-1 text-error">
-                    <span class="relative flex h-2.5 w-2.5">
-                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-error opacity-75">
-                      </span>
-                      <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-error"></span>
+          <div :if={@anomaly_data != []} class="overflow-x-auto">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Pipeline</th>
+                  <th>Status</th>
+                  <th>Max Z-Score</th>
+                  <th>Fields</th>
+                  <th>Signal</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  :for={entry <- @anomaly_data}
+                  class={[
+                    "hover cursor-pointer transition-colors",
+                    @selected_pipeline_id == entry.pipeline_id && "bg-base-200/50"
+                  ]}
+                  phx-click="select_pipeline"
+                  phx-value-id={entry.pipeline_id}
+                >
+                  <td class="font-medium">{entry.pipeline_name}</td>
+                  <td>
+                    <.pipeline_status_badge status={entry.status} />
+                  </td>
+                  <td>
+                    <span class={["font-mono text-sm font-semibold", score_color(entry.max_score)]}>
+                      {format_score(entry.max_score)}
                     </span>
-                    <span class="text-sm font-medium">Anomaly</span>
-                  </div>
-                  <div :if={!entry.anomaly} class="flex items-center gap-1 text-success">
-                    <span class="inline-flex rounded-full h-2.5 w-2.5 bg-success"></span>
-                    <span class="text-sm">Normal</span>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                  </td>
+                  <td>
+                    <span class="badge badge-ghost">{entry.field_count} fields</span>
+                  </td>
+                  <td>
+                    <div :if={entry.anomaly} class="flex items-center gap-1 text-error">
+                      <span class="relative flex h-2.5 w-2.5">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-error opacity-75">
+                        </span>
+                        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-error"></span>
+                      </span>
+                      <span class="text-sm font-medium">Anomaly</span>
+                    </div>
+                    <div :if={!entry.anomaly} class="flex items-center gap-1 text-success">
+                      <span class="inline-flex rounded-full h-2.5 w-2.5 bg-success"></span>
+                      <span class="text-sm">Normal</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -203,35 +205,37 @@ defmodule FluxWeb.AnomalyLive.Index do
             No field data available for this pipeline.
           </div>
 
-          <table :if={@selected_fields != []} class="table table-sm mb-6">
-            <thead>
-              <tr>
-                <th>Field</th>
-                <th>Z-Score</th>
-                <th>Count</th>
-                <th>Min</th>
-                <th>Max</th>
-                <th>Signal</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr :for={field <- @selected_fields}>
-                <td class="font-mono text-sm">{field.name}</td>
-                <td>
-                  <span class={["font-mono text-sm font-semibold", score_color(field.z_score)]}>
-                    {format_score(field.z_score)}
-                  </span>
-                </td>
-                <td class="text-sm">{field.count}</td>
-                <td class="font-mono text-sm">{format_score(field.min)}</td>
-                <td class="font-mono text-sm">{format_score(field.max)}</td>
-                <td>
-                  <span :if={field.anomaly} class="badge badge-error badge-sm">Anomaly</span>
-                  <span :if={!field.anomaly} class="badge badge-success badge-sm">Normal</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div :if={@selected_fields != []} class="overflow-x-auto">
+            <table class="table table-sm mb-6">
+              <thead>
+                <tr>
+                  <th>Field</th>
+                  <th>Z-Score</th>
+                  <th>Count</th>
+                  <th>Min</th>
+                  <th>Max</th>
+                  <th>Signal</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr :for={field <- @selected_fields}>
+                  <td class="font-mono text-sm">{field.name}</td>
+                  <td>
+                    <span class={["font-mono text-sm font-semibold", score_color(field.z_score)]}>
+                      {format_score(field.z_score)}
+                    </span>
+                  </td>
+                  <td class="text-sm">{field.count}</td>
+                  <td class="font-mono text-sm">{format_score(field.min)}</td>
+                  <td class="font-mono text-sm">{format_score(field.max)}</td>
+                  <td>
+                    <span :if={field.anomaly} class="badge badge-error badge-sm">Anomaly</span>
+                    <span :if={!field.anomaly} class="badge badge-success badge-sm">Normal</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
           <%!-- Chart --%>
           <h3 class="font-semibold text-sm mb-2">Value History</h3>

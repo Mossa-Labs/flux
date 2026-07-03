@@ -53,7 +53,7 @@ defmodule FluxWeb.PipelineLive.Show do
   def render(assigns) do
     ~H"""
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div class="flex items-center gap-4">
           <.link navigate={~p"/pipelines"} class="btn btn-ghost btn-sm">
             <.icon name="hero-arrow-left" class="w-4 h-4" />
@@ -120,7 +120,7 @@ defmodule FluxWeb.PipelineLive.Show do
           <div class="card bg-base-100 shadow-sm border border-base-200">
             <div class="card-body">
               <h2 class="card-title text-base">Configuration</h2>
-              <div class="grid grid-cols-2 gap-4 mt-4">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                 <div>
                   <label class="text-sm font-medium text-base-content/60">Source Queue</label>
                   <p class="font-mono mt-1">{@pipeline.source_queue}</p>

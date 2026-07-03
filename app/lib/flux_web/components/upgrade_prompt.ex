@@ -27,6 +27,13 @@ defmodule FluxWeb.Components.UpgradePrompt do
     default: "https://flux.dev/pricing",
     doc: "override the upgrade CTA URL (e.g. for self-hosted billing portal)"
 
+  attr :activation_supported, :boolean,
+    default: nil,
+    doc:
+      "whether pasting a license key is possible on this build; defaults to " <>
+        "Flux.License.activation_supported?/0. Community builds can't apply keys, " <>
+        "so the \"Activate it\" link is hidden."
+
   def upgrade_prompt(%{size: :compact} = assigns) do
     assigns = assign(assigns, :label, feature_label(assigns.feature))
 
@@ -43,7 +50,16 @@ defmodule FluxWeb.Components.UpgradePrompt do
   end
 
   def upgrade_prompt(assigns) do
-    assigns = assign(assigns, :label, feature_label(assigns.feature))
+    activation_supported =
+      case assigns.activation_supported do
+        nil -> Flux.License.activation_supported?()
+        value -> value
+      end
+
+    assigns =
+      assigns
+      |> assign(:label, feature_label(assigns.feature))
+      |> assign(:activation_supported, activation_supported)
 
     ~H"""
     <div class="rounded-lg border border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 p-6 shadow-sm">
@@ -66,6 +82,7 @@ defmodule FluxWeb.Components.UpgradePrompt do
               View pricing <CoreComponents.icon name="hero-arrow-right" class="size-4" />
             </.link>
             <.link
+              :if={@activation_supported}
               navigate="/system/settings"
               class="text-sm font-medium text-amber-900 underline hover:no-underline"
             >

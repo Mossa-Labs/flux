@@ -34,7 +34,7 @@ defmodule FluxWeb.PipelineLive.Index do
   def render(assigns) do
     ~H"""
     <div class="space-y-6">
-      <div class="flex items-center justify-between">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 class="text-2xl font-bold tracking-tight text-base-content">
             Pipelines
@@ -81,61 +81,69 @@ defmodule FluxWeb.PipelineLive.Index do
             </.link>
           </div>
 
-          <table :if={@has_pipelines} class="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Status</th>
-                <th>Source Queue</th>
-                <th>Sinks</th>
-                <th>Updated</th>
-                <th class="text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="pipelines" phx-update="stream">
-              <tr :for={{id, pipeline} <- @streams.pipelines} id={id} class="hover">
-                <td>
-                  <.link navigate={~p"/pipelines/#{pipeline.id}"} class="font-medium link link-hover">
-                    {pipeline.name}
-                  </.link>
-                  <p :if={pipeline.description} class="text-sm text-base-content/60 truncate max-w-xs">
-                    {pipeline.description}
-                  </p>
-                </td>
-                <td>
-                  <.pipeline_status_badge status={pipeline.status} />
-                </td>
-                <td class="font-mono text-sm">{pipeline.source_queue}</td>
-                <td>
-                  <span class="badge badge-ghost">{length(pipeline.sink_ids || [])} sinks</span>
-                </td>
-                <td class="text-sm text-base-content/60">
-                  {format_datetime(pipeline.updated_at)}
-                </td>
-                <td class="text-right">
-                  <div class="flex items-center justify-end gap-2">
-                    <.status_button pipeline={pipeline} />
+          <div :if={@has_pipelines} class="overflow-x-auto">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>Source Queue</th>
+                  <th>Sinks</th>
+                  <th>Updated</th>
+                  <th class="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="pipelines" phx-update="stream">
+                <tr :for={{id, pipeline} <- @streams.pipelines} id={id} class="hover">
+                  <td>
                     <.link
-                      navigate={~p"/pipelines/#{pipeline.id}/builder"}
-                      class="btn btn-ghost btn-sm"
-                      title="Edit in Builder"
+                      navigate={~p"/pipelines/#{pipeline.id}"}
+                      class="font-medium link link-hover"
                     >
-                      <.icon name="hero-pencil-square" class="w-4 h-4" />
+                      {pipeline.name}
                     </.link>
-                    <button
-                      phx-click="delete"
-                      phx-value-id={pipeline.id}
-                      class="btn btn-ghost btn-sm text-error"
-                      title="Delete"
-                      data-confirm="Are you sure you want to delete this pipeline?"
+                    <p
+                      :if={pipeline.description}
+                      class="text-sm text-base-content/60 truncate max-w-xs"
                     >
-                      <.icon name="hero-trash" class="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                      {pipeline.description}
+                    </p>
+                  </td>
+                  <td>
+                    <.pipeline_status_badge status={pipeline.status} />
+                  </td>
+                  <td class="font-mono text-sm">{pipeline.source_queue}</td>
+                  <td>
+                    <span class="badge badge-ghost">{length(pipeline.sink_ids || [])} sinks</span>
+                  </td>
+                  <td class="text-sm text-base-content/60">
+                    {format_datetime(pipeline.updated_at)}
+                  </td>
+                  <td class="text-right">
+                    <div class="flex items-center justify-end gap-2">
+                      <.status_button pipeline={pipeline} />
+                      <.link
+                        navigate={~p"/pipelines/#{pipeline.id}/builder"}
+                        class="btn btn-ghost btn-sm"
+                        title="Edit in Builder"
+                      >
+                        <.icon name="hero-pencil-square" class="w-4 h-4" />
+                      </.link>
+                      <button
+                        phx-click="delete"
+                        phx-value-id={pipeline.id}
+                        class="btn btn-ghost btn-sm text-error"
+                        title="Delete"
+                        data-confirm="Are you sure you want to delete this pipeline?"
+                      >
+                        <.icon name="hero-trash" class="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
