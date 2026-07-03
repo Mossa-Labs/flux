@@ -416,5 +416,26 @@ defmodule Flux.SinksTest do
       assert redacted["account"] == "xy12345.us-east-1"
       assert redacted["user"] == "flux_loader"
     end
+
+    test "masks S3, BigQuery, database and Kafka secrets" do
+      config = %{
+        "bucket" => "my-bucket",
+        "secret_access_key" => "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        "credentials" => ~s({"private_key":"-----BEGIN PRIVATE KEY-----"}),
+        "database_url" => "postgres://flux:s3cr3t@db.internal:5432/prod",
+        "sasl_password" => "kafka-pass",
+        "ssl_keyfile" => "/etc/flux/certs/client.key"
+      }
+
+      redacted = Sinks.redact_config(config)
+
+      assert redacted["secret_access_key"] == "[REDACTED]"
+      assert redacted["credentials"] == "[REDACTED]"
+      assert redacted["database_url"] == "[REDACTED]"
+      assert redacted["sasl_password"] == "[REDACTED]"
+      assert redacted["ssl_keyfile"] == "[REDACTED]"
+      # Non-secret fields pass through untouched.
+      assert redacted["bucket"] == "my-bucket"
+    end
   end
 end

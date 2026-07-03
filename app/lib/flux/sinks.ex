@@ -12,15 +12,18 @@ defmodule Flux.Sinks do
 
   @redacted "[REDACTED]"
   # Secret config paths masked before a sink leaves the system (e.g. API GETs).
-  @secret_top_keys ~w(password private_key private_key_passphrase)
+  @secret_top_keys ~w(password private_key private_key_passphrase secret_access_key
+                      credentials database_url sasl_password ssl_keyfile)
   @secret_auth_keys ~w(token password username key)
 
   @doc """
   Returns a copy of a sink's `config` with known secret fields masked.
 
   Covers HTTP auth (`auth.token|password|username|key`), Postgres/MySQL
-  (`password`), and Snowflake key-pair material (`private_key`,
-  `private_key_passphrase`). Safe to call on any sink config map.
+  (`password`, `database_url`), S3 (`secret_access_key`), BigQuery
+  (`credentials`), Kafka (`sasl_password`, `ssl_keyfile`), and Snowflake
+  key-pair material (`private_key`, `private_key_passphrase`). Safe to call on
+  any sink config map.
   """
   def redact_config(config) when is_map(config) do
     config

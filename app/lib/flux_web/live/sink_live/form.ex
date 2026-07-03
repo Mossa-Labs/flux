@@ -28,7 +28,7 @@ defmodule FluxWeb.SinkLive.Form do
           {%Sink{type: "http", config: %{}}, :new, "New Sink"}
       end
 
-    changeset = Sinks.change_sink(sink)
+    changeset = Sinks.change_sink(sink, config_form_params(sink))
 
     {:ok,
      socket
@@ -367,6 +367,30 @@ defmodule FluxWeb.SinkLive.Form do
         ]}
       />
       <.input
+        field={@form[:config_sasl_username]}
+        type="text"
+        label="SASL Username"
+        placeholder="Required for SASL auth modes"
+      />
+      <.input
+        field={@form[:config_sasl_password]}
+        type="password"
+        label="SASL Password"
+        placeholder="Required for SASL auth modes"
+      />
+      <.input
+        field={@form[:config_ssl_certfile]}
+        type="text"
+        label="Client Certificate Path (mTLS)"
+        placeholder="/etc/flux/certs/client.pem"
+      />
+      <.input
+        field={@form[:config_ssl_keyfile]}
+        type="password"
+        label="Client Key Path (mTLS)"
+        placeholder="/etc/flux/certs/client.key"
+      />
+      <.input
         field={@form[:config_compression]}
         type="select"
         label="Compression"
@@ -428,7 +452,7 @@ defmodule FluxWeb.SinkLive.Form do
   end
 
   def handle_event("validate", %{"sink" => params}, socket) do
-    params = merge_config_params(params, socket.assigns.selected_type)
+    params = merge_config_params(params, socket.assigns.selected_type, socket.assigns.sink)
 
     changeset =
       socket.assigns.sink
@@ -450,7 +474,7 @@ defmodule FluxWeb.SinkLive.Form do
            "#{pro_label(socket.assigns.selected_type)} requires Flux Pro."
          )}
       else
-        params = merge_config_params(params, socket.assigns.selected_type)
+        params = merge_config_params(params, socket.assigns.selected_type, socket.assigns.sink)
         params = Map.put(params, "organization_id", socket.assigns.current_scope.organization_id)
 
         case socket.assigns.action do
@@ -487,13 +511,115 @@ defmodule FluxWeb.SinkLive.Form do
     end
   end
 
-  defp merge_config_params(params, type) do
-    config = build_config(params, type)
+  # Merge freshly built config over the sink's stored config so that any field
+  # the user left blank (dropped by `maybe_put/3` — notably secrets) falls back
+  # to the persisted value instead of being silently wiped on edit. When the
+  # type changes we start from an empty base so stale keys aren't carried over.
+  defp merge_config_params(params, type, sink) do
+    built = build_config(params, type)
+    base = if type == sink.type, do: sink.config || %{}, else: %{}
 
     params
     |> Map.put("type", type)
-    |> Map.put("config", config)
+    |> Map.put("config", Map.merge(base, built))
   end
+
+  # Reverse of build_config/2: hydrate the virtual config_* form fields from a
+  # sink's stored config on edit so non-secret values render pre-filled. Secret
+  # fields are deliberately left blank (a blank secret means "leave unchanged",
+  # preserved by merge_config_params/3).
+  defp config_form_params(%Sink{config: config, type: type})
+       when is_map(config) and map_size(config) > 0 do
+    config_form_params(type, config)
+  end
+
+  defp config_form_params(_sink), do: %{}
+
+  defp config_form_params("http", config) do
+    %{}
+    |> put_field("config_url", config["url"])
+    |> put_field("config_method", config["method"])
+    |> put_field("config_timeout", config["timeout_ms"])
+  end
+
+  defp config_form_params("s3", config) do
+    # access_key_id / secret_access_key are secret — left blank on edit.
+    %{}
+    |> put_field("config_bucket", config["bucket"])
+    |> put_field("config_key_template", config["key_template"])
+    |> put_field("config_region", config["region"])
+    |> put_field("config_endpoint", config["endpoint"])
+  end
+
+  defp config_form_params("postgres", config) do
+    # database_url embeds the password — secret, left blank on edit.
+    %{}
+    |> put_field("config_mode", config["mode"])
+    |> put_field("config_table", config["table"])
+    |> put_columns("config_columns", config["columns"])
+  end
+
+  defp config_form_params("mysql", config) do
+    # database_url embeds the password — secret, left blank on edit.
+    %{}
+    |> put_field("config_table", config["table"])
+    |> put_field("config_on_conflict", config["on_conflict"])
+    |> put_field("config_ssl", bool_to_param(config["ssl"]))
+    |> put_columns("config_columns", config["columns"])
+  end
+
+  defp config_form_params("bigquery", config) do
+    # credentials (service-account JSON) is secret — left blank on edit.
+    %{}
+    |> put_field("config_project_id", config["project_id"])
+    |> put_field("config_dataset", config["dataset"])
+    |> put_field("config_table", config["table"])
+    |> put_field("config_location", config["location"])
+  end
+
+  defp config_form_params("kafka", config) do
+    # sasl_password / ssl_keyfile are secret — left blank on edit.
+    %{}
+    |> put_field("config_bootstrap_servers", config["bootstrap_servers"])
+    |> put_field("config_topic", config["topic"])
+    |> put_field("config_auth_mode", config["auth_mode"])
+    |> put_field("config_compression", config["compression"])
+    |> put_field("config_transactional", bool_to_param(config["transactional"]))
+    |> put_field("config_sasl_username", config["sasl_username"])
+    |> put_field("config_ssl_certfile", config["ssl_certfile"])
+  end
+
+  defp config_form_params("snowflake", config) do
+    # private_key / private_key_passphrase are secret — left blank on edit.
+    %{}
+    |> put_field("config_account", config["account"])
+    |> put_field("config_warehouse", config["warehouse"])
+    |> put_field("config_database", config["database"])
+    |> put_field("config_schema", config["schema"])
+    |> put_field("config_table", config["table"])
+    |> put_field("config_user", config["user"])
+  end
+
+  defp config_form_params(_type, _config), do: %{}
+
+  defp put_field(map, _key, nil), do: map
+  defp put_field(map, _key, ""), do: map
+  defp put_field(map, key, value), do: Map.put(map, key, to_string(value))
+
+  defp put_columns(map, _key, columns) when columns in [nil, %{}], do: map
+
+  defp put_columns(map, key, columns) when is_map(columns) do
+    case Jason.encode(columns) do
+      {:ok, json} -> Map.put(map, key, json)
+      _ -> map
+    end
+  end
+
+  defp put_columns(map, _key, _), do: map
+
+  defp bool_to_param(true), do: "true"
+  defp bool_to_param("true"), do: "true"
+  defp bool_to_param(_), do: nil
 
   defp build_config(params, "http") do
     %{}
@@ -556,6 +682,10 @@ defmodule FluxWeb.SinkLive.Form do
     |> maybe_put("topic", params["config_topic"])
     |> maybe_put("auth_mode", params["config_auth_mode"])
     |> maybe_put("compression", params["config_compression"])
+    |> maybe_put("sasl_username", params["config_sasl_username"])
+    |> maybe_put("sasl_password", params["config_sasl_password"])
+    |> maybe_put("ssl_certfile", params["config_ssl_certfile"])
+    |> maybe_put("ssl_keyfile", params["config_ssl_keyfile"])
     |> Map.put("transactional", params["config_transactional"] == "true")
   end
 
