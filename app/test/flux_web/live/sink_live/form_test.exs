@@ -93,5 +93,87 @@ defmodule FluxWeb.SinkLive.FormTest do
 
       assert html =~ "Existing Sink"
     end
+
+    test "hydrates non-secret config fields but leaves the secret blank on edit",
+         %{conn: conn, scope: scope} do
+      sink = postgres_sink_fixture(scope)
+
+      {:ok, _lv, html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      # Non-secret fields are pre-filled...
+      assert html =~ "orders_stream"
+      assert html =~ "event_type"
+      # ...but the password-bearing database_url is never rendered.
+      refute html =~ "s3cr3t"
+    end
+
+    test "editing without re-entering database_url preserves the stored secret and columns",
+         %{conn: conn, scope: scope} do
+      sink = postgres_sink_fixture(scope)
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      lv
+      |> form("form", %{"sink" => %{"config_table" => "orders_v2"}})
+      |> render_submit()
+
+      updated = Flux.Sinks.get_sink(sink.id, scope.organization_id)
+      assert updated.config["table"] == "orders_v2"
+      assert updated.config["database_url"] == "postgres://flux:s3cr3t@db.internal:5432/prod"
+      assert updated.config["columns"] == %{"event_type" => "type"}
+    end
+
+    test "re-entering database_url updates the stored secret", %{conn: conn, scope: scope} do
+      sink = postgres_sink_fixture(scope)
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      lv
+      |> form("form", %{
+        "sink" => %{"config_database_url" => "postgres://flux:rotated@db.internal:5432/prod"}
+      })
+      |> render_submit()
+
+      updated = Flux.Sinks.get_sink(sink.id, scope.organization_id)
+      assert updated.config["database_url"] == "postgres://flux:rotated@db.internal:5432/prod"
+    end
+
+    test "editing a MySQL sink preserves database_url, columns and the ssl flag left blank",
+         %{conn: conn, scope: scope} do
+      sink =
+        mysql_sink_fixture(scope.organization_id, %{
+          config: %{
+            "database_url" => "mysql://root:s3cr3t@db.internal:3306/prod",
+            "table" => "orders_stream",
+            "columns" => %{"event_type" => "type"},
+            "ssl" => true
+          }
+        })
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      lv
+      |> form("form", %{"sink" => %{"config_table" => "orders_v2"}})
+      |> render_submit()
+
+      updated = Flux.Sinks.get_sink(sink.id, scope.organization_id)
+      assert updated.config["table"] == "orders_v2"
+      assert updated.config["database_url"] == "mysql://root:s3cr3t@db.internal:3306/prod"
+      assert updated.config["columns"] == %{"event_type" => "type"}
+      assert updated.config["ssl"] == true
+    end
+  end
+
+  defp postgres_sink_fixture(scope) do
+    sink_fixture(scope.organization_id, %{
+      name: "pg-#{System.unique_integer([:positive])}",
+      type: "postgres",
+      config: %{
+        "mode" => "external",
+        "table" => "orders_stream",
+        "database_url" => "postgres://flux:s3cr3t@db.internal:5432/prod",
+        "columns" => %{"event_type" => "type"}
+      }
+    })
   end
 end
