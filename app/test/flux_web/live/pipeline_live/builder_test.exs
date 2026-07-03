@@ -28,4 +28,41 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
       assert html =~ "Transform"
     end
   end
+
+  describe "config panel selection" do
+    test "select_node focuses the config panel on the selected node", %{conn: conn} do
+      {:ok, lv, html} = live(conn, ~p"/pipelines/builder")
+
+      # Starts with nothing selected.
+      assert html =~ "Select a node to configure"
+
+      # Selecting a node (as the React canvas does after adding/clicking one)
+      # focuses the config panel on it.
+      html =
+        render_hook(lv, "select_node", %{
+          "nodeId" => "node_1",
+          "nodeType" => "source",
+          "nodeData" => %{"label" => "My Source", "sourceConfig" => %{"type" => "queue"}}
+        })
+
+      assert html =~ "Source Node"
+      assert html =~ "My Source"
+      refute html =~ "Select a node to configure"
+    end
+
+    test "empty select_node clears the config panel back to the empty state", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      render_hook(lv, "select_node", %{
+        "nodeId" => "node_1",
+        "nodeType" => "source",
+        "nodeData" => %{"label" => "My Source"}
+      })
+
+      html = render_hook(lv, "select_node", %{})
+
+      assert html =~ "Select a node to configure"
+      refute html =~ "My Source"
+    end
+  end
 end

@@ -166,32 +166,51 @@ const PipelineBuilder = {
       }
     };
 
-    // Click-to-add: a plain click on a palette item adds the node without a drag.
-    // (A completed drag does not fire a click, so the two interactions don't clash.)
-    this.handlePaletteClick = (event) => {
-      const item = event.target.closest('[data-node-type]');
+    // Add a node from a palette item, if the builder is ready. Shared by the
+    // click and drag-end paths below. Guards against a stale builder bundle that
+    // predates addNode (e.g. a cached index.js) — drag-to-canvas still works.
+    this.addNodeFromItem = (item) => {
       if (!item) return;
-
-      // Guard against a stale builder bundle that predates addNode (e.g. a cached
-      // index.js). Drag-and-drop still works; warn rather than throw.
       if (typeof this.builderInstance?.addNode !== 'function') {
         console.warn('PipelineBuilder: addNode unavailable — drag a node instead, or hard-refresh to load the latest builder.');
         return;
       }
-
       const nodeType = item.dataset.nodeType;
       const sinkIdRaw = item.closest('[data-sink-id]')?.dataset.sinkId;
       this.builderInstance.addNode(nodeType, sinkIdRaw ? parseInt(sinkIdRaw, 10) : undefined);
     };
 
+    // Click-to-add: a plain click (no pointer movement) on a palette item adds
+    // the node. Palette items are draggable="true", so a click with even a few
+    // pixels of movement is swallowed by the browser as a drag and never fires a
+    // click — handleDragEnd below covers that case.
+    this.handlePaletteClick = (event) => {
+      this.addNodeFromItem(event.target.closest('[data-node-type]'));
+    };
+
+    // Drag-to-add fallback: when a drag that started on a palette item ends
+    // WITHOUT landing on the canvas (dropEffect stays "none"), the user almost
+    // certainly meant to add a node but the click was suppressed by the drag.
+    // A successful drop onto the canvas sets dropEffect to "move" (see
+    // PipelineCanvas onDragOver) and is handled there, so we skip it to avoid a
+    // double-add.
+    this.handleDragEnd = (event) => {
+      if (event.dataTransfer && event.dataTransfer.dropEffect !== 'none') return;
+      this.addNodeFromItem(event.target.closest?.('[data-node-type]'));
+    };
+
     // Listen on the entire document for sidebar drag/click events
     document.addEventListener('dragstart', this.handleDragStart);
+    document.addEventListener('dragend', this.handleDragEnd);
     document.addEventListener('click', this.handlePaletteClick);
   },
 
   removeDragListeners() {
     if (this.handleDragStart) {
       document.removeEventListener('dragstart', this.handleDragStart);
+    }
+    if (this.handleDragEnd) {
+      document.removeEventListener('dragend', this.handleDragEnd);
     }
     if (this.handlePaletteClick) {
       document.removeEventListener('click', this.handlePaletteClick);

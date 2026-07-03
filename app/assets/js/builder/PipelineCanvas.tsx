@@ -43,7 +43,7 @@ const PipelineCanvasInner = forwardRef<PipelineCanvasHandle, PipelineCanvasInner
   onSelectionChange,
 }, ref) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, getNodes, getEdges } = useReactFlow();
 
   // Convert initial IR to nodes/edges
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
@@ -54,11 +54,14 @@ const PipelineCanvasInner = forwardRef<PipelineCanvasHandle, PipelineCanvasInner
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-  // Notify parent when IR changes
+  // Notify parent when IR changes. Read the live React Flow store (getNodes/
+  // getEdges) rather than the closed-over `nodes`/`edges` so the IR we push is
+  // never one mutation behind — callers schedule this via setTimeout(..., 0)
+  // right after a setNodes/setEdges, by which point the store is up to date.
   const updateIR = useCallback(() => {
-    const ir = flowToIR(nodes, edges);
+    const ir = flowToIR(getNodes(), getEdges());
     onIRChange(ir);
-  }, [nodes, edges, onIRChange]);
+  }, [getNodes, getEdges, onIRChange]);
 
   // Handle new connections
   const onConnect = useCallback(
@@ -99,6 +102,21 @@ const PipelineCanvasInner = forwardRef<PipelineCanvasHandle, PipelineCanvasInner
     [availableSinks]
   );
 
+  // Insert a freshly built node as the selected one (deselecting any others).
+  // Selecting it makes React Flow fire onSelectionChange, which is what tells
+  // LiveView to focus the right-hand config panel on the new node.
+  const insertNode = useCallback(
+    (newNode: Node) => {
+      setNodes((nds) =>
+        nds
+          .map((n) => (n.selected ? { ...n, selected: false } : n))
+          .concat({ ...newNode, selected: true })
+      );
+      setTimeout(updateIR, 0);
+    },
+    [setNodes, updateIR]
+  );
+
   // Handle drop of new nodes
   const onDrop = useCallback(
     (event: React.DragEvent) => {
@@ -119,11 +137,10 @@ const PipelineCanvasInner = forwardRef<PipelineCanvasHandle, PipelineCanvasInner
       const newNode = buildNode(nodeType, sinkIdRaw ? parseInt(sinkIdRaw, 10) : null, position);
 
       if (newNode) {
-        setNodes((nds) => nds.concat(newNode));
-        setTimeout(updateIR, 0);
+        insertNode(newNode);
       }
     },
-    [screenToFlowPosition, buildNode, setNodes, updateIR]
+    [screenToFlowPosition, buildNode, insertNode]
   );
 
   // Add a node from a palette click (companion to drag-and-drop). Places it near
@@ -145,11 +162,10 @@ const PipelineCanvasInner = forwardRef<PipelineCanvasHandle, PipelineCanvasInner
       const newNode = buildNode(nodeType, sinkId ?? null, position);
 
       if (newNode) {
-        setNodes((nds) => nds.concat(newNode));
-        setTimeout(updateIR, 0);
+        insertNode(newNode);
       }
     },
-    [screenToFlowPosition, buildNode, setNodes, updateIR]
+    [screenToFlowPosition, buildNode, insertNode]
   );
 
   // Handle node changes (position, selection, etc.)
