@@ -10,7 +10,7 @@ seed_password = "password1234"
 
 # Idempotent: if the seed data is already present (admin user exists), skip so
 # `mix setup` / `mix ecto.setup` can be re-run without hitting unique violations.
-already_seeded? = Repo.get_by(User, email: "admin@flux.dev") != nil
+already_seeded? = Repo.get_by(User, email: "admin@fluxdata.tech") != nil
 
 if already_seeded? do
   IO.puts("Seed data already present — skipping.")
@@ -24,19 +24,19 @@ else
 
     admin =
       %User{}
-      |> User.email_changeset(%{email: "admin@flux.dev"})
+      |> User.email_changeset(%{email: "admin@fluxdata.tech"})
       |> User.password_changeset(Map.merge(base_attrs, %{password_confirmation: seed_password}))
       |> Repo.insert!()
 
     member =
       %User{}
-      |> User.email_changeset(%{email: "member@flux.dev"})
+      |> User.email_changeset(%{email: "member@fluxdata.tech"})
       |> User.password_changeset(Map.merge(base_attrs, %{password_confirmation: seed_password}))
       |> Repo.insert!()
 
     viewer =
       %User{}
-      |> User.email_changeset(%{email: "viewer@flux.dev"})
+      |> User.email_changeset(%{email: "viewer@fluxdata.tech"})
       |> User.password_changeset(Map.merge(base_attrs, %{password_confirmation: seed_password}))
       |> Repo.insert!()
 
@@ -89,7 +89,7 @@ else
     IO.puts("Seed data created:")
 
     IO.puts(
-      "  Users: admin@flux.dev, member@flux.dev, viewer@flux.dev (password: #{seed_password})"
+      "  Users: admin@fluxdata.tech, member@fluxdata.tech, viewer@fluxdata.tech (password: #{seed_password})"
     )
 
     IO.puts("  Org: Flux Development (flux-dev)")

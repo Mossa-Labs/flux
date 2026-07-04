@@ -24,7 +24,7 @@ defmodule FluxWeb.Components.UpgradePrompt do
     doc: "use :compact inside forms/tables; :default for full callouts"
 
   attr :upgrade_url, :string,
-    default: "https://flux.dev/pricing",
+    default: "https://fluxdata.tech/pricing",
     doc: "override the upgrade CTA URL (e.g. for self-hosted billing portal)"
 
   attr :activation_supported, :boolean,

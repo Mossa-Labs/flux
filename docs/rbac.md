@@ -54,7 +54,7 @@ The effective org role is the **best** role among the user's team memberships in
 
 Seeds create test data:
 
-* **Users**: `admin@flux.dev`, `member@flux.dev`, `viewer@flux.dev` (password: `password1234`).
+* **Users**: `admin@fluxdata.tech`, `member@fluxdata.tech`, `viewer@fluxdata.tech` (password: `password1234`).
 * **Organization**: Flux Development (slug: `flux-dev`).
 * **Teams**: Core, Analytics (under that org).
 * **Team members**: Core → admin, member; Analytics → admin, viewer.

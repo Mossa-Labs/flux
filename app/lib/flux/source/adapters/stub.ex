@@ -28,7 +28,7 @@ defmodule Flux.Source.Adapters.Stub do
   @impl Flux.Source.Adapter
   def validate_config(config) do
     type = Map.get(config, "type", "unknown")
-    {:error, ["#{type} source requires Flux Pro — see https://flux.dev/pricing"]}
+    {:error, ["#{type} source requires Flux Pro — see https://fluxdata.tech/pricing"]}
   end
 
   @impl Flux.Source.Adapter

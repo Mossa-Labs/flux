@@ -261,7 +261,7 @@ defmodule FluxWeb.SystemSettingsLive do
 
         <p :if={@license.tier == :community} class="text-sm text-base-content/60 mt-2">
           Running the Community tier.
-          <.link href="https://flux.dev/pricing" class="link link-primary">Upgrade</.link>
+          <.link href="https://fluxdata.tech/pricing" class="link link-primary">Upgrade</.link>
           to unlock Pro and Enterprise features.
         </p>
 
