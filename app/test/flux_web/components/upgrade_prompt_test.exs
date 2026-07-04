@@ -9,7 +9,7 @@ defmodule FluxWeb.Components.UpgradePromptTest do
     html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :s3_sink)
     assert html =~ "S3"
     assert html =~ "Flux Pro"
-    assert html =~ "href=\"https://flux.dev/pricing\""
+    assert html =~ "href=\"https://fluxdata.tech/pricing\""
   end
 
   test "compact size renders the CTA inline with Upgrade link" do

@@ -8,7 +8,7 @@ stream processor between topics: *consume → transform / detect → produce*.
 > gated: the type appears in the UI marked *Pro* and any saved config is
 > rejected with an upgrade prompt. The real adapter ships in the Flux Pro /
 > Enterprise edition. Activate a license to enable it.
-> See [pricing](https://flux.dev/pricing).
+> See [pricing](https://fluxdata.tech/pricing).
 
 Kafka is **not** a Flux core queue backend — the internal/durable queue stays
 RabbitMQ. A Kafka *source* ingests external topic events **onto** that internal
