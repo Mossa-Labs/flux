@@ -16,6 +16,10 @@ defmodule Flux.SourceTest do
       assert {:ok, Flux.Source.Adapters.Stub} = Source.adapter_for_type("kafka")
     end
 
+    test "returns Stub adapter for \"sqs\" in Community (real SQS is Pro)" do
+      assert {:ok, Flux.Source.Adapters.Stub} = Source.adapter_for_type("sqs")
+    end
+
     test "returns error for unknown type" do
       assert {:error, :unknown_type} = Source.adapter_for_type("unknown")
     end
@@ -44,6 +48,10 @@ defmodule Flux.SourceTest do
     test "the Pro Kafka stub starts nothing in Community" do
       assert nil == Source.ingestion_spec("kafka", %{"type" => "kafka", "topic" => "events"})
     end
+
+    test "the Pro SQS stub starts nothing in Community" do
+      assert nil == Source.ingestion_spec("sqs", %{"type" => "sqs", "queue_url" => "https://q"})
+    end
   end
 
   describe "validate_config/2" do
@@ -67,6 +75,12 @@ defmodule Flux.SourceTest do
       assert msg =~ "Flux Pro"
     end
 
+    test "Community sqs delegates to Stub and returns a pro_required message" do
+      config = %{"type" => "sqs", "queue_url" => "https://q"}
+      assert {:error, [msg]} = Source.validate_config("sqs", config)
+      assert msg =~ "Flux Pro"
+    end
+
     test "returns error for unknown source type" do
       assert {:error, ["unknown source type: nope"]} = Source.validate_config("nope", %{})
     end
@@ -80,6 +94,11 @@ defmodule Flux.SourceTest do
     test "Community kafka stub surfaces a structured pro_required tuple" do
       assert {:error, {:pro_required, :kafka_source}} =
                Source.test_connection("kafka", %{"type" => "kafka"})
+    end
+
+    test "Community sqs stub surfaces a structured pro_required tuple" do
+      assert {:error, {:pro_required, :sqs_source}} =
+               Source.test_connection("sqs", %{"type" => "sqs"})
     end
   end
 end

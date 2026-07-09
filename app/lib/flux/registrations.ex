@@ -65,6 +65,7 @@ defmodule Flux.Registrations do
     # Pro connectors — the commercial edition registers the real consumer over these stubs.
     Flux.Source.Registry.register("kafka", Flux.Source.Adapters.Stub)
     Flux.Source.Registry.register("mqtt", Flux.Source.Adapters.Stub)
+    Flux.Source.Registry.register("sqs", Flux.Source.Adapters.Stub)
     :ok
   end
 

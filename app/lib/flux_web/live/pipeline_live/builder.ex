@@ -26,6 +26,7 @@ defmodule FluxWeb.PipelineLive.Builder do
      |> assign(:selected_edge, nil)
      |> assign(:advanced_ai, Flux.License.has_feature?(:advanced_ai))
      |> assign(:kafka_source, Flux.License.has_feature?(:kafka_source))
+     |> assign(:sqs_source, Flux.License.has_feature?(:sqs_source))
      |> assign(:page_title, "Pipeline Builder")}
   end
 
@@ -125,6 +126,7 @@ defmodule FluxWeb.PipelineLive.Builder do
                 node={@selected_node}
                 advanced_ai={@advanced_ai}
                 kafka_source={@kafka_source}
+                sqs_source={@sqs_source}
               />
             <% @selected_edge -> %>
               <.edge_config_form edge={@selected_edge} ir={@initial_ir} />
@@ -268,7 +270,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   # ── Node config form router ───────────────────────────────────────
 
   defp node_config_form(%{node: %{type: "source"}} = assigns),
-    do: ~H"<.source_config node={@node} kafka_source={@kafka_source} />"
+    do: ~H"<.source_config node={@node} kafka_source={@kafka_source} sqs_source={@sqs_source} />"
 
   defp node_config_form(%{node: %{type: "step"}} = assigns),
     do: ~H"<.step_config node={@node} advanced_ai={@advanced_ai} />"
@@ -326,6 +328,9 @@ defmodule FluxWeb.PipelineLive.Builder do
             <option value="kafka" selected={@source_type == "kafka"} disabled={!@kafka_source}>
               Kafka Topic {pro_suffix(@kafka_source)}
             </option>
+            <option value="sqs" selected={@source_type == "sqs"} disabled={!@sqs_source}>
+              Amazon SQS Queue {pro_suffix(@sqs_source)}
+            </option>
           </select>
         </div>
 
@@ -340,6 +345,8 @@ defmodule FluxWeb.PipelineLive.Builder do
             <.scheduled_poll_source_config config={@source_config} />
           <% "kafka" -> %>
             <.kafka_source_config config={@source_config} kafka_source={@kafka_source} />
+          <% "sqs" -> %>
+            <.sqs_source_config config={@source_config} sqs_source={@sqs_source} />
           <% _ -> %>
             <.queue_source_config config={@source_config} />
         <% end %>
@@ -567,6 +574,94 @@ defmodule FluxWeb.PipelineLive.Builder do
 
       <p :if={!@kafka_source} class="text-xs text-base-content/50 mt-1">
         The Kafka source connector requires a Pro license.
+      </p>
+    </div>
+    """
+  end
+
+  # Amazon SQS is a Pro source connector. Fields are disabled and a note is shown
+  # when the license is not entitled, mirroring the Kafka gating above.
+  defp sqs_source_config(assigns) do
+    ~H"""
+    <div class="space-y-3">
+      <div class="form-control">
+        <.field_label text="Queue URL" tooltip="Full Amazon SQS queue URL" />
+        <input
+          type="url"
+          name="sourceConfig[queueUrl]"
+          value={@config["queueUrl"] || ""}
+          placeholder="https://sqs.us-east-1.amazonaws.com/123456789012/my-queue"
+          disabled={!@sqs_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label text="Region" tooltip="AWS region the queue lives in" />
+        <input
+          type="text"
+          name="sourceConfig[region]"
+          value={@config["region"] || ""}
+          placeholder="us-east-1"
+          disabled={!@sqs_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label text="Auth Mode" tooltip="How Flux authenticates to AWS" />
+        <select
+          name="sourceConfig[authMode]"
+          disabled={!@sqs_source}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="iam_role" selected={@config["authMode"] == "iam_role"}>
+            IAM role (instance metadata)
+          </option>
+          <option value="static" selected={@config["authMode"] == "static"}>
+            Static access key
+          </option>
+          <option value="sso" selected={@config["authMode"] == "sso"}>AWS SSO</option>
+          <option value="assume_role" selected={@config["authMode"] == "assume_role"}>
+            Assume role (cross-account)
+          </option>
+        </select>
+      </div>
+
+      <div class="form-control">
+        <.field_label
+          text="Wait Time (seconds)"
+          tooltip="Long-polling wait time per receive call (0–20)"
+        />
+        <input
+          type="number"
+          name="sourceConfig[waitTimeSeconds]"
+          value={@config["waitTimeSeconds"] || 20}
+          min="0"
+          max="20"
+          disabled={!@sqs_source}
+          class="input input-bordered input-sm w-full"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label
+          text="Max Messages"
+          tooltip="Messages to receive per batch (1–10)"
+        />
+        <input
+          type="number"
+          name="sourceConfig[maxNumberOfMessages]"
+          value={@config["maxNumberOfMessages"] || 10}
+          min="1"
+          max="10"
+          disabled={!@sqs_source}
+          class="input input-bordered input-sm w-full"
+        />
+      </div>
+
+      <p :if={!@sqs_source} class="text-xs text-base-content/50 mt-1">
+        The Amazon SQS source connector requires a Pro license.
       </p>
     </div>
     """
