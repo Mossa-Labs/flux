@@ -20,6 +20,9 @@ defmodule Flux.License.FeaturesTest do
     pro = Features.for_tier(:pro)
 
     assert :s3_sink in pro
+    assert :kafka_source in pro
+    assert :mqtt_source in pro
+    assert :sqs_source in pro
     assert :rabbit_mq_queue in pro
     assert :advanced_ai in pro
     assert :live_signals in pro

@@ -3,7 +3,8 @@ defmodule Flux.Sources.Source do
   Schema for source configurations.
 
   A source represents an inbound origin for pipeline data. Each source has a
-  type (webhook, poll, kafka) and a configuration map specific to that type.
+  type (webhook, poll, kafka, mqtt, sqs) and a configuration map specific to
+  that type.
   Sources land events onto the internal queue named by
   `Flux.Source.queue_name/2`; a pipeline consumes that queue to be fed.
   """
@@ -13,7 +14,7 @@ defmodule Flux.Sources.Source do
 
   alias Flux.Structure.Organization
 
-  @source_types ~w(webhook poll kafka)
+  @source_types ~w(webhook poll kafka mqtt sqs)
 
   schema "sources" do
     field :name, :string

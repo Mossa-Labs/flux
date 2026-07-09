@@ -60,6 +60,33 @@ defmodule Flux.SourcesTest do
       assert Enum.any?(errors_on(changeset).config, &(&1 =~ "Flux Pro"))
     end
 
+    test "gates the Pro sqs source with a pro_required config error", %{org_id: org_id} do
+      attrs = %{
+        "name" => "orders-sqs",
+        "type" => "sqs",
+        "config" => %{
+          "queue_url" => "https://sqs.us-east-1.amazonaws.com/123456789012/orders",
+          "region" => "us-east-1"
+        },
+        "organization_id" => org_id
+      }
+
+      assert {:error, changeset} = Sources.create_source(attrs)
+      assert Enum.any?(errors_on(changeset).config, &(&1 =~ "Flux Pro"))
+    end
+
+    test "gates the Pro mqtt source with a pro_required config error", %{org_id: org_id} do
+      attrs = %{
+        "name" => "sensors-mqtt",
+        "type" => "mqtt",
+        "config" => %{"host" => "broker.local", "topic" => "sensors/+/temp"},
+        "organization_id" => org_id
+      }
+
+      assert {:error, changeset} = Sources.create_source(attrs)
+      assert Enum.any?(errors_on(changeset).config, &(&1 =~ "Flux Pro"))
+    end
+
     test "enforces unique name per organization", %{org_id: org_id} do
       assert {:ok, _} = Sources.create_source(webhook_attrs(org_id))
       assert {:error, changeset} = Sources.create_source(webhook_attrs(org_id))
