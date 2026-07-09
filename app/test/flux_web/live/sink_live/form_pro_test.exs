@@ -37,5 +37,16 @@ defmodule FluxWeb.SinkLive.FormProTest do
       assert html =~ "Private Key (PEM)"
       refute html =~ "is a Flux Pro feature"
     end
+
+    test "selecting Redis renders the config fields instead of the upgrade prompt",
+         %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "redis"})
+
+      assert html =~ "Value Shape"
+      assert html =~ "Key Template"
+      refute html =~ "is a Flux Pro feature"
+    end
   end
 end

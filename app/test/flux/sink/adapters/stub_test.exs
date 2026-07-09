@@ -27,7 +27,8 @@ defmodule Flux.Sink.Adapters.StubTest do
           {"s3", :s3_sink},
           {"snowflake", :snowflake_sink},
           {"bigquery", :bigquery_sink},
-          {"kafka", :kafka_sink}
+          {"kafka", :kafka_sink},
+          {"redis", :redis_sink}
         ] do
       assert {:error, {:pro_required, ^feature}} = Stub.deliver(%{}, %{"type" => type}, [])
     end

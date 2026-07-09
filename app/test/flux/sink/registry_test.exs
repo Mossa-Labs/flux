@@ -13,6 +13,10 @@ defmodule Flux.Sink.RegistryTest do
       assert {:ok, Flux.Sink.Adapters.Stub} = Registry.lookup("s3")
     end
 
+    test "redis resolves to Stub in Community" do
+      assert {:ok, Flux.Sink.Adapters.Stub} = Registry.lookup("redis")
+    end
+
     test "unknown type returns error" do
       assert {:error, :unknown_type} = Registry.lookup("does-not-exist")
     end

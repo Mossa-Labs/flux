@@ -13,7 +13,8 @@ defmodule FluxWeb.SinkLive.Form do
     "s3" => :s3_sink,
     "bigquery" => :bigquery_sink,
     "kafka" => :kafka_sink,
-    "snowflake" => :snowflake_sink
+    "snowflake" => :snowflake_sink,
+    "redis" => :redis_sink
   }
 
   @impl true
@@ -131,6 +132,14 @@ defmodule FluxWeb.SinkLive.Form do
                   icon="hero-cube"
                   label="Snowflake"
                   sublabel="Warehouse"
+                />
+                <.sink_type_option
+                  field={@form[:type]}
+                  selected_type={@selected_type}
+                  type="redis"
+                  icon="hero-bolt"
+                  label="Redis"
+                  sublabel="Key-Value Store"
                 />
               </div>
             </div>
@@ -440,6 +449,84 @@ defmodule FluxWeb.SinkLive.Form do
     """
   end
 
+  # Rendered only on a licensed build (Community shows the upgrade prompt instead).
+  defp type_config_fields(%{type: "redis"} = assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="sm:col-span-2">
+          <.input field={@form[:config_host]} type="text" label="Host" placeholder="redis.internal" />
+        </div>
+        <.input field={@form[:config_port]} type="number" label="Port" placeholder="6379" />
+      </div>
+      <p class="text-xs text-base-content/60 -mt-2">
+        Flux connects out to this Redis server — make sure its host/port allows the
+        Flux server's egress IP. See <code>docs/connectors/redis.md</code>.
+      </p>
+      <.input
+        field={@form[:config_db]}
+        type="number"
+        label="Database (logical DB index)"
+        placeholder="0"
+      />
+      <.input
+        field={@form[:config_value_shape]}
+        type="select"
+        label="Value Shape"
+        options={[
+          {"String (SET)", "string"},
+          {"Hash (HSET)", "hash"},
+          {"List (RPUSH)", "list"},
+          {"Stream (XADD)", "stream"}
+        ]}
+      />
+      <.input
+        field={@form[:config_key_template]}
+        type="text"
+        label="Key Template"
+        placeholder="scores:{id}"
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Placeholders: {"{id}"}, {"{timestamp}"}, {"{date}"}, {"{pipeline_id}"}
+      </p>
+      <.input
+        field={@form[:config_ttl_seconds]}
+        type="number"
+        label="TTL (seconds, optional)"
+        placeholder="Leave blank for no expiry — ignored for streams"
+      />
+      <.input
+        field={@form[:config_auth_mode]}
+        type="select"
+        label="Auth Mode"
+        options={[
+          {"None", "none"},
+          {"Password (requirepass)", "password"},
+          {"ACL (username + password, Redis 6+)", "acl"}
+        ]}
+      />
+      <.input
+        field={@form[:config_username]}
+        type="text"
+        label="Username (ACL)"
+        placeholder="Required for ACL auth"
+      />
+      <.input
+        field={@form[:config_password]}
+        type="password"
+        label="Password"
+        placeholder="Required for password / ACL auth"
+      />
+      <.input field={@form[:config_tls]} type="checkbox" label="Use TLS connection" />
+      <.input
+        field={@form[:config_cluster]}
+        type="checkbox"
+        label="Cluster mode (opt-in)"
+      />
+    </div>
+    """
+  end
+
   defp type_config_fields(assigns) do
     ~H"""
     <p class="text-base-content/60">Select a sink type to configure.</p>
@@ -600,6 +687,21 @@ defmodule FluxWeb.SinkLive.Form do
     |> put_field("config_user", config["user"])
   end
 
+  defp config_form_params("redis", config) do
+    # password is secret — left blank on edit.
+    %{}
+    |> put_field("config_host", config["host"])
+    |> put_field("config_port", config["port"])
+    |> put_field("config_db", config["db"])
+    |> put_field("config_value_shape", config["value_shape"])
+    |> put_field("config_key_template", config["key_template"])
+    |> put_field("config_ttl_seconds", config["ttl_seconds"])
+    |> put_field("config_auth_mode", config["auth_mode"])
+    |> put_field("config_username", config["username"])
+    |> put_field("config_tls", bool_to_param(config["tls"]))
+    |> put_field("config_cluster", bool_to_param(config["cluster"]))
+  end
+
   defp config_form_params(_type, _config), do: %{}
 
   defp put_field(map, _key, nil), do: map
@@ -701,6 +803,21 @@ defmodule FluxWeb.SinkLive.Form do
     |> maybe_put("private_key_passphrase", params["config_private_key_passphrase"])
   end
 
+  defp build_config(params, "redis") do
+    %{}
+    |> maybe_put("host", params["config_host"])
+    |> maybe_put("port", parse_int(params["config_port"]))
+    |> maybe_put("db", parse_int(params["config_db"]))
+    |> maybe_put("value_shape", params["config_value_shape"])
+    |> maybe_put("key_template", params["config_key_template"])
+    |> maybe_put("ttl_seconds", parse_int(params["config_ttl_seconds"]))
+    |> maybe_put("auth_mode", params["config_auth_mode"])
+    |> maybe_put("username", params["config_username"])
+    |> maybe_put("password", params["config_password"])
+    |> Map.put("tls", params["config_tls"] == "true")
+    |> Map.put("cluster", params["config_cluster"] == "true")
+  end
+
   defp build_config(_params, _type), do: %{}
 
   defp maybe_put(map, _key, nil), do: map
@@ -735,5 +852,6 @@ defmodule FluxWeb.SinkLive.Form do
   defp pro_label("bigquery"), do: "BigQuery sinks"
   defp pro_label("kafka"), do: "Kafka sinks"
   defp pro_label("snowflake"), do: "Snowflake sinks"
+  defp pro_label("redis"), do: "Redis sinks"
   defp pro_label(type), do: "#{type} sinks"
 end

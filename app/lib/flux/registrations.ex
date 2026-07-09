@@ -54,6 +54,7 @@ defmodule Flux.Registrations do
     # Pro connectors — the commercial edition registers the real adapters over these stubs.
     Flux.Sink.Registry.register("kafka", Flux.Sink.Adapters.Stub)
     Flux.Sink.Registry.register("snowflake", Flux.Sink.Adapters.Stub)
+    Flux.Sink.Registry.register("redis", Flux.Sink.Adapters.Stub)
     :ok
   end
 

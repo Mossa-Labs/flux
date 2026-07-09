@@ -152,6 +152,7 @@ defmodule FluxWeb.SinkLive.Index do
         "http" -> "hero-globe-alt"
         "s3" -> "hero-cloud-arrow-up"
         "postgres" -> "hero-circle-stack"
+        "redis" -> "hero-bolt"
         _ -> "hero-server-stack"
       end
 
@@ -170,6 +171,7 @@ defmodule FluxWeb.SinkLive.Index do
         "http" -> {"badge-info", "HTTP"}
         "s3" -> {"badge-secondary", "S3"}
         "postgres" -> {"badge-accent", "Postgres"}
+        "redis" -> {"badge-error", "Redis"}
         _ -> {"badge-ghost", String.upcase(assigns.type)}
       end
 
