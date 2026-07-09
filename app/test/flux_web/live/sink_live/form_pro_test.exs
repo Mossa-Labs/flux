@@ -48,5 +48,16 @@ defmodule FluxWeb.SinkLive.FormProTest do
       assert html =~ "Key Template"
       refute html =~ "is a Flux Pro feature"
     end
+
+    test "selecting MongoDB renders the config fields instead of the upgrade prompt",
+         %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "mongodb"})
+
+      assert html =~ "Collection"
+      assert html =~ "Write Mode"
+      refute html =~ "is a Flux Pro feature"
+    end
   end
 end

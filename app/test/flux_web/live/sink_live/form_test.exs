@@ -52,6 +52,16 @@ defmodule FluxWeb.SinkLive.FormTest do
       refute html =~ "Key Template"
     end
 
+    test "selecting MongoDB shows the Pro upgrade prompt in Community", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "mongodb"})
+
+      # Community is not entitled, so the config form is replaced by the upgrade prompt.
+      assert html =~ "Flux Pro"
+      refute html =~ "Collection"
+    end
+
     test "save with valid params creates sink and redirects", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
 

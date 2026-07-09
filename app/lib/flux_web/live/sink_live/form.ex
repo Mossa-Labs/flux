@@ -14,7 +14,8 @@ defmodule FluxWeb.SinkLive.Form do
     "bigquery" => :bigquery_sink,
     "kafka" => :kafka_sink,
     "snowflake" => :snowflake_sink,
-    "redis" => :redis_sink
+    "redis" => :redis_sink,
+    "mongodb" => :mongodb_sink
   }
 
   @impl true
@@ -140,6 +141,14 @@ defmodule FluxWeb.SinkLive.Form do
                   icon="hero-bolt"
                   label="Redis"
                   sublabel="Key-Value Store"
+                />
+                <.sink_type_option
+                  field={@form[:type]}
+                  selected_type={@selected_type}
+                  type="mongodb"
+                  icon="hero-document-text"
+                  label="MongoDB"
+                  sublabel="Document Store"
                 />
               </div>
             </div>
@@ -527,6 +536,118 @@ defmodule FluxWeb.SinkLive.Form do
     """
   end
 
+  # Rendered only on a licensed build (Community shows the upgrade prompt instead).
+  defp type_config_fields(%{type: "mongodb"} = assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <.input
+        field={@form[:config_uri]}
+        type="text"
+        label="Connection URI"
+        placeholder="mongodb+srv://user:pass@cluster.mongodb.net"
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        A <code>mongodb://</code> or <code>mongodb+srv://</code> URI (covers Atlas, replica
+        sets, auth and TLS). Leave blank to use the host/port fields below instead.
+      </p>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="sm:col-span-2">
+          <.input
+            field={@form[:config_host]}
+            type="text"
+            label="Host (if no URI)"
+            placeholder="mongo.internal"
+          />
+        </div>
+        <.input field={@form[:config_port]} type="number" label="Port" placeholder="27017" />
+      </div>
+      <.input field={@form[:config_database]} type="text" label="Database" placeholder="events" />
+      <.input field={@form[:config_collection]} type="text" label="Collection" placeholder="raw" />
+      <.input
+        field={@form[:config_auth_mode]}
+        type="select"
+        label="Auth Mode"
+        options={[
+          {"None", "none"},
+          {"SCRAM (username + password)", "scram"},
+          {"X.509 client certificate (mTLS)", "x509"}
+        ]}
+      />
+      <.input
+        field={@form[:config_username]}
+        type="text"
+        label="Username (SCRAM)"
+        placeholder="Required for SCRAM auth"
+      />
+      <.input
+        field={@form[:config_password]}
+        type="password"
+        label="Password (SCRAM)"
+        placeholder="Required for SCRAM auth"
+      />
+      <.input
+        field={@form[:config_auth_source]}
+        type="text"
+        label="Auth Source"
+        placeholder="admin"
+      />
+      <.input field={@form[:config_tls]} type="checkbox" label="Use TLS connection" />
+      <.input
+        field={@form[:config_tls_ca_file]}
+        type="text"
+        label="TLS CA Certificate Path (optional)"
+        placeholder="/etc/flux/certs/ca.pem"
+      />
+      <.input
+        field={@form[:config_tls_cert_file]}
+        type="text"
+        label="Client Certificate Path (X.509)"
+        placeholder="/etc/flux/certs/client.pem"
+      />
+      <.input
+        field={@form[:config_tls_key_file]}
+        type="password"
+        label="Client Key Path (X.509)"
+        placeholder="/etc/flux/certs/client.key"
+      />
+      <.input
+        field={@form[:config_write_mode]}
+        type="select"
+        label="Write Mode"
+        options={[{"Insert", "insert"}, {"Upsert", "upsert"}]}
+      />
+      <.input
+        field={@form[:config_upsert_keys]}
+        type="text"
+        label="Upsert Keys (for upsert mode)"
+        placeholder="Comma-separated fields, e.g. _id or user_id,day"
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Filter fields used to match an existing document. A record's <code>_id</code> is
+        preserved when present; otherwise MongoDB generates one.
+      </p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <.input
+          field={@form[:config_ttl_field]}
+          type="text"
+          label="TTL Field (optional)"
+          placeholder="created_at"
+        />
+        <.input
+          field={@form[:config_ttl_seconds]}
+          type="number"
+          label="TTL (seconds)"
+          placeholder="Expire docs after N seconds"
+        />
+      </div>
+      <p class="text-xs text-base-content/60 -mt-2">
+        When both are set, Flux creates a TTL index on the field so MongoDB expires
+        documents automatically. The field must hold a date/timestamp.
+      </p>
+    </div>
+    """
+  end
+
   defp type_config_fields(assigns) do
     ~H"""
     <p class="text-base-content/60">Select a sink type to configure.</p>
@@ -702,6 +823,25 @@ defmodule FluxWeb.SinkLive.Form do
     |> put_field("config_cluster", bool_to_param(config["cluster"]))
   end
 
+  defp config_form_params("mongodb", config) do
+    # uri (may embed a password) and password are secret — left blank on edit.
+    %{}
+    |> put_field("config_host", config["host"])
+    |> put_field("config_port", config["port"])
+    |> put_field("config_database", config["database"])
+    |> put_field("config_collection", config["collection"])
+    |> put_field("config_auth_mode", config["auth_mode"])
+    |> put_field("config_username", config["username"])
+    |> put_field("config_auth_source", config["auth_source"])
+    |> put_field("config_tls", bool_to_param(config["tls"]))
+    |> put_field("config_tls_ca_file", config["tls_ca_file"])
+    |> put_field("config_tls_cert_file", config["tls_cert_file"])
+    |> put_field("config_write_mode", config["write_mode"])
+    |> put_field("config_upsert_keys", config["upsert_keys"])
+    |> put_field("config_ttl_field", config["ttl_field"])
+    |> put_field("config_ttl_seconds", config["ttl_seconds"])
+  end
+
   defp config_form_params(_type, _config), do: %{}
 
   defp put_field(map, _key, nil), do: map
@@ -818,6 +958,27 @@ defmodule FluxWeb.SinkLive.Form do
     |> Map.put("cluster", params["config_cluster"] == "true")
   end
 
+  defp build_config(params, "mongodb") do
+    %{}
+    |> maybe_put("uri", params["config_uri"])
+    |> maybe_put("host", params["config_host"])
+    |> maybe_put("port", parse_int(params["config_port"]))
+    |> maybe_put("database", params["config_database"])
+    |> maybe_put("collection", params["config_collection"])
+    |> maybe_put("auth_mode", params["config_auth_mode"])
+    |> maybe_put("username", params["config_username"])
+    |> maybe_put("password", params["config_password"])
+    |> maybe_put("auth_source", params["config_auth_source"])
+    |> maybe_put("tls_ca_file", params["config_tls_ca_file"])
+    |> maybe_put("tls_cert_file", params["config_tls_cert_file"])
+    |> maybe_put("tls_key_file", params["config_tls_key_file"])
+    |> maybe_put("write_mode", params["config_write_mode"])
+    |> maybe_put("upsert_keys", params["config_upsert_keys"])
+    |> maybe_put("ttl_field", params["config_ttl_field"])
+    |> maybe_put("ttl_seconds", parse_int(params["config_ttl_seconds"]))
+    |> Map.put("tls", params["config_tls"] == "true")
+  end
+
   defp build_config(_params, _type), do: %{}
 
   defp maybe_put(map, _key, nil), do: map
@@ -853,5 +1014,6 @@ defmodule FluxWeb.SinkLive.Form do
   defp pro_label("kafka"), do: "Kafka sinks"
   defp pro_label("snowflake"), do: "Snowflake sinks"
   defp pro_label("redis"), do: "Redis sinks"
+  defp pro_label("mongodb"), do: "MongoDB sinks"
   defp pro_label(type), do: "#{type} sinks"
 end

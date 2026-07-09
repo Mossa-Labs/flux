@@ -13,7 +13,7 @@ defmodule Flux.Sinks do
   @redacted "[REDACTED]"
   # Secret config paths masked before a sink leaves the system (e.g. API GETs).
   @secret_top_keys ~w(password private_key private_key_passphrase secret_access_key
-                      credentials database_url sasl_password ssl_keyfile)
+                      credentials database_url sasl_password ssl_keyfile uri)
   @secret_auth_keys ~w(token password username key)
 
   @doc """
