@@ -87,6 +87,18 @@ defmodule Flux.SourcesTest do
       assert Enum.any?(errors_on(changeset).config, &(&1 =~ "Flux Pro"))
     end
 
+    test "gates the Pro kinesis source with a pro_required config error", %{org_id: org_id} do
+      attrs = %{
+        "name" => "events-kinesis",
+        "type" => "kinesis",
+        "config" => %{"stream_name" => "events", "region" => "us-east-1"},
+        "organization_id" => org_id
+      }
+
+      assert {:error, changeset} = Sources.create_source(attrs)
+      assert Enum.any?(errors_on(changeset).config, &(&1 =~ "Flux Pro"))
+    end
+
     test "enforces unique name per organization", %{org_id: org_id} do
       assert {:ok, _} = Sources.create_source(webhook_attrs(org_id))
       assert {:error, changeset} = Sources.create_source(webhook_attrs(org_id))

@@ -36,6 +36,12 @@ defmodule FluxWeb.Components.UpgradePromptTest do
     assert html =~ "Flux Pro"
   end
 
+  test "renders the Amazon Kinesis source label" do
+    html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :kinesis_source)
+    assert html =~ "Amazon Kinesis source"
+    assert html =~ "Flux Pro"
+  end
+
   test "unknown feature atom falls back to a human-readable label" do
     html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :mystery_future_feature)
     assert html =~ "mystery future feature"
