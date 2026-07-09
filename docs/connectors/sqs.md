@@ -20,12 +20,16 @@ queue, which your pipeline consumes.
 | --- | --- |
 | `iam_role` (default) | Ambient IAM role from EC2/ECS/EKS instance metadata — no stored secrets |
 | `static` | Static `access_key_id` + `secret_access_key` (optional `session_token`) |
-| `sso` | AWS IAM Identity Center (SSO) profile |
 | `assume_role` | Assume a `role_arn` (cross-account), optionally with an `external_id` |
+| `sso` | _Planned — not yet supported._ AWS IAM Identity Center (SSO) profile |
 
 Static credentials are stored in the source config and are masked (`[REDACTED]`)
 when configuration leaves the system (e.g. API reads). Prefer `iam_role` or
 `assume_role` in AWS-hosted deployments so no long-lived secrets are stored.
+
+AWS SSO (IAM Identity Center) is an interactive, browser-based login unsuited to
+a headless server, so it is not supported; use `iam_role` (or cross-account
+`assume_role`) instead.
 
 ## Source configuration
 

@@ -637,9 +637,11 @@ defmodule FluxWeb.PipelineLive.Builder do
           <option value="static" selected={@config["authMode"] == "static"}>
             Static access key
           </option>
-          <option value="sso" selected={@config["authMode"] == "sso"}>AWS SSO</option>
           <option value="assume_role" selected={@config["authMode"] == "assume_role"}>
             Assume role (cross-account)
+          </option>
+          <option value="sso" disabled selected={@config["authMode"] == "sso"}>
+            AWS SSO (planned)
           </option>
         </select>
       </div>
