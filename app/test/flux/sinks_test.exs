@@ -229,6 +229,27 @@ defmodule Flux.SinksTest do
       refute changeset.errors[:type]
     end
 
+    test "with redis type in Community is rejected (Pro feature)", %{org_id: org_id} do
+      attrs = %{
+        name: "my-redis-sink",
+        type: "redis",
+        config: %{
+          "host" => "redis.internal",
+          "port" => 6379,
+          "value_shape" => "hash",
+          "key_template" => "scores:{id}"
+        },
+        organization_id: org_id
+      }
+
+      # redis is an accepted type (passes inclusion); the Community stub
+      # rejects it at config validation with the upgrade prompt.
+      assert {:error, %Ecto.Changeset{} = changeset} = Sinks.create_sink(attrs)
+      assert {msg, _} = changeset.errors[:config]
+      assert msg =~ "Flux Pro"
+      refute changeset.errors[:type]
+    end
+
     test "with valid postgres type creates a sink", %{org_id: org_id} do
       attrs = %{
         name: "my-pg-sink",

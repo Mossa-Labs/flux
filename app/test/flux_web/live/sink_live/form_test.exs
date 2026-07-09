@@ -42,6 +42,16 @@ defmodule FluxWeb.SinkLive.FormTest do
       refute html =~ "Account Identifier"
     end
 
+    test "selecting Redis shows the Pro upgrade prompt in Community", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "redis"})
+
+      # Community is not entitled, so the config form is replaced by the upgrade prompt.
+      assert html =~ "Flux Pro"
+      refute html =~ "Key Template"
+    end
+
     test "save with valid params creates sink and redirects", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
 

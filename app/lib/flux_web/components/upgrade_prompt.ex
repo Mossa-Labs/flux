@@ -99,6 +99,7 @@ defmodule FluxWeb.Components.UpgradePrompt do
   defp feature_label(:snowflake_sink), do: "Snowflake sink"
   defp feature_label(:bigquery_sink), do: "BigQuery sink"
   defp feature_label(:kafka_sink), do: "Kafka sink"
+  defp feature_label(:redis_sink), do: "Redis sink"
   defp feature_label(:kafka_source), do: "Kafka source"
   defp feature_label(:mqtt_source), do: "MQTT source"
   defp feature_label(:sqs_source), do: "Amazon SQS source"

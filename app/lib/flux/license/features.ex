@@ -17,6 +17,7 @@ defmodule Flux.License.Features do
   Feature atoms gate the following:
 
     * `:s3_sink`, `:snowflake_sink`, `:bigquery_sink`, `:kafka_sink` - object/warehouse/stream sinks
+    * `:redis_sink` - Redis sink connector (in-memory key-value / stream store)
     * `:kafka_source` - Kafka topic source connector (see `Flux.Source`)
     * `:mqtt_source` - MQTT topic source connector for IoT/industrial ingestion
     * `:sqs_source` - Amazon SQS source connector (AWS managed queue)
@@ -43,6 +44,8 @@ defmodule Flux.License.Features do
       :snowflake_sink,
       :bigquery_sink,
       :kafka_sink,
+      # Redis sink connector — in-memory key-value/stream store (see `Flux.Sink`).
+      :redis_sink,
       # Kafka topic source connector (consume → transform/detect → produce).
       :kafka_source,
       # MQTT topic source connector — IoT/industrial ingestion (see `Flux.Source`).
