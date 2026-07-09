@@ -35,5 +35,6 @@ defmodule Flux.Sink.Adapters.Stub do
   defp feature_for_type("bigquery"), do: :bigquery_sink
   defp feature_for_type("kafka"), do: :kafka_sink
   defp feature_for_type("redis"), do: :redis_sink
+  defp feature_for_type("mongodb"), do: :mongodb_sink
   defp feature_for_type(_), do: @feature
 end
