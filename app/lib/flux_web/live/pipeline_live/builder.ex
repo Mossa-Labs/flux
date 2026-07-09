@@ -27,6 +27,7 @@ defmodule FluxWeb.PipelineLive.Builder do
      |> assign(:advanced_ai, Flux.License.has_feature?(:advanced_ai))
      |> assign(:kafka_source, Flux.License.has_feature?(:kafka_source))
      |> assign(:sqs_source, Flux.License.has_feature?(:sqs_source))
+     |> assign(:kinesis_source, Flux.License.has_feature?(:kinesis_source))
      |> assign(:page_title, "Pipeline Builder")}
   end
 
@@ -127,6 +128,7 @@ defmodule FluxWeb.PipelineLive.Builder do
                 advanced_ai={@advanced_ai}
                 kafka_source={@kafka_source}
                 sqs_source={@sqs_source}
+                kinesis_source={@kinesis_source}
               />
             <% @selected_edge -> %>
               <.edge_config_form edge={@selected_edge} ir={@initial_ir} />
@@ -270,7 +272,12 @@ defmodule FluxWeb.PipelineLive.Builder do
   # ── Node config form router ───────────────────────────────────────
 
   defp node_config_form(%{node: %{type: "source"}} = assigns),
-    do: ~H"<.source_config node={@node} kafka_source={@kafka_source} sqs_source={@sqs_source} />"
+    do: ~H"<.source_config
+  node={@node}
+  kafka_source={@kafka_source}
+  sqs_source={@sqs_source}
+  kinesis_source={@kinesis_source}
+/>"
 
   defp node_config_form(%{node: %{type: "step"}} = assigns),
     do: ~H"<.step_config node={@node} advanced_ai={@advanced_ai} />"
@@ -331,6 +338,13 @@ defmodule FluxWeb.PipelineLive.Builder do
             <option value="sqs" selected={@source_type == "sqs"} disabled={!@sqs_source}>
               Amazon SQS Queue {pro_suffix(@sqs_source)}
             </option>
+            <option
+              value="kinesis"
+              selected={@source_type == "kinesis"}
+              disabled={!@kinesis_source}
+            >
+              Amazon Kinesis Stream {pro_suffix(@kinesis_source)}
+            </option>
           </select>
         </div>
 
@@ -347,6 +361,8 @@ defmodule FluxWeb.PipelineLive.Builder do
             <.kafka_source_config config={@source_config} kafka_source={@kafka_source} />
           <% "sqs" -> %>
             <.sqs_source_config config={@source_config} sqs_source={@sqs_source} />
+          <% "kinesis" -> %>
+            <.kinesis_source_config config={@source_config} kinesis_source={@kinesis_source} />
           <% _ -> %>
             <.queue_source_config config={@source_config} />
         <% end %>
@@ -662,6 +678,86 @@ defmodule FluxWeb.PipelineLive.Builder do
 
       <p :if={!@sqs_source} class="text-xs text-base-content/50 mt-1">
         The Amazon SQS source connector requires a Pro license.
+      </p>
+    </div>
+    """
+  end
+
+  # Amazon Kinesis is a Pro source connector. Fields are disabled and a note is
+  # shown when the license is not entitled, mirroring the SQS gating above.
+  defp kinesis_source_config(assigns) do
+    ~H"""
+    <div class="space-y-3">
+      <div class="form-control">
+        <.field_label text="Stream Name" tooltip="Kinesis data stream name (or set the ARN below)" />
+        <input
+          type="text"
+          name="sourceConfig[streamName]"
+          value={@config["streamName"] || ""}
+          placeholder="events"
+          disabled={!@kinesis_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label text="Region" tooltip="AWS region the stream lives in" />
+        <input
+          type="text"
+          name="sourceConfig[region]"
+          value={@config["region"] || ""}
+          placeholder="us-east-1"
+          disabled={!@kinesis_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label text="Auth Mode" tooltip="How Flux authenticates to AWS" />
+        <select
+          name="sourceConfig[authMode]"
+          disabled={!@kinesis_source}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="iam_role" selected={@config["authMode"] == "iam_role"}>
+            IAM role (instance metadata)
+          </option>
+          <option value="static" selected={@config["authMode"] == "static"}>
+            Static access key
+          </option>
+        </select>
+      </div>
+
+      <div class="form-control">
+        <.field_label
+          text="Starting Position"
+          tooltip="Where to begin reading a shard with no saved checkpoint"
+        />
+        <select
+          name="sourceConfig[startingPosition]"
+          disabled={!@kinesis_source}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="LATEST" selected={@config["startingPosition"] == "LATEST"}>
+            LATEST (new records only)
+          </option>
+          <option
+            value="TRIM_HORIZON"
+            selected={@config["startingPosition"] == "TRIM_HORIZON"}
+          >
+            TRIM_HORIZON (oldest available)
+          </option>
+          <option
+            value="AT_TIMESTAMP"
+            selected={@config["startingPosition"] == "AT_TIMESTAMP"}
+          >
+            AT_TIMESTAMP
+          </option>
+        </select>
+      </div>
+
+      <p :if={!@kinesis_source} class="text-xs text-base-content/50 mt-1">
+        The Amazon Kinesis source connector requires a Pro license.
       </p>
     </div>
     """

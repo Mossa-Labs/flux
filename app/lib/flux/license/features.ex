@@ -20,6 +20,7 @@ defmodule Flux.License.Features do
     * `:kafka_source` - Kafka topic source connector (see `Flux.Source`)
     * `:mqtt_source` - MQTT topic source connector for IoT/industrial ingestion
     * `:sqs_source` - Amazon SQS source connector (AWS managed queue)
+    * `:kinesis_source` - Amazon Kinesis source connector (AWS streaming)
     * `:rabbit_mq_queue`, `:dlq` - durable queue backend + dead-letter
     * `:advanced_ai` - anomaly detection step in the pipeline interpreter
     * `:live_signals` - the Live Signals monitoring page
@@ -48,6 +49,8 @@ defmodule Flux.License.Features do
       :mqtt_source,
       # Amazon SQS source connector — AWS managed queue (see `Flux.Source`).
       :sqs_source,
+      # Amazon Kinesis source connector — AWS streaming (see `Flux.Source`).
+      :kinesis_source,
       :rabbit_mq_queue,
       :dlq,
       :advanced_ai,

@@ -42,5 +42,6 @@ defmodule Flux.Source.Adapters.Stub do
   def feature_for_type("kafka"), do: :kafka_source
   def feature_for_type("mqtt"), do: :mqtt_source
   def feature_for_type("sqs"), do: :sqs_source
+  def feature_for_type("kinesis"), do: :kinesis_source
   def feature_for_type(_), do: @feature
 end
