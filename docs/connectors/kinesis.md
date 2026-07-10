@@ -37,6 +37,8 @@ cross-account assume-role are on the roadmap.)
 | `access_key_id` / `secret_access_key` | conditional | Required for `static`; optional `session_token` |
 | `starting_position` | no | `LATEST` (default), `TRIM_HORIZON`, or `AT_TIMESTAMP` |
 | `at_timestamp` | conditional | ISO-8601 timestamp; required when `starting_position` is `AT_TIMESTAMP` |
+| `consumption_mode` | no | `polling` (default) or `efo` — see [Consumption modes](#consumption-modes) |
+| `consumer_name` | no | EFO stream-consumer name; auto-derived per source when omitted |
 
 \* Provide exactly one of `stream_name` or `stream_arn`.
 
@@ -60,6 +62,46 @@ Flux has checkpointed a shard it always resumes from the last committed record.
   "starting_position": "TRIM_HORIZON"
 }
 ```
+
+## Consumption modes
+
+`consumption_mode` selects **how** records are fetched from each shard. Both modes
+share the same checkpointing, resharding, and starting-position behavior — only the
+transport differs, so you can switch a source between them freely.
+
+| Mode | Throughput | How it works |
+| --- | --- | --- |
+| `polling` (default) | 2 MiB/s per shard, **shared** across all consumers of that shard | Polls `GetRecords` (~5 calls/s per shard) |
+| `efo` | **Dedicated** 2 MiB/s per shard, lower latency | Registers a stream consumer and receives records over an `SubscribeToShard` HTTP/2 push stream |
+
+**Enhanced Fan-Out (`efo`)** is worth it for high-throughput streams or when
+multiple independent consumers read the same stream and would otherwise contend for
+the shared 2 MiB/s. It registers a dedicated **stream consumer** against the stream:
+
+- The consumer name defaults to a stable per-source value (`flux-<stream>-<id>`), or
+  set `consumer_name` explicitly. The same name is re-used across restarts, so a
+  restart does not leak consumers.
+- A stream allows a limited number of registered EFO consumers (20 at time of
+  writing). Exceeding it surfaces a clear error rather than failing silently.
+- Flux **deregisters** the consumer when the source stops.
+- The `static`/`iam_role`/assume-role auth modes above apply unchanged; the EFO
+  push stream is signed with the same credentials.
+
+```json
+{
+  "type": "kinesis",
+  "stream_name": "orders",
+  "region": "us-east-1",
+  "auth_mode": "iam_role",
+  "starting_position": "TRIM_HORIZON",
+  "consumption_mode": "efo"
+}
+```
+
+> **IAM.** EFO needs the additional `kinesis:RegisterStreamConsumer`,
+> `kinesis:DescribeStreamConsumer`, `kinesis:DeregisterStreamConsumer`, and
+> `kinesis:SubscribeToShard` actions (scope them to the stream / consumer ARN)
+> beyond the `DescribeStream` / `GetShardIterator` / `GetRecords` that polling uses.
 
 ## Delivery & checkpointing
 

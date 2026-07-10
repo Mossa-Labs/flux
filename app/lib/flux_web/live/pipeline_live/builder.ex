@@ -774,6 +774,25 @@ defmodule FluxWeb.PipelineLive.Builder do
         </select>
       </div>
 
+      <div class="form-control">
+        <.field_label
+          text="Consumption Mode"
+          tooltip="How records are fetched: shared-throughput polling, or Enhanced Fan-Out (dedicated 2 MiB/s per shard over a push stream)"
+        />
+        <select
+          name="sourceConfig[consumptionMode]"
+          disabled={!@kinesis_source}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="polling" selected={(@config["consumptionMode"] || "polling") == "polling"}>
+            Polling (shared throughput)
+          </option>
+          <option value="efo" selected={@config["consumptionMode"] == "efo"}>
+            Enhanced Fan-Out (dedicated throughput)
+          </option>
+        </select>
+      </div>
+
       <p :if={!@kinesis_source} class="text-xs text-base-content/50 mt-1">
         The Amazon Kinesis source connector requires a Pro license.
       </p>
