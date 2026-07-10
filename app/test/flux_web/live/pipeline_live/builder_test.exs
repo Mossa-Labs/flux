@@ -65,4 +65,38 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
       refute html =~ "My Source"
     end
   end
+
+  describe "save validation" do
+    test "saving the default (valid) pipeline succeeds", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      html = render_click(lv, "save")
+
+      assert html =~ "Pipeline saved"
+    end
+
+    test "saving a source with a missing mandatory field shows an error toast", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      # A webhook source with no webhookPath — the mandatory field is blank.
+      ir = %{"nodes" => [%{"type" => "source", "sourceConfig" => %{"type" => "webhook"}}]}
+      render_hook(lv, "update_ir", %{"ir" => Jason.encode!(ir)})
+
+      html = render_click(lv, "save")
+
+      assert html =~ "Webhook Path"
+      refute html =~ "Pipeline saved"
+    end
+
+    test "saving with no source node shows an error toast", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      render_hook(lv, "update_ir", %{"ir" => Jason.encode!(%{"nodes" => []})})
+
+      html = render_click(lv, "save")
+
+      assert html =~ "Add and configure a source node"
+      refute html =~ "Pipeline saved"
+    end
+  end
 end

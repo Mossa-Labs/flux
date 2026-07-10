@@ -94,6 +94,9 @@ defmodule FluxWeb.SinkLive.FormTest do
 
       assert html =~ "can&#39;t be blank" or html =~ "can&apos;t be blank" or
                html =~ "can't be blank"
+
+      # The failure is also surfaced as an error toast, not just an inline error.
+      assert html =~ "Couldn&#39;t save sink" or html =~ "Couldn't save sink"
     end
   end
 

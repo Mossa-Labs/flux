@@ -702,7 +702,10 @@ defmodule FluxWeb.SinkLive.Form do
          |> push_navigate(to: ~p"/sinks")}
 
       {:error, changeset} ->
-        {:noreply, assign(socket, :form, to_form(changeset))}
+        {:noreply,
+         socket
+         |> assign(:form, to_form(changeset))
+         |> put_flash(:error, changeset_error_message(changeset))}
     end
   end
 
@@ -715,7 +718,30 @@ defmodule FluxWeb.SinkLive.Form do
          |> push_navigate(to: ~p"/sinks")}
 
       {:error, changeset} ->
-        {:noreply, assign(socket, :form, to_form(changeset))}
+        {:noreply,
+         socket
+         |> assign(:form, to_form(changeset))
+         |> put_flash(:error, changeset_error_message(changeset))}
+    end
+  end
+
+  # Summarizes changeset errors into a single toast line (e.g. missing required
+  # fields), so a failed save is visible and not just an inline field error.
+  defp changeset_error_message(changeset) do
+    summary =
+      changeset
+      |> Ecto.Changeset.traverse_errors(fn {msg, opts} ->
+        Regex.replace(~r"%{(\w+)}", msg, fn _, key ->
+          opts |> Keyword.get(String.to_existing_atom(key), key) |> to_string()
+        end)
+      end)
+      |> Enum.map_join("; ", fn {field, msgs} ->
+        "#{Phoenix.Naming.humanize(field)} #{Enum.join(msgs, ", ")}"
+      end)
+
+    case summary do
+      "" -> "Please fix the highlighted fields before saving."
+      msg -> "Couldn't save sink: #{msg}"
     end
   end
 
