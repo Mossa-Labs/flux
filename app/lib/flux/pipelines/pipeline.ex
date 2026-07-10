@@ -53,7 +53,13 @@ defmodule Flux.Pipelines.Pipeline do
     |> validate_required([:name, :source_queue, :organization_id])
     |> validate_inclusion(:status, @statuses)
     |> validate_steps()
-    |> unique_constraint([:organization_id, :name])
+    # Attach the org-scoped name uniqueness error to :name (not :organization_id,
+    # which is the default for a field-list constraint and reads as the confusing
+    # "Organization has already been taken").
+    |> unique_constraint(:name,
+      name: :pipelines_organization_id_name_index,
+      message: "is already used by another pipeline"
+    )
     |> foreign_key_constraint(:organization_id)
   end
 

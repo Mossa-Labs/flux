@@ -324,8 +324,9 @@ defmodule Flux.SinksTest do
       }
 
       assert {:error, changeset} = Sinks.create_sink(attrs)
-      errors = errors_on(changeset)
-      assert "has already been taken" in (errors[:name] || errors[:organization_id] || [])
+      # Org-scoped uniqueness reads as a name conflict, not "Organization ...".
+      assert %{name: ["is already used by another sink"]} = errors_on(changeset)
+      refute Map.has_key?(errors_on(changeset), :organization_id)
     end
 
     test "allows duplicate name across different organizations", %{org_id: org_id, scope: scope} do

@@ -33,7 +33,12 @@ defmodule Flux.Sinks.Sink do
     |> validate_required([:name, :type, :organization_id])
     |> validate_inclusion(:type, @sink_types)
     |> validate_config()
-    |> unique_constraint([:organization_id, :name])
+    # Attach the org-scoped name uniqueness error to :name (not :organization_id,
+    # which reads as the confusing "Organization has already been taken").
+    |> unique_constraint(:name,
+      name: :sinks_organization_id_name_index,
+      message: "is already used by another sink"
+    )
     |> foreign_key_constraint(:organization_id)
   end
 
