@@ -141,8 +141,10 @@ defmodule Flux.PipelinesTest do
       }
 
       assert {:error, changeset} = Pipelines.create_pipeline(attrs)
-      errors = errors_on(changeset)
-      assert "has already been taken" in (errors[:name] || errors[:organization_id] || [])
+      # The org-scoped uniqueness must read as a name conflict, not the confusing
+      # "Organization has already been taken".
+      assert %{name: ["is already used by another pipeline"]} = errors_on(changeset)
+      refute Map.has_key?(errors_on(changeset), :organization_id)
     end
 
     test "allows duplicate name across different organizations", %{org_id: org_id, scope: scope} do

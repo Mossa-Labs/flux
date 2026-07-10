@@ -102,8 +102,9 @@ defmodule Flux.SourcesTest do
     test "enforces unique name per organization", %{org_id: org_id} do
       assert {:ok, _} = Sources.create_source(webhook_attrs(org_id))
       assert {:error, changeset} = Sources.create_source(webhook_attrs(org_id))
-      # The composite unique index reports under the first field, like sinks.
-      assert "has already been taken" in errors_on(changeset).organization_id
+      # Org-scoped uniqueness reads as a name conflict, not "Organization ...".
+      assert %{name: ["is already used by another source"]} = errors_on(changeset)
+      refute Map.has_key?(errors_on(changeset), :organization_id)
     end
   end
 
