@@ -1446,45 +1446,9 @@ defmodule FluxWeb.PipelineLive.Builder do
     permission = if socket.assigns.action == :new, do: :create_pipeline, else: :edit_pipeline
 
     authorize(socket, permission, fn ->
-      # Extract source_queue from the IR for backward compat with the schema
-      source_queue = extract_source_queue(socket.assigns.initial_ir)
-      was_new = socket.assigns.action == :new
-
-      sink_ids = extract_sink_ids(socket.assigns.initial_ir)
-
-      attrs = %{
-        name: socket.assigns.pipeline_name,
-        source_queue: source_queue || "default",
-        steps: socket.assigns.initial_ir,
-        sink_ids: sink_ids,
-        organization_id: socket.assigns.current_scope.organization_id
-      }
-
-      opts = [actor_id: socket.assigns.current_scope.user.id]
-
-      result =
-        case socket.assigns.action do
-          :new -> Pipelines.create_pipeline(attrs, opts)
-          :edit -> Pipelines.update_pipeline(socket.assigns.pipeline, attrs, opts)
-        end
-
-      case result do
-        {:ok, pipeline} ->
-          socket =
-            socket
-            |> assign(:pipeline, pipeline)
-            |> assign(:action, :edit)
-            |> put_flash(:info, "Pipeline saved")
-
-          # Navigate to the edit URL so refreshing doesn't re-create
-          if was_new do
-            {:noreply, push_patch(socket, to: ~p"/pipelines/#{pipeline.id}/builder")}
-          else
-            {:noreply, socket}
-          end
-
-        {:error, changeset} ->
-          {:noreply, put_flash(socket, :error, format_save_errors(changeset))}
+      case validate_source(socket.assigns.initial_ir) do
+        :ok -> save_pipeline(socket)
+        {:error, message} -> {:noreply, put_flash(socket, :error, message)}
       end
     end)
   end
@@ -1686,6 +1650,101 @@ defmodule FluxWeb.PipelineLive.Builder do
 
   defp to_integer(val) when is_integer(val), do: val
   defp to_integer(val) when is_binary(val), do: String.to_integer(val)
+
+  defp save_pipeline(socket) do
+    # Extract source_queue from the IR for backward compat with the schema
+    source_queue = extract_source_queue(socket.assigns.initial_ir)
+    was_new = socket.assigns.action == :new
+
+    sink_ids = extract_sink_ids(socket.assigns.initial_ir)
+
+    attrs = %{
+      name: socket.assigns.pipeline_name,
+      source_queue: source_queue || "default",
+      steps: socket.assigns.initial_ir,
+      sink_ids: sink_ids,
+      organization_id: socket.assigns.current_scope.organization_id
+    }
+
+    opts = [actor_id: socket.assigns.current_scope.user.id]
+
+    result =
+      case socket.assigns.action do
+        :new -> Pipelines.create_pipeline(attrs, opts)
+        :edit -> Pipelines.update_pipeline(socket.assigns.pipeline, attrs, opts)
+      end
+
+    case result do
+      {:ok, pipeline} ->
+        socket =
+          socket
+          |> assign(:pipeline, pipeline)
+          |> assign(:action, :edit)
+          |> put_flash(:info, "Pipeline saved")
+
+        # Navigate to the edit URL so refreshing doesn't re-create
+        if was_new do
+          {:noreply, push_patch(socket, to: ~p"/pipelines/#{pipeline.id}/builder")}
+        else
+          {:noreply, socket}
+        end
+
+      {:error, changeset} ->
+        {:noreply, put_flash(socket, :error, format_save_errors(changeset))}
+    end
+  end
+
+  # Validates that the pipeline has a source node whose type-specific mandatory
+  # fields are filled in, so a save with a half-configured source surfaces a
+  # clear toast instead of persisting silently.
+  defp validate_source(ir) do
+    nodes = ir["nodes"] || []
+
+    case Enum.find(nodes, fn n -> n["type"] == "source" end) do
+      %{"sourceConfig" => config} when is_map(config) ->
+        validate_source_config(config)
+
+      _ ->
+        {:error, "Add and configure a source node before saving."}
+    end
+  end
+
+  defp validate_source_config(config) do
+    case missing_source_fields(config["type"], config) do
+      [] ->
+        :ok
+
+      [field] ->
+        {:error, "Source is missing a required field: #{field}."}
+
+      fields ->
+        {:error, "Source is missing required fields: #{Enum.join(fields, ", ")}."}
+    end
+  end
+
+  # Mandatory fields per source type, keyed by the IR `sourceConfig` shape
+  # (assets/js/builder/types.ts).
+  defp missing_source_fields("queue", config),
+    do: blank_fields(config, [{"queue", "Queue Name"}])
+
+  defp missing_source_fields("webhook", config),
+    do: blank_fields(config, [{"webhookPath", "Webhook Path"}])
+
+  defp missing_source_fields("scheduled_poll", config),
+    do: blank_fields(config, [{"pollUrl", "Poll URL"}])
+
+  defp missing_source_fields("kafka", config),
+    do: blank_fields(config, [{"bootstrapServers", "Bootstrap Servers"}, {"topic", "Topic"}])
+
+  defp missing_source_fields(_type, _config), do: []
+
+  defp blank_fields(config, fields) do
+    for {key, label} <- fields, blank?(config[key]), do: label
+  end
+
+  defp blank?(nil), do: true
+  defp blank?(value) when is_binary(value), do: String.trim(value) == ""
+  defp blank?(_value), do: false
 
   defp extract_source_queue(ir) do
     case ir["nodes"] do
