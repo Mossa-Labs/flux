@@ -221,6 +221,7 @@ defmodule FluxWeb.SinkLive.Form do
         type="url"
         label="Webhook URL"
         placeholder="https://example.com/webhook"
+        required
       />
       <.input
         field={@form[:config_method]}
@@ -236,12 +237,19 @@ defmodule FluxWeb.SinkLive.Form do
   defp type_config_fields(%{type: "s3"} = assigns) do
     ~H"""
     <div class="space-y-4">
-      <.input field={@form[:config_bucket]} type="text" label="Bucket Name" placeholder="my-bucket" />
+      <.input
+        field={@form[:config_bucket]}
+        type="text"
+        label="Bucket Name"
+        placeholder="my-bucket"
+        required
+      />
       <.input
         field={@form[:config_key_template]}
         type="text"
         label="Key Template"
         placeholder="data/{date}/{id}.json"
+        required
       />
       <p class="text-xs text-base-content/60 -mt-2">
         Placeholders: {"{id}"}, {"{timestamp}"}, {"{date}"}, {"{pipeline_id}"}
@@ -278,18 +286,26 @@ defmodule FluxWeb.SinkLive.Form do
         label="Mode"
         options={[{"Internal (Flux DB)", "internal"}, {"External Database", "external"}]}
       />
-      <.input field={@form[:config_table]} type="text" label="Table Name" placeholder="events" />
+      <.input
+        field={@form[:config_table]}
+        type="text"
+        label="Table Name"
+        placeholder="events"
+        required
+      />
       <.input
         field={@form[:config_database_url]}
         type="text"
         label="Database URL (for external)"
         placeholder="postgres://user:pass@host:5432/db"
+        required={cfg(@form, "config_mode") == "external"}
       />
       <.input
         field={@form[:config_columns]}
         type="textarea"
         label="Column Mapping (JSON)"
         placeholder='{"event_type": "type", "payload.user_id": "user_id"}'
+        required
       />
     </div>
     """
@@ -303,17 +319,25 @@ defmodule FluxWeb.SinkLive.Form do
         type="text"
         label="Database URL"
         placeholder="mysql://user:pass@host:3306/db"
+        required
       />
       <p class="text-xs text-base-content/60 -mt-2">
         Flux connects out to this database — make sure its host/port allows the Flux
         server's egress IP. See <code>docs/connectors/external-databases.md</code>.
       </p>
-      <.input field={@form[:config_table]} type="text" label="Table Name" placeholder="events" />
+      <.input
+        field={@form[:config_table]}
+        type="text"
+        label="Table Name"
+        placeholder="events"
+        required
+      />
       <.input
         field={@form[:config_columns]}
         type="textarea"
         label="Column Mapping (JSON)"
         placeholder={~s({"event_type": "type", "payload.user_id": "user_id"})}
+        required
       />
       <.input
         field={@form[:config_on_conflict]}
@@ -338,9 +362,16 @@ defmodule FluxWeb.SinkLive.Form do
         type="text"
         label="Project ID"
         placeholder="my-gcp-project"
+        required
       />
-      <.input field={@form[:config_dataset]} type="text" label="Dataset" placeholder="analytics" />
-      <.input field={@form[:config_table]} type="text" label="Table" placeholder="events" />
+      <.input
+        field={@form[:config_dataset]}
+        type="text"
+        label="Dataset"
+        placeholder="analytics"
+        required
+      />
+      <.input field={@form[:config_table]} type="text" label="Table" placeholder="events" required />
       <.input
         field={@form[:config_credentials]}
         type="textarea"
@@ -370,8 +401,9 @@ defmodule FluxWeb.SinkLive.Form do
         type="text"
         label="Bootstrap Servers"
         placeholder="broker1:9092,broker2:9092"
+        required
       />
-      <.input field={@form[:config_topic]} type="text" label="Topic" placeholder="events" />
+      <.input field={@form[:config_topic]} type="text" label="Topic" placeholder="events" required />
       <.input
         field={@form[:config_auth_mode]}
         type="select"
@@ -389,24 +421,28 @@ defmodule FluxWeb.SinkLive.Form do
         type="text"
         label="SASL Username"
         placeholder="Required for SASL auth modes"
+        required={cfg(@form, "config_auth_mode") in ~w(sasl_plain sasl_scram_256 sasl_scram_512)}
       />
       <.input
         field={@form[:config_sasl_password]}
         type="password"
         label="SASL Password"
         placeholder="Required for SASL auth modes"
+        required={cfg(@form, "config_auth_mode") in ~w(sasl_plain sasl_scram_256 sasl_scram_512)}
       />
       <.input
         field={@form[:config_ssl_certfile]}
         type="text"
         label="Client Certificate Path (mTLS)"
         placeholder="/etc/flux/certs/client.pem"
+        required={cfg(@form, "config_auth_mode") == "mtls"}
       />
       <.input
         field={@form[:config_ssl_keyfile]}
         type="password"
         label="Client Key Path (mTLS)"
         placeholder="/etc/flux/certs/client.key"
+        required={cfg(@form, "config_auth_mode") == "mtls"}
       />
       <.input
         field={@form[:config_compression]}
@@ -432,21 +468,41 @@ defmodule FluxWeb.SinkLive.Form do
         type="text"
         label="Account Identifier"
         placeholder="xy12345.us-east-1"
+        required
       />
       <p class="text-xs text-base-content/60 -mt-2">
         Flux egresses to <code>&lt;account&gt;.snowflakecomputing.com</code> over HTTPS
         (443) — make sure the Flux node's outbound/NAT allows it.
       </p>
-      <.input field={@form[:config_warehouse]} type="text" label="Warehouse" placeholder="compute_wh" />
-      <.input field={@form[:config_database]} type="text" label="Database" placeholder="analytics" />
-      <.input field={@form[:config_schema]} type="text" label="Schema" placeholder="public" />
-      <.input field={@form[:config_table]} type="text" label="Table" placeholder="events" />
-      <.input field={@form[:config_user]} type="text" label="User" placeholder="flux_loader" />
+      <.input
+        field={@form[:config_warehouse]}
+        type="text"
+        label="Warehouse"
+        placeholder="compute_wh"
+        required
+      />
+      <.input
+        field={@form[:config_database]}
+        type="text"
+        label="Database"
+        placeholder="analytics"
+        required
+      />
+      <.input field={@form[:config_schema]} type="text" label="Schema" placeholder="public" required />
+      <.input field={@form[:config_table]} type="text" label="Table" placeholder="events" required />
+      <.input
+        field={@form[:config_user]}
+        type="text"
+        label="User"
+        placeholder="flux_loader"
+        required
+      />
       <.input
         field={@form[:config_private_key]}
         type="password"
         label="Private Key (PEM)"
         placeholder="-----BEGIN PRIVATE KEY-----"
+        required
       />
       <.input
         field={@form[:config_private_key_passphrase]}
@@ -464,7 +520,13 @@ defmodule FluxWeb.SinkLive.Form do
     <div class="space-y-4">
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div class="sm:col-span-2">
-          <.input field={@form[:config_host]} type="text" label="Host" placeholder="redis.internal" />
+          <.input
+            field={@form[:config_host]}
+            type="text"
+            label="Host"
+            placeholder="redis.internal"
+            required
+          />
         </div>
         <.input field={@form[:config_port]} type="number" label="Port" placeholder="6379" />
       </div>
@@ -488,12 +550,14 @@ defmodule FluxWeb.SinkLive.Form do
           {"List (RPUSH)", "list"},
           {"Stream (XADD)", "stream"}
         ]}
+        required
       />
       <.input
         field={@form[:config_key_template]}
         type="text"
         label="Key Template"
         placeholder="scores:{id}"
+        required
       />
       <p class="text-xs text-base-content/60 -mt-2">
         Placeholders: {"{id}"}, {"{timestamp}"}, {"{date}"}, {"{pipeline_id}"}
@@ -519,12 +583,14 @@ defmodule FluxWeb.SinkLive.Form do
         type="text"
         label="Username (ACL)"
         placeholder="Required for ACL auth"
+        required={cfg(@form, "config_auth_mode") == "acl"}
       />
       <.input
         field={@form[:config_password]}
         type="password"
         label="Password"
         placeholder="Required for password / ACL auth"
+        required={cfg(@form, "config_auth_mode") in ~w(password acl)}
       />
       <.input field={@form[:config_tls]} type="checkbox" label="Use TLS connection" />
       <.input
@@ -562,7 +628,13 @@ defmodule FluxWeb.SinkLive.Form do
         <.input field={@form[:config_port]} type="number" label="Port" placeholder="27017" />
       </div>
       <.input field={@form[:config_database]} type="text" label="Database" placeholder="events" />
-      <.input field={@form[:config_collection]} type="text" label="Collection" placeholder="raw" />
+      <.input
+        field={@form[:config_collection]}
+        type="text"
+        label="Collection"
+        placeholder="raw"
+        required
+      />
       <.input
         field={@form[:config_auth_mode]}
         type="select"
@@ -578,12 +650,14 @@ defmodule FluxWeb.SinkLive.Form do
         type="text"
         label="Username (SCRAM)"
         placeholder="Required for SCRAM auth"
+        required={cfg(@form, "config_auth_mode") == "scram"}
       />
       <.input
         field={@form[:config_password]}
         type="password"
         label="Password (SCRAM)"
         placeholder="Required for SCRAM auth"
+        required={cfg(@form, "config_auth_mode") == "scram"}
       />
       <.input
         field={@form[:config_auth_source]}
@@ -603,12 +677,14 @@ defmodule FluxWeb.SinkLive.Form do
         type="text"
         label="Client Certificate Path (X.509)"
         placeholder="/etc/flux/certs/client.pem"
+        required={cfg(@form, "config_auth_mode") == "x509"}
       />
       <.input
         field={@form[:config_tls_key_file]}
         type="password"
         label="Client Key Path (X.509)"
         placeholder="/etc/flux/certs/client.key"
+        required={cfg(@form, "config_auth_mode") == "x509"}
       />
       <.input
         field={@form[:config_write_mode]}
@@ -621,6 +697,7 @@ defmodule FluxWeb.SinkLive.Form do
         type="text"
         label="Upsert Keys (for upsert mode)"
         placeholder="Comma-separated fields, e.g. _id or user_id,day"
+        required={cfg(@form, "config_write_mode") == "upsert"}
       />
       <p class="text-xs text-base-content/60 -mt-2">
         Filter fields used to match an existing document. A record's <code>_id</code> is
@@ -1026,6 +1103,11 @@ defmodule FluxWeb.SinkLive.Form do
   # A Pro sink type is "locked" when the current license isn't entitled to it.
   # Community always returns false from entitled?/1, so the upgrade prompt shows;
   # a licensed EE build resolves to true and the config fields render.
+  # Current value of a virtual `config_*` field from the live form params, used
+  # to drive the dynamic `*` marker on mode-dependent required fields. The form
+  # re-renders on `phx-change="validate"`, so params hold the latest selection.
+  defp cfg(form, key), do: form.params[key]
+
   defp pro_locked?(type) do
     case Map.fetch(@pro_sink_features, type) do
       {:ok, feature} -> not Flux.License.entitled?(feature)

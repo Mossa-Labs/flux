@@ -60,4 +60,32 @@ defmodule FluxWeb.SinkLive.FormProTest do
       refute html =~ "is a Flux Pro feature"
     end
   end
+
+  describe "required-field markers" do
+    test "always-required fields carry a * and optional fields do not", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      html = render_click(lv, "select_type", %{"type" => "mongodb"})
+
+      # Collection is always required; Auth Source is optional.
+      assert html =~ ~s(Collection<span class="text-error)
+      refute html =~ ~s(Auth Source<span class="text-error)
+    end
+
+    test "conditional fields gain a * only when the mode selects them", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      html = render_click(lv, "select_type", %{"type" => "mongodb"})
+
+      # Default auth_mode is "none" — Password is not yet required.
+      refute html =~ ~s{Password (SCRAM)<span class="text-error}
+
+      # Switching Auth Mode to SCRAM makes Username/Password required.
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_auth_mode" => "scram"}})
+        |> render_change()
+
+      assert html =~ ~s{Password (SCRAM)<span class="text-error}
+      assert html =~ ~s{Username (SCRAM)<span class="text-error}
+    end
+  end
 end

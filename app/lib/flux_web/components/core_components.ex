@@ -144,6 +144,18 @@ defmodule FluxWeb.CoreComponents do
   end
 
   @doc """
+  Renders the required-field marker (a red `*`) shown next to a field label.
+
+  Used by `input/1` and `field_label/1` when `required` is set. Wrap the call in
+  `:if` at the call site, e.g. `<.required_mark :if={@required} />`.
+  """
+  def required_mark(assigns) do
+    ~H"""
+    <span class="text-error ml-0.5" title="required" aria-hidden="true">*</span>
+    """
+  end
+
+  @doc """
   Renders an input with label and error messages.
 
   A `Phoenix.HTML.FormField` may be passed as argument,
@@ -204,9 +216,13 @@ defmodule FluxWeb.CoreComponents do
   attr :class, :any, default: nil, doc: "the input class to use over defaults"
   attr :error_class, :any, default: nil, doc: "the input error class to use over defaults"
 
+  attr :required, :boolean,
+    default: false,
+    doc: "renders a `*` marker on the label to flag a required field"
+
   attr :rest, :global,
     include: ~w(accept autocomplete capture cols disabled form list max maxlength min minlength
-                multiple pattern placeholder readonly required rows size step)
+                multiple pattern placeholder readonly rows size step)
 
   def input(%{field: %Phoenix.HTML.FormField{} = field} = assigns) do
     errors = if Phoenix.Component.used_input?(field), do: field.errors, else: []
@@ -250,7 +266,7 @@ defmodule FluxWeb.CoreComponents do
             checked={@checked}
             class={@class || "checkbox checkbox-sm"}
             {@rest}
-          />{@label}
+          />{@label}<.required_mark :if={@required} />
         </span>
       </label>
       <.error :for={msg <- @errors}>{msg}</.error>
@@ -262,7 +278,7 @@ defmodule FluxWeb.CoreComponents do
     ~H"""
     <div class="fieldset mb-2">
       <label>
-        <span :if={@label} class="label mb-1">{@label}</span>
+        <span :if={@label} class="label mb-1">{@label}<.required_mark :if={@required} /></span>
         <select
           id={@id}
           name={@name}
@@ -283,7 +299,7 @@ defmodule FluxWeb.CoreComponents do
     ~H"""
     <div class="fieldset mb-2">
       <label>
-        <span :if={@label} class="label mb-1">{@label}</span>
+        <span :if={@label} class="label mb-1">{@label}<.required_mark :if={@required} /></span>
         <textarea
           id={@id}
           name={@name}
@@ -304,7 +320,7 @@ defmodule FluxWeb.CoreComponents do
     ~H"""
     <div class="fieldset mb-2">
       <label>
-        <span :if={@label} class="label mb-1">{@label}</span>
+        <span :if={@label} class="label mb-1">{@label}<.required_mark :if={@required} /></span>
         <input
           type={@type}
           name={@name}
@@ -487,11 +503,15 @@ defmodule FluxWeb.CoreComponents do
   attr :text, :string, required: true
   attr :tooltip, :string, default: nil
 
+  attr :required, :boolean,
+    default: false,
+    doc: "renders a `*` marker after the label to flag a required field"
+
   def field_label(assigns) do
     ~H"""
     <label class="label py-1">
       <span class="label-text text-xs font-semibold uppercase tracking-wide text-base-content/50">
-        {@text}
+        {@text}<.required_mark :if={@required} />
       </span>
       <span
         :if={@tooltip}

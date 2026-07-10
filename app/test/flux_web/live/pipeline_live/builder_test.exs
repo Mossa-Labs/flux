@@ -48,6 +48,9 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
       assert html =~ "Source Node"
       assert html =~ "My Source"
       refute html =~ "Select a node to configure"
+
+      # The mandatory Queue Name field carries a required marker.
+      assert html =~ ~s(Queue Name<span class="text-error)
     end
 
     test "empty select_node clears the config panel back to the empty state", %{conn: conn} do

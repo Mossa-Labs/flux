@@ -379,7 +379,11 @@ defmodule FluxWeb.PipelineLive.Builder do
     ~H"""
     <div class="space-y-3">
       <div class="form-control">
-        <.field_label text="Queue Name" tooltip="The RabbitMQ queue to consume messages from" />
+        <.field_label
+          text="Queue Name"
+          tooltip="The RabbitMQ queue to consume messages from"
+          required
+        />
         <input
           type="text"
           name="sourceConfig[queue]"
@@ -429,7 +433,11 @@ defmodule FluxWeb.PipelineLive.Builder do
     ~H"""
     <div class="space-y-3">
       <div class="form-control">
-        <.field_label text="Webhook Path" tooltip="Endpoint path for receiving webhook data" />
+        <.field_label
+          text="Webhook Path"
+          tooltip="Endpoint path for receiving webhook data"
+          required
+        />
         <input
           type="text"
           name="sourceConfig[webhookPath]"
@@ -475,7 +483,7 @@ defmodule FluxWeb.PipelineLive.Builder do
     ~H"""
     <div class="space-y-3">
       <div class="form-control">
-        <.field_label text="Poll URL" tooltip="The HTTP endpoint to poll for new data" />
+        <.field_label text="Poll URL" tooltip="The HTTP endpoint to poll for new data" required />
         <input
           type="url"
           name="sourceConfig[pollUrl]"
@@ -532,7 +540,7 @@ defmodule FluxWeb.PipelineLive.Builder do
     ~H"""
     <div class="space-y-3">
       <div class="form-control">
-        <.field_label text="Bootstrap Servers" tooltip="Comma-separated Kafka brokers" />
+        <.field_label text="Bootstrap Servers" tooltip="Comma-separated Kafka brokers" required />
         <input
           type="text"
           name="sourceConfig[bootstrapServers]"
@@ -544,7 +552,7 @@ defmodule FluxWeb.PipelineLive.Builder do
       </div>
 
       <div class="form-control">
-        <.field_label text="Topic" tooltip="Kafka topic to consume from" />
+        <.field_label text="Topic" tooltip="Kafka topic to consume from" required />
         <input
           type="text"
           name="sourceConfig[topic]"
@@ -556,7 +564,11 @@ defmodule FluxWeb.PipelineLive.Builder do
       </div>
 
       <div class="form-control">
-        <.field_label text="Consumer Group" tooltip="Consumer group id for offset management" />
+        <.field_label
+          text="Consumer Group"
+          tooltip="Consumer group id for offset management"
+          required
+        />
         <input
           type="text"
           name="sourceConfig[consumerGroup]"
@@ -601,7 +613,7 @@ defmodule FluxWeb.PipelineLive.Builder do
     ~H"""
     <div class="space-y-3">
       <div class="form-control">
-        <.field_label text="Queue URL" tooltip="Full Amazon SQS queue URL" />
+        <.field_label text="Queue URL" tooltip="Full Amazon SQS queue URL" required />
         <input
           type="url"
           name="sourceConfig[queueUrl]"
@@ -613,7 +625,7 @@ defmodule FluxWeb.PipelineLive.Builder do
       </div>
 
       <div class="form-control">
-        <.field_label text="Region" tooltip="AWS region the queue lives in" />
+        <.field_label text="Region" tooltip="AWS region the queue lives in" required />
         <input
           type="text"
           name="sourceConfig[region]"
@@ -691,7 +703,11 @@ defmodule FluxWeb.PipelineLive.Builder do
     ~H"""
     <div class="space-y-3">
       <div class="form-control">
-        <.field_label text="Stream Name" tooltip="Kinesis data stream name (or set the ARN below)" />
+        <.field_label
+          text="Stream Name"
+          tooltip="Kinesis data stream name (or set the ARN below)"
+          required
+        />
         <input
           type="text"
           name="sourceConfig[streamName]"
@@ -703,7 +719,7 @@ defmodule FluxWeb.PipelineLive.Builder do
       </div>
 
       <div class="form-control">
-        <.field_label text="Region" tooltip="AWS region the stream lives in" />
+        <.field_label text="Region" tooltip="AWS region the stream lives in" required />
         <input
           type="text"
           name="sourceConfig[region]"
@@ -1734,7 +1750,18 @@ defmodule FluxWeb.PipelineLive.Builder do
     do: blank_fields(config, [{"pollUrl", "Poll URL"}])
 
   defp missing_source_fields("kafka", config),
-    do: blank_fields(config, [{"bootstrapServers", "Bootstrap Servers"}, {"topic", "Topic"}])
+    do:
+      blank_fields(config, [
+        {"bootstrapServers", "Bootstrap Servers"},
+        {"topic", "Topic"},
+        {"consumerGroup", "Consumer Group"}
+      ])
+
+  defp missing_source_fields("sqs", config),
+    do: blank_fields(config, [{"queueUrl", "Queue URL"}, {"region", "Region"}])
+
+  defp missing_source_fields("kinesis", config),
+    do: blank_fields(config, [{"streamName", "Stream Name"}, {"region", "Region"}])
 
   defp missing_source_fields(_type, _config), do: []
 
