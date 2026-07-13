@@ -52,6 +52,7 @@ defmodule Flux.SinkTest do
                  "postgres",
                  "redis",
                  "s3",
+                 "slack",
                  "snowflake"
                ]
     end

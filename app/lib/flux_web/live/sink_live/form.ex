@@ -15,7 +15,8 @@ defmodule FluxWeb.SinkLive.Form do
     "kafka" => :kafka_sink,
     "snowflake" => :snowflake_sink,
     "redis" => :redis_sink,
-    "mongodb" => :mongodb_sink
+    "mongodb" => :mongodb_sink,
+    "slack" => :slack_sink
   }
 
   @impl true
@@ -149,6 +150,14 @@ defmodule FluxWeb.SinkLive.Form do
                   icon="hero-document-text"
                   label="MongoDB"
                   sublabel="Document Store"
+                />
+                <.sink_type_option
+                  field={@form[:type]}
+                  selected_type={@selected_type}
+                  type="slack"
+                  icon="hero-chat-bubble-left-right"
+                  label="Slack"
+                  sublabel="Messaging"
                 />
               </div>
             </div>
@@ -725,6 +734,84 @@ defmodule FluxWeb.SinkLive.Form do
     """
   end
 
+  # Rendered only on a licensed build (Community shows the upgrade prompt instead).
+  defp type_config_fields(%{type: "slack"} = assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <.input
+        field={@form[:config_auth_mode]}
+        type="select"
+        label="Auth Mode"
+        options={[
+          {"Incoming Webhook URL", "webhook"},
+          {"Bot token (chat.postMessage)", "bot_token"}
+        ]}
+      />
+      <.input
+        field={@form[:config_webhook_url]}
+        type="password"
+        label="Webhook URL (webhook mode)"
+        placeholder="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXX"
+        required={cfg(@form, "config_auth_mode") in [nil, "webhook"]}
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Create an Incoming Webhook in your Slack app; the URL embeds a secret token, so it is
+        write-only here and left blank when editing.
+      </p>
+      <.input
+        field={@form[:config_bot_token]}
+        type="password"
+        label="Bot Token (bot-token mode)"
+        placeholder="xoxb-…"
+        required={cfg(@form, "config_auth_mode") == "bot_token"}
+      />
+      <.input
+        field={@form[:config_channel]}
+        type="text"
+        label="Channel"
+        placeholder="#alerts (required for bot-token mode)"
+        required={cfg(@form, "config_auth_mode") == "bot_token"}
+      />
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <.input
+          field={@form[:config_username]}
+          type="text"
+          label="Bot Username (optional)"
+          placeholder="Flux"
+        />
+        <.input
+          field={@form[:config_icon_emoji]}
+          type="text"
+          label="Icon Emoji (optional)"
+          placeholder=":rocket:"
+        />
+      </div>
+      <.input
+        field={@form[:config_message_template]}
+        type="text"
+        label="Message Template (optional)"
+        placeholder="Alert: {type} on {host}"
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Interpolates <code phx-no-curly-interpolation>{field}</code> placeholders (dot-paths
+        supported) from each record. Leave blank to post the JSON-encoded record.
+      </p>
+      <.input
+        field={@form[:config_blocks_template]}
+        type="textarea"
+        label="Block Kit Blocks (optional JSON)"
+        placeholder={~s([{"type":"section","text":{"type":"mrkdwn","text":"{message}"}}])}
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        A JSON array of
+        <a class="link" href="https://api.slack.com/block-kit" target="_blank">Block Kit</a>
+        blocks for rich messages. Supports the same <code phx-no-curly-interpolation>{field}</code>
+        interpolation.
+      </p>
+    </div>
+    """
+  end
+
   defp type_config_fields(assigns) do
     ~H"""
     <p class="text-base-content/60">Select a sink type to configure.</p>
@@ -945,6 +1032,17 @@ defmodule FluxWeb.SinkLive.Form do
     |> put_field("config_ttl_seconds", config["ttl_seconds"])
   end
 
+  defp config_form_params("slack", config) do
+    # webhook_url and bot_token are secret — left blank on edit.
+    %{}
+    |> put_field("config_auth_mode", config["auth_mode"])
+    |> put_field("config_channel", config["channel"])
+    |> put_field("config_username", config["username"])
+    |> put_field("config_icon_emoji", config["icon_emoji"])
+    |> put_field("config_message_template", config["message_template"])
+    |> put_field("config_blocks_template", config["blocks_template"])
+  end
+
   defp config_form_params(_type, _config), do: %{}
 
   defp put_field(map, _key, nil), do: map
@@ -1082,6 +1180,18 @@ defmodule FluxWeb.SinkLive.Form do
     |> Map.put("tls", params["config_tls"] == "true")
   end
 
+  defp build_config(params, "slack") do
+    %{}
+    |> maybe_put("auth_mode", params["config_auth_mode"])
+    |> maybe_put("webhook_url", params["config_webhook_url"])
+    |> maybe_put("bot_token", params["config_bot_token"])
+    |> maybe_put("channel", params["config_channel"])
+    |> maybe_put("username", params["config_username"])
+    |> maybe_put("icon_emoji", params["config_icon_emoji"])
+    |> maybe_put("message_template", params["config_message_template"])
+    |> maybe_put("blocks_template", params["config_blocks_template"])
+  end
+
   defp build_config(_params, _type), do: %{}
 
   defp maybe_put(map, _key, nil), do: map
@@ -1123,5 +1233,6 @@ defmodule FluxWeb.SinkLive.Form do
   defp pro_label("snowflake"), do: "Snowflake sinks"
   defp pro_label("redis"), do: "Redis sinks"
   defp pro_label("mongodb"), do: "MongoDB sinks"
+  defp pro_label("slack"), do: "Slack sinks"
   defp pro_label(type), do: "#{type} sinks"
 end
