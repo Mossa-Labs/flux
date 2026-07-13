@@ -29,7 +29,8 @@ defmodule Flux.Sink.Adapters.StubTest do
           {"bigquery", :bigquery_sink},
           {"kafka", :kafka_sink},
           {"redis", :redis_sink},
-          {"mongodb", :mongodb_sink}
+          {"mongodb", :mongodb_sink},
+          {"slack", :slack_sink}
         ] do
       assert {:error, {:pro_required, ^feature}} = Stub.deliver(%{}, %{"type" => type}, [])
     end

@@ -19,6 +19,7 @@ defmodule Flux.License.Features do
     * `:s3_sink`, `:snowflake_sink`, `:bigquery_sink`, `:kafka_sink` - object/warehouse/stream sinks
     * `:redis_sink` - Redis sink connector (in-memory key-value / stream store)
     * `:mongodb_sink` - MongoDB sink connector (NoSQL document store)
+    * `:slack_sink` - Slack sink connector (Incoming Webhook / bot-token messaging)
     * `:kafka_source` - Kafka topic source connector (see `Flux.Source`)
     * `:mqtt_source` - MQTT topic source connector for IoT/industrial ingestion
     * `:sqs_source` - Amazon SQS source connector (AWS managed queue)
@@ -49,6 +50,8 @@ defmodule Flux.License.Features do
       :redis_sink,
       # MongoDB sink connector — NoSQL document store (see `Flux.Sink`).
       :mongodb_sink,
+      # Slack sink connector — Incoming Webhook / bot-token messaging (see `Flux.Sink`).
+      :slack_sink,
       # Kafka topic source connector (consume → transform/detect → produce).
       :kafka_source,
       # MQTT topic source connector — IoT/industrial ingestion (see `Flux.Source`).

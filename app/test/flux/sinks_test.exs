@@ -270,6 +270,25 @@ defmodule Flux.SinksTest do
       refute changeset.errors[:type]
     end
 
+    test "with slack type in Community is rejected (Pro feature)", %{org_id: org_id} do
+      attrs = %{
+        name: "my-slack-sink",
+        type: "slack",
+        config: %{
+          "auth_mode" => "webhook",
+          "webhook_url" => "https://hooks.slack.com/services/T0/B0/XXXX"
+        },
+        organization_id: org_id
+      }
+
+      # slack is an accepted type (passes inclusion); the Community stub
+      # rejects it at config validation with the upgrade prompt.
+      assert {:error, %Ecto.Changeset{} = changeset} = Sinks.create_sink(attrs)
+      assert {msg, _} = changeset.errors[:config]
+      assert msg =~ "Flux Pro"
+      refute changeset.errors[:type]
+    end
+
     test "with valid postgres type creates a sink", %{org_id: org_id} do
       attrs = %{
         name: "my-pg-sink",
@@ -467,7 +486,9 @@ defmodule Flux.SinksTest do
         "database_url" => "postgres://flux:s3cr3t@db.internal:5432/prod",
         "sasl_password" => "kafka-pass",
         "ssl_keyfile" => "/etc/flux/certs/client.key",
-        "uri" => "mongodb+srv://flux:s3cr3t@cluster0.mongodb.net"
+        "uri" => "mongodb+srv://flux:s3cr3t@cluster0.mongodb.net",
+        "webhook_url" => "https://hooks.slack.com/services/T0/B0/s3cr3t",
+        "bot_token" => "xoxb-super-secret"
       }
 
       redacted = Sinks.redact_config(config)
@@ -478,6 +499,8 @@ defmodule Flux.SinksTest do
       assert redacted["sasl_password"] == "[REDACTED]"
       assert redacted["ssl_keyfile"] == "[REDACTED]"
       assert redacted["uri"] == "[REDACTED]"
+      assert redacted["webhook_url"] == "[REDACTED]"
+      assert redacted["bot_token"] == "[REDACTED]"
       # Non-secret fields pass through untouched.
       assert redacted["bucket"] == "my-bucket"
     end

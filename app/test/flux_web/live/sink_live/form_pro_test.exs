@@ -59,6 +59,18 @@ defmodule FluxWeb.SinkLive.FormProTest do
       assert html =~ "Write Mode"
       refute html =~ "is a Flux Pro feature"
     end
+
+    test "selecting Slack renders the config fields instead of the upgrade prompt",
+         %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "slack"})
+
+      assert html =~ "Auth Mode"
+      assert html =~ "Webhook URL"
+      assert html =~ "Block Kit"
+      refute html =~ "is a Flux Pro feature"
+    end
   end
 
   describe "required-field markers" do
