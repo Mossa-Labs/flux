@@ -24,6 +24,10 @@ defmodule Flux.SourceTest do
       assert {:ok, Flux.Source.Adapters.Stub} = Source.adapter_for_type("kinesis")
     end
 
+    test "returns Stub adapter for \"pubsub\" in Community (real Pub/Sub is Pro)" do
+      assert {:ok, Flux.Source.Adapters.Stub} = Source.adapter_for_type("pubsub")
+    end
+
     test "returns error for unknown type" do
       assert {:error, :unknown_type} = Source.adapter_for_type("unknown")
     end
@@ -61,6 +65,11 @@ defmodule Flux.SourceTest do
       assert nil ==
                Source.ingestion_spec("kinesis", %{"type" => "kinesis", "stream_name" => "events"})
     end
+
+    test "the Pro Pub/Sub stub starts nothing in Community" do
+      assert nil ==
+               Source.ingestion_spec("pubsub", %{"type" => "pubsub", "subscription" => "orders"})
+    end
   end
 
   describe "validate_config/2" do
@@ -96,6 +105,12 @@ defmodule Flux.SourceTest do
       assert msg =~ "Flux Pro"
     end
 
+    test "Community pubsub delegates to Stub and returns a pro_required message" do
+      config = %{"type" => "pubsub", "project_id" => "proj", "subscription" => "orders"}
+      assert {:error, [msg]} = Source.validate_config("pubsub", config)
+      assert msg =~ "Flux Pro"
+    end
+
     test "returns error for unknown source type" do
       assert {:error, ["unknown source type: nope"]} = Source.validate_config("nope", %{})
     end
@@ -119,6 +134,11 @@ defmodule Flux.SourceTest do
     test "Community kinesis stub surfaces a structured pro_required tuple" do
       assert {:error, {:pro_required, :kinesis_source}} =
                Source.test_connection("kinesis", %{"type" => "kinesis"})
+    end
+
+    test "Community pubsub stub surfaces a structured pro_required tuple" do
+      assert {:error, {:pro_required, :pubsub_source}} =
+               Source.test_connection("pubsub", %{"type" => "pubsub"})
     end
   end
 end
