@@ -28,6 +28,7 @@ defmodule FluxWeb.PipelineLive.Builder do
      |> assign(:kafka_source, Flux.License.has_feature?(:kafka_source))
      |> assign(:sqs_source, Flux.License.has_feature?(:sqs_source))
      |> assign(:kinesis_source, Flux.License.has_feature?(:kinesis_source))
+     |> assign(:pubsub_source, Flux.License.has_feature?(:pubsub_source))
      |> assign(:page_title, "Pipeline Builder")}
   end
 
@@ -129,6 +130,7 @@ defmodule FluxWeb.PipelineLive.Builder do
                 kafka_source={@kafka_source}
                 sqs_source={@sqs_source}
                 kinesis_source={@kinesis_source}
+                pubsub_source={@pubsub_source}
               />
             <% @selected_edge -> %>
               <.edge_config_form edge={@selected_edge} ir={@initial_ir} />
@@ -277,6 +279,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   kafka_source={@kafka_source}
   sqs_source={@sqs_source}
   kinesis_source={@kinesis_source}
+  pubsub_source={@pubsub_source}
 />"
 
   defp node_config_form(%{node: %{type: "step"}} = assigns),
@@ -345,6 +348,13 @@ defmodule FluxWeb.PipelineLive.Builder do
             >
               Amazon Kinesis Stream {pro_suffix(@kinesis_source)}
             </option>
+            <option
+              value="pubsub"
+              selected={@source_type == "pubsub"}
+              disabled={!@pubsub_source}
+            >
+              Google Pub/Sub {pro_suffix(@pubsub_source)}
+            </option>
           </select>
         </div>
 
@@ -363,6 +373,8 @@ defmodule FluxWeb.PipelineLive.Builder do
             <.sqs_source_config config={@source_config} sqs_source={@sqs_source} />
           <% "kinesis" -> %>
             <.kinesis_source_config config={@source_config} kinesis_source={@kinesis_source} />
+          <% "pubsub" -> %>
+            <.pubsub_source_config config={@source_config} pubsub_source={@pubsub_source} />
           <% _ -> %>
             <.queue_source_config config={@source_config} />
         <% end %>
@@ -373,6 +385,7 @@ defmodule FluxWeb.PipelineLive.Builder do
 
   defp source_icon("webhook"), do: "hero-code-bracket-square"
   defp source_icon("scheduled_poll"), do: "hero-clock"
+  defp source_icon("pubsub"), do: "hero-megaphone"
   defp source_icon(_), do: "hero-arrow-down-tray"
 
   defp queue_source_config(assigns) do
@@ -795,6 +808,112 @@ defmodule FluxWeb.PipelineLive.Builder do
 
       <p :if={!@kinesis_source} class="text-xs text-base-content/50 mt-1">
         The Amazon Kinesis source connector requires a Pro license.
+      </p>
+    </div>
+    """
+  end
+
+  # Google Pub/Sub is a Pro source connector. Fields are disabled and a note is
+  # shown when the license is not entitled, mirroring the Kinesis gating above.
+  defp pubsub_source_config(assigns) do
+    ~H"""
+    <div class="space-y-3">
+      <div class="form-control">
+        <.field_label
+          text="Project ID"
+          tooltip="GCP project that owns the subscription"
+          required
+        />
+        <input
+          type="text"
+          name="sourceConfig[projectId]"
+          value={@config["projectId"] || ""}
+          placeholder="my-gcp-project"
+          disabled={!@pubsub_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label
+          text="Subscription"
+          tooltip="Pull subscription id (or full projects/../subscriptions/.. path)"
+          required
+        />
+        <input
+          type="text"
+          name="sourceConfig[subscription]"
+          value={@config["subscription"] || ""}
+          placeholder="orders-sub"
+          disabled={!@pubsub_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label text="Auth Mode" tooltip="How Flux authenticates to Google Cloud" />
+        <select
+          name="sourceConfig[authMode]"
+          disabled={!@pubsub_source}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="adc" selected={(@config["authMode"] || "adc") == "adc"}>
+            Application Default Credentials / Workload Identity
+          </option>
+          <option value="service_account" selected={@config["authMode"] == "service_account"}>
+            Service-account JSON
+          </option>
+        </select>
+      </div>
+
+      <div :if={@config["authMode"] == "service_account"} class="form-control">
+        <.field_label
+          text="Credentials"
+          tooltip="Service-account JSON key (stored encrypted; masked on display)"
+        />
+        <textarea
+          name="sourceConfig[credentials]"
+          rows="3"
+          placeholder={~s({"type": "service_account", ...})}
+          disabled={!@pubsub_source}
+          class="textarea textarea-bordered textarea-sm w-full font-mono"
+        >{@config["credentials"] || ""}</textarea>
+      </div>
+
+      <div class="form-control">
+        <label class="label cursor-pointer justify-start gap-2">
+          <input
+            type="checkbox"
+            name="sourceConfig[ordering]"
+            value="true"
+            checked={@config["ordering"] == "true"}
+            disabled={!@pubsub_source}
+            class="checkbox checkbox-sm"
+          />
+          <span class="label-text">
+            Preserve ordering (per ordering key; subscription must enable message ordering)
+          </span>
+        </label>
+      </div>
+
+      <div class="form-control">
+        <label class="label cursor-pointer justify-start gap-2">
+          <input
+            type="checkbox"
+            name="sourceConfig[exactlyOnce]"
+            value="true"
+            checked={@config["exactlyOnce"] == "true"}
+            disabled={!@pubsub_source}
+            class="checkbox checkbox-sm"
+          />
+          <span class="label-text">
+            Exactly-once delivery (requires an exactly-once subscription)
+          </span>
+        </label>
+      </div>
+
+      <p :if={!@pubsub_source} class="text-xs text-base-content/50 mt-1">
+        The Google Pub/Sub source connector requires a Pro license.
       </p>
     </div>
     """
@@ -1781,6 +1900,9 @@ defmodule FluxWeb.PipelineLive.Builder do
 
   defp missing_source_fields("kinesis", config),
     do: blank_fields(config, [{"streamName", "Stream Name"}, {"region", "Region"}])
+
+  defp missing_source_fields("pubsub", config),
+    do: blank_fields(config, [{"projectId", "Project ID"}, {"subscription", "Subscription"}])
 
   defp missing_source_fields(_type, _config), do: []
 

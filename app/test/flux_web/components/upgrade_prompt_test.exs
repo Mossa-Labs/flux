@@ -42,6 +42,12 @@ defmodule FluxWeb.Components.UpgradePromptTest do
     assert html =~ "Flux Pro"
   end
 
+  test "renders the Google Pub/Sub source label" do
+    html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :pubsub_source)
+    assert html =~ "Google Pub/Sub source"
+    assert html =~ "Flux Pro"
+  end
+
   test "renders the Redis sink label" do
     html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :redis_sink)
     assert html =~ "Redis sink"

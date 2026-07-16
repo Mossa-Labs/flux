@@ -27,6 +27,7 @@ defmodule Flux.License.FeaturesTest do
     assert :mqtt_source in pro
     assert :sqs_source in pro
     assert :kinesis_source in pro
+    assert :pubsub_source in pro
     assert :rabbit_mq_queue in pro
     assert :advanced_ai in pro
     assert :live_signals in pro

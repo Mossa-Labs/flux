@@ -53,6 +53,24 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
       assert html =~ ~s(Queue Name<span class="text-error)
     end
 
+    test "pubsub source renders its Pro config form with required markers", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      html =
+        render_hook(lv, "select_node", %{
+          "nodeId" => "node_1",
+          "nodeType" => "source",
+          "nodeData" => %{"label" => "My Source", "sourceConfig" => %{"type" => "pubsub"}}
+        })
+
+      # The Pub/Sub type is offered but gated (Community lacks the license).
+      assert html =~ "Google Pub/Sub"
+      assert html =~ "requires a Pro license"
+      # Mandatory fields carry required markers.
+      assert html =~ ~s(Project ID<span class="text-error)
+      assert html =~ ~s(Subscription<span class="text-error)
+    end
+
     test "empty select_node clears the config panel back to the empty state", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
 

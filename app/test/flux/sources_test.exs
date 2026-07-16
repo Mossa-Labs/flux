@@ -99,6 +99,18 @@ defmodule Flux.SourcesTest do
       assert Enum.any?(errors_on(changeset).config, &(&1 =~ "Flux Pro"))
     end
 
+    test "gates the Pro pubsub source with a pro_required config error", %{org_id: org_id} do
+      attrs = %{
+        "name" => "orders-pubsub",
+        "type" => "pubsub",
+        "config" => %{"project_id" => "proj", "subscription" => "orders"},
+        "organization_id" => org_id
+      }
+
+      assert {:error, changeset} = Sources.create_source(attrs)
+      assert Enum.any?(errors_on(changeset).config, &(&1 =~ "Flux Pro"))
+    end
+
     test "enforces unique name per organization", %{org_id: org_id} do
       assert {:ok, _} = Sources.create_source(webhook_attrs(org_id))
       assert {:error, changeset} = Sources.create_source(webhook_attrs(org_id))
