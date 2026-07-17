@@ -115,6 +115,16 @@ defmodule FluxWeb.UserLive.Login do
         user,
         &url(~p"/users/log-in/#{&1}")
       )
+
+      scope = Flux.Accounts.Scope.for_user(user)
+
+      Flux.Audit.log(%{
+        actor: scope,
+        organization_id: scope.organization_id,
+        action: :magic_link_sent,
+        resource_type: :user,
+        resource_id: user.id
+      })
     end
 
     info =

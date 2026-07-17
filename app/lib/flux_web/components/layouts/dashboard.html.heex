@@ -140,6 +140,16 @@
             <.icon name="hero-bell-alert" class="w-5 h-5" /> Alerts
           </.link>
         </li>
+        <%= if Flux.License.has_feature?(:audit_log) do %>
+          <li>
+            <.link
+              navigate={~p"/system/audit-logs"}
+              class={if assigns[:active_tab] == :audit_log, do: "active", else: ""}
+            >
+              <.icon name="hero-clipboard-document-list" class="w-5 h-5" /> Audit Log
+            </.link>
+          </li>
+        <% end %>
       <% end %>
       <li>
         <.link

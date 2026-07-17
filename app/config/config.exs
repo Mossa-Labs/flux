@@ -97,7 +97,17 @@ config :phoenix, :json_library, Jason
 # Oban configuration (base settings shared across environments)
 config :flux, Oban,
   repo: Flux.Repo,
-  queues: [default: 10, polling: 5, webhooks: 20]
+  queues: [default: 10, polling: 5, webhooks: 20],
+  plugins: [
+    # Nightly at 03:00 UTC: prune audit entries past the retention window. The
+    # worker calls `Flux.Audit.prune/1`, a no-op on Community (no audit store);
+    # the Enterprise provider does the actual deletion (MOS-482).
+    {Oban.Plugins.Cron, crontab: [{"0 3 * * *", Flux.Workers.AuditPruner}]}
+  ]
+
+# Audit-log retention window in days (Enterprise). Default 90d; deployments can
+# raise it (1yr+). The pruner deletes entries older than this.
+config :flux, Flux.Audit, retention_days: 90
 
 # Pipeline supervision backend. The Community edition is single-node only.
 # The Pro build (flux_pro) overrides this with the Horde-backed distributed

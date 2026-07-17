@@ -140,6 +140,7 @@ defmodule Flux.Sinks do
     %Sink{}
     |> Sink.changeset(attrs)
     |> Repo.insert()
+    |> audit_sink(:sink_created, fn sink -> sink_snapshot(sink) end)
   end
 
   @doc """
@@ -154,17 +155,24 @@ defmodule Flux.Sinks do
       {:error, %Ecto.Changeset{}}
 
   """
-  def update_sink(%Sink{} = sink, attrs) do
-    sink
-    |> Sink.changeset(attrs)
+  def update_sink(%Sink{} = sink, attrs, opts \\ []) do
+    changeset = Sink.changeset(sink, attrs)
+    action = Keyword.get(opts, :audit_action, :sink_updated)
+    # Redact `config` so secrets (auth tokens, credentials) never land in an
+    # audit row — the diff records that config changed, not its values.
+    changes = Flux.Audit.diff(changeset, redact: [:config])
+
+    changeset
     |> Repo.update()
+    |> audit_sink(action, fn _ -> changes end)
   end
 
   @doc """
   Toggles the enabled status of a sink.
   """
   def toggle_enabled(%Sink{} = sink) do
-    update_sink(sink, %{enabled: !sink.enabled})
+    action = if sink.enabled, do: :sink_disabled, else: :sink_enabled
+    update_sink(sink, %{enabled: !sink.enabled}, audit_action: action)
   end
 
   @doc """
@@ -180,7 +188,28 @@ defmodule Flux.Sinks do
 
   """
   def delete_sink(%Sink{} = sink) do
-    Repo.delete(sink)
+    sink
+    |> Repo.delete()
+    |> audit_sink(:sink_deleted, fn deleted -> sink_snapshot(deleted) end)
+  end
+
+  # ── Audit helpers ────────────────────────────────────────────────
+  defp audit_sink({:ok, %Sink{} = sink} = result, action, changes_fun) do
+    Flux.Audit.log(%{
+      organization_id: sink.organization_id,
+      action: action,
+      resource_type: :sink,
+      resource_id: sink.id,
+      changes: changes_fun.(sink)
+    })
+
+    result
+  end
+
+  defp audit_sink(result, _action, _changes_fun), do: result
+
+  defp sink_snapshot(%Sink{} = sink) do
+    %{"name" => sink.name, "type" => sink.type, "enabled" => sink.enabled}
   end
 
   @doc """

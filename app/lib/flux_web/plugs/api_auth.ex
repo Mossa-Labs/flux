@@ -60,6 +60,14 @@ defmodule FluxWeb.Plugs.ApiAuth do
           organization_id: api_key.organization_id
         })
 
+        # Seed the ambient audit context so any mutation this API request makes
+        # is attributed to the API key (actor_type: :api_key).
+        Flux.Audit.Context.put(%{
+          actor: {:api_key, %{id: api_key.id, prefix: api_key.key_prefix}},
+          organization_id: api_key.organization_id,
+          metadata: FluxWeb.AuditMeta.from_conn(conn)
+        })
+
         conn
         |> assign(:current_scope, %Scope{
           user: nil,
