@@ -35,6 +35,16 @@ defmodule FluxWeb.UserAuth do
   """
   def log_in_user(conn, user, params \\ %{}) do
     user_return_to = get_session(conn, :user_return_to)
+    scope = Scope.for_user(user)
+
+    Flux.Audit.log(%{
+      actor: scope,
+      organization_id: scope.organization_id,
+      action: :login,
+      resource_type: :user,
+      resource_id: user.id,
+      metadata: FluxWeb.AuditMeta.from_conn(conn)
+    })
 
     conn
     |> create_or_extend_session(user, params)
@@ -47,6 +57,19 @@ defmodule FluxWeb.UserAuth do
   It clears all session data for safety. See renew_session.
   """
   def log_out_user(conn) do
+    scope = conn.assigns[:current_scope]
+
+    if scope && scope.user do
+      Flux.Audit.log(%{
+        actor: scope,
+        organization_id: scope.organization_id,
+        action: :logout,
+        resource_type: :user,
+        resource_id: scope.user.id,
+        metadata: FluxWeb.AuditMeta.from_conn(conn)
+      })
+    end
+
     user_token = get_session(conn, :user_token)
     user_token && Accounts.delete_user_session_token(user_token)
 
@@ -70,8 +93,17 @@ defmodule FluxWeb.UserAuth do
     with {token, conn} <- ensure_user_token(conn),
          {user, token_inserted_at} <- Accounts.get_user_by_session_token(token) do
       if Scope.user_can_log_in?(user) do
+        scope = Scope.for_user(user)
+
+        # Seed the ambient audit context for any mutation this request performs.
+        Flux.Audit.Context.put(%{
+          actor: scope,
+          organization_id: scope.organization_id,
+          metadata: FluxWeb.AuditMeta.from_conn(conn)
+        })
+
         conn
-        |> assign(:current_scope, Scope.for_user(user))
+        |> assign(:current_scope, scope)
         |> maybe_reissue_user_session_token(user, token_inserted_at)
       else
         # User was disabled since logging in; revoke session and redirect to login
@@ -247,14 +279,41 @@ defmodule FluxWeb.UserAuth do
   end
 
   defp mount_current_scope(socket, session) do
-    Phoenix.Component.assign_new(socket, :current_scope, fn ->
-      {user, _} =
-        if user_token = session["user_token"] do
-          Accounts.get_user_by_session_token(user_token)
-        end || {nil, nil}
+    socket =
+      Phoenix.Component.assign_new(socket, :current_scope, fn ->
+        {user, _} =
+          if user_token = session["user_token"] do
+            Accounts.get_user_by_session_token(user_token)
+          end || {nil, nil}
 
-      Scope.for_user(user)
-    end)
+        Scope.for_user(user)
+      end)
+
+    put_audit_context(socket)
+    socket
+  end
+
+  # LiveView event handlers run in the same process as the connected mount, so
+  # stashing the actor + request metadata here lets `Flux.Audit.log/1` attribute
+  # any mutation the LiveView performs. IP/user-agent are only available once the
+  # socket is connected (via `connect_info`).
+  defp put_audit_context(socket) do
+    scope = socket.assigns[:current_scope]
+
+    if scope && scope.user do
+      metadata =
+        if Phoenix.LiveView.connected?(socket),
+          do: FluxWeb.AuditMeta.from_socket(socket),
+          else: %{}
+
+      Flux.Audit.Context.put(%{
+        actor: scope,
+        organization_id: scope.organization_id,
+        metadata: metadata
+      })
+    end
+
+    :ok
   end
 
   @doc "Returns the path to redirect to after log in."

@@ -82,6 +82,15 @@ defmodule Flux.Structure do
            |> Repo.insert(),
          :ok <- maybe_add_organization_owner(organization, scope) do
       broadcast_organization(scope, {:created, organization})
+
+      Flux.Audit.log(%{
+        organization_id: organization.id,
+        action: :organization_created,
+        resource_type: :organization,
+        resource_id: organization.id,
+        changes: %{"name" => organization.name}
+      })
+
       {:ok, organization}
     end
   end
@@ -129,22 +138,30 @@ defmodule Flux.Structure do
     %OrganizationMember{}
     |> OrganizationMember.changeset(attrs)
     |> Repo.insert()
+    |> audit_member(:member_invited, fn om -> member_snapshot(om) end)
   end
 
   @doc """
   Updates an organization member.
   """
   def update_organization_member(%OrganizationMember{} = om, attrs) do
-    om
-    |> OrganizationMember.changeset(attrs)
+    changeset = OrganizationMember.changeset(om, attrs)
+    # A role change is the member event enterprises care about most.
+    action =
+      if Map.has_key?(changeset.changes, :role), do: :member_role_changed, else: :member_updated
+
+    changeset
     |> Repo.update()
+    |> audit_member(action, fn _ -> Flux.Audit.diff(changeset) end)
   end
 
   @doc """
   Deletes an organization member.
   """
   def delete_organization_member(%OrganizationMember{} = om) do
-    Repo.delete(om)
+    om
+    |> Repo.delete()
+    |> audit_member(:member_removed, fn removed -> member_snapshot(removed) end)
   end
 
   @doc """
@@ -154,6 +171,7 @@ defmodule Flux.Structure do
     om
     |> OrganizationMember.changeset(%{disabled_at: DateTime.utc_now()})
     |> Repo.update()
+    |> audit_member(:member_disabled, fn m -> member_snapshot(m) end)
   end
 
   @doc """
@@ -163,6 +181,25 @@ defmodule Flux.Structure do
     om
     |> OrganizationMember.changeset(%{disabled_at: nil})
     |> Repo.update()
+    |> audit_member(:member_reenabled, fn m -> member_snapshot(m) end)
+  end
+
+  defp audit_member({:ok, %OrganizationMember{} = om} = result, action, changes_fun) do
+    Flux.Audit.log(%{
+      organization_id: om.organization_id,
+      action: action,
+      resource_type: :organization_member,
+      resource_id: om.id,
+      changes: changes_fun.(om)
+    })
+
+    result
+  end
+
+  defp audit_member(result, _action, _changes_fun), do: result
+
+  defp member_snapshot(%OrganizationMember{} = om) do
+    %{"user_id" => om.user_id, "role" => om.role}
   end
 
   @doc """
@@ -180,11 +217,19 @@ defmodule Flux.Structure do
   def update_organization(%Scope{} = scope, %Organization{} = organization, attrs) do
     true = organization.user_id == scope.user.id
 
-    with {:ok, organization = %Organization{}} <-
-           organization
-           |> Organization.changeset(attrs, scope)
-           |> Repo.update() do
+    changeset = Organization.changeset(organization, attrs, scope)
+
+    with {:ok, organization = %Organization{}} <- Repo.update(changeset) do
       broadcast_organization(scope, {:updated, organization})
+
+      Flux.Audit.log(%{
+        organization_id: organization.id,
+        action: :organization_updated,
+        resource_type: :organization,
+        resource_id: organization.id,
+        changes: Flux.Audit.diff(changeset)
+      })
+
       {:ok, organization}
     end
   end
@@ -207,6 +252,15 @@ defmodule Flux.Structure do
     with {:ok, organization = %Organization{}} <-
            Repo.delete(organization) do
       broadcast_organization(scope, {:deleted, organization})
+
+      Flux.Audit.log(%{
+        organization_id: organization.id,
+        action: :organization_deleted,
+        resource_type: :organization,
+        resource_id: organization.id,
+        changes: %{"name" => organization.name}
+      })
+
       {:ok, organization}
     end
   end
@@ -308,6 +362,7 @@ defmodule Flux.Structure do
            |> Team.changeset(attrs, scope)
            |> Repo.insert() do
       broadcast_team(scope, {:created, team})
+      audit_team(team, :team_created, %{"name" => team.name})
       {:ok, team}
     end
   end
@@ -327,11 +382,11 @@ defmodule Flux.Structure do
   def update_team(%Scope{} = scope, %Team{} = team, attrs) do
     true = team.user_id == scope.user.id or scope.organization_role == "owner"
 
-    with {:ok, team = %Team{}} <-
-           team
-           |> Team.changeset(attrs, scope)
-           |> Repo.update() do
+    changeset = Team.changeset(team, attrs, scope)
+
+    with {:ok, team = %Team{}} <- Repo.update(changeset) do
       broadcast_team(scope, {:updated, team})
+      audit_team(team, :team_updated, Flux.Audit.diff(changeset))
       {:ok, team}
     end
   end
@@ -354,8 +409,19 @@ defmodule Flux.Structure do
     with {:ok, team = %Team{}} <-
            Repo.delete(team) do
       broadcast_team(scope, {:deleted, team})
+      audit_team(team, :team_deleted, %{"name" => team.name})
       {:ok, team}
     end
+  end
+
+  defp audit_team(%Team{} = team, action, changes) do
+    Flux.Audit.log(%{
+      organization_id: team.organization_id,
+      action: action,
+      resource_type: :team,
+      resource_id: team.id,
+      changes: changes
+    })
   end
 
   @doc """
@@ -455,6 +521,7 @@ defmodule Flux.Structure do
     %TeamMember{}
     |> TeamMember.changeset(attrs)
     |> Repo.insert()
+    |> audit_team_member(:team_member_added, fn tm -> team_member_snapshot(tm) end)
   end
 
   @doc """
@@ -470,9 +537,11 @@ defmodule Flux.Structure do
 
   """
   def update_team_member(%TeamMember{} = team_member, attrs) do
-    team_member
-    |> TeamMember.changeset(attrs)
+    changeset = TeamMember.changeset(team_member, attrs)
+
+    changeset
     |> Repo.update()
+    |> audit_team_member(:team_member_updated, fn _ -> Flux.Audit.diff(changeset) end)
   end
 
   @doc """
@@ -488,7 +557,9 @@ defmodule Flux.Structure do
 
   """
   def delete_team_member(%TeamMember{} = team_member) do
-    Repo.delete(team_member)
+    team_member
+    |> Repo.delete()
+    |> audit_team_member(:team_member_removed, fn tm -> team_member_snapshot(tm) end)
   end
 
   @doc """
@@ -498,6 +569,7 @@ defmodule Flux.Structure do
     team_member
     |> TeamMember.changeset(%{disabled_at: DateTime.utc_now()})
     |> Repo.update()
+    |> audit_team_member(:team_member_updated, fn tm -> team_member_snapshot(tm) end)
   end
 
   @doc """
@@ -507,6 +579,26 @@ defmodule Flux.Structure do
     team_member
     |> TeamMember.changeset(%{disabled_at: nil})
     |> Repo.update()
+    |> audit_team_member(:team_member_updated, fn tm -> team_member_snapshot(tm) end)
+  end
+
+  # Team members carry no organization_id column; let the ambient audit context
+  # (the acting user's scope) supply the org for these events.
+  defp audit_team_member({:ok, %TeamMember{} = tm} = result, action, changes_fun) do
+    Flux.Audit.log(%{
+      action: action,
+      resource_type: :team_member,
+      resource_id: tm.id,
+      changes: changes_fun.(tm)
+    })
+
+    result
+  end
+
+  defp audit_team_member(result, _action, _changes_fun), do: result
+
+  defp team_member_snapshot(%TeamMember{} = tm) do
+    %{"team_id" => tm.team_id, "user_id" => tm.user_id, "role" => tm.role}
   end
 
   @doc """

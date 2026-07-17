@@ -57,6 +57,9 @@ defmodule FluxWeb.Router do
     get("/sinks", SinkController, :index)
 
     get("/usage", UsageController, :show)
+
+    # Audit logs (Enterprise-gated via require_feature(:audit_log))
+    get("/audit-logs", AuditLogController, :index)
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
@@ -119,10 +122,16 @@ defmodule FluxWeb.Router do
       # Alerting & notifications (owner only + Pro-gated)
       live("/system/alerts", AlertsLive.Index, :index)
 
+      # Audit log (owner only + Enterprise-gated)
+      live("/system/audit-logs", AuditLogLive.Index, :index)
+
       # Settings (sudo mode enforced at module level in Settings LiveView)
       live("/users/settings", UserLive.Settings, :edit)
       live("/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email)
     end
+
+    # Audit log export (owner only + Enterprise-gated; controller streams a file download)
+    get("/system/audit-logs/export", AuditLogExportController, :export)
 
     post("/users/update-password", UserSessionController, :update_password)
   end

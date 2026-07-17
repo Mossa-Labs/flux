@@ -24,6 +24,7 @@ defmodule Flux.Application do
       Flux.Metering.Registry,
       Flux.Alerts.Registry,
       Flux.Observability.Registry,
+      Flux.Audit.Registry,
       # Abuse-protection safety valves (burst / pipeline-start limits) — owns the
       # rate-limiter ETS table; must be up before the endpoint serves requests.
       Flux.RateLimiter,

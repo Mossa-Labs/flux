@@ -107,6 +107,7 @@ defmodule Flux.Pipelines do
     end)
     |> Repo.transaction()
     |> unwrap_versioned_result()
+    |> audit_pipeline(:pipeline_created, fn pipeline -> pipeline_snapshot(pipeline) end)
   end
 
   @doc """
@@ -132,12 +133,17 @@ defmodule Flux.Pipelines do
   """
   def update_pipeline(%Pipeline{} = pipeline, attrs, opts \\ []) do
     changeset = Pipeline.changeset(pipeline, attrs)
+    action = Keyword.get(opts, :audit_action, :pipeline_updated)
+    changes = Flux.Audit.diff(changeset)
 
-    if versioned_change?(changeset) do
-      versioned_update(pipeline, changeset, opts)
-    else
-      Repo.update(changeset)
-    end
+    result =
+      if versioned_change?(changeset) do
+        versioned_update(pipeline, changeset, opts)
+      else
+        Repo.update(changeset)
+      end
+
+    audit_pipeline(result, action, fn _ -> changes end)
   end
 
   @doc """
@@ -146,8 +152,12 @@ defmodule Flux.Pipelines do
   This is a lifecycle-only change and never creates a version snapshot.
   """
   def update_status(%Pipeline{} = pipeline, status) when status in ~w(active paused stopped) do
-    update_pipeline(pipeline, %{status: status})
+    update_pipeline(pipeline, %{status: status}, audit_action: status_audit_action(status))
   end
+
+  defp status_audit_action("active"), do: :pipeline_started
+  defp status_audit_action("paused"), do: :pipeline_paused
+  defp status_audit_action("stopped"), do: :pipeline_stopped
 
   @doc """
   Sets the version the live runner loaded (or `nil` when stopped).
@@ -206,7 +216,11 @@ defmodule Flux.Pipelines do
           sink_ids: snapshot.sink_ids || []
         }
 
-        opts = Keyword.put_new(opts, :change_summary, "Rolled back to version #{version}")
+        opts =
+          opts
+          |> Keyword.put_new(:change_summary, "Rolled back to version #{version}")
+          |> Keyword.put(:audit_action, :pipeline_rolled_back)
+
         update_pipeline(pipeline, attrs, opts)
     end
   end
@@ -224,7 +238,32 @@ defmodule Flux.Pipelines do
 
   """
   def delete_pipeline(%Pipeline{} = pipeline) do
-    Repo.delete(pipeline)
+    pipeline
+    |> Repo.delete()
+    |> audit_pipeline(:pipeline_deleted, fn deleted -> pipeline_snapshot(deleted) end)
+  end
+
+  # ── Audit helpers ────────────────────────────────────────────────
+  #
+  # Records an audit event on the success branch only; the actor and request
+  # metadata come from the ambient `Flux.Audit.Context`. Passes the result
+  # through untouched so it composes at the end of a mutation pipeline.
+  defp audit_pipeline({:ok, %Pipeline{} = pipeline} = result, action, changes_fun) do
+    Flux.Audit.log(%{
+      organization_id: pipeline.organization_id,
+      action: action,
+      resource_type: :pipeline,
+      resource_id: pipeline.id,
+      changes: changes_fun.(pipeline)
+    })
+
+    result
+  end
+
+  defp audit_pipeline(result, _action, _changes_fun), do: result
+
+  defp pipeline_snapshot(%Pipeline{} = pipeline) do
+    %{"name" => pipeline.name, "status" => pipeline.status}
   end
 
   @doc """

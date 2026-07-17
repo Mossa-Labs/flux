@@ -58,6 +58,14 @@ defmodule FluxWeb.UserSessionController do
         end
 
       {:error, _} ->
+        Flux.Audit.log(%{
+          action: :failed_login,
+          actor_type: :system,
+          resource_type: :user,
+          metadata:
+            Map.put(FluxWeb.AuditMeta.from_conn(conn), "email", String.slice(email, 0, 160))
+        })
+
         # In order to prevent user enumeration attacks, don't disclose whether the email is registered.
         conn
         |> put_flash(:error, "Invalid email or password")

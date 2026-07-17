@@ -308,8 +308,19 @@ defmodule Flux.Accounts do
     |> ApiKey.create_changeset(gate_scopes(attrs), programmatic)
     |> Repo.insert()
     |> case do
-      {:ok, api_key} -> {:ok, raw, api_key}
-      {:error, changeset} -> {:error, changeset}
+      {:ok, api_key} ->
+        Flux.Audit.log(%{
+          organization_id: api_key.organization_id,
+          action: :api_key_created,
+          resource_type: :api_key,
+          resource_id: api_key.id,
+          changes: %{"name" => api_key.name, "role" => api_key.role}
+        })
+
+        {:ok, raw, api_key}
+
+      {:error, changeset} ->
+        {:error, changeset}
     end
   end
 
@@ -335,6 +346,21 @@ defmodule Flux.Accounts do
     api_key
     |> Ecto.Changeset.change(revoked_at: DateTime.utc_now() |> DateTime.truncate(:second))
     |> Repo.update()
+    |> case do
+      {:ok, revoked} = result ->
+        Flux.Audit.log(%{
+          organization_id: revoked.organization_id,
+          action: :api_key_revoked,
+          resource_type: :api_key,
+          resource_id: revoked.id,
+          changes: %{"name" => revoked.name}
+        })
+
+        result
+
+      other ->
+        other
+    end
   end
 
   def revoke_api_key(id) do
