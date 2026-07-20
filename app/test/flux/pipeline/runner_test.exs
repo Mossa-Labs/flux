@@ -200,5 +200,31 @@ defmodule Flux.Pipeline.RunnerTest do
 
       assert_receive {:telemetry, [:flux, :pipeline, :message, :processed], _, _}, 2_000
     end
+
+    test "consumes the derived source_queue when the source node has no explicit queue",
+         %{org_id: org_id} do
+      attach_telemetry([[:flux, :pipeline, :message, :processed]])
+
+      # A webhook source node carries no "queue" key. The builder derives and
+      # persists `webhooks.<path>` into source_queue; the runner must fall back
+      # to it (rather than the shared "default" queue) and consume from there.
+      steps = %{
+        "version" => "1.0",
+        "nodes" => [
+          %{
+            "type" => "source",
+            "sourceConfig" => %{"type" => "webhook", "webhookPath" => "github"}
+          }
+        ]
+      }
+
+      pipeline =
+        pipeline_fixture(org_id, %{source_queue: "webhooks.github", steps: steps})
+
+      start_supervised!({Runner, pipeline})
+      Flux.Pipeline.Producers.Memory.push_message("webhooks.github", %{"event" => "push"})
+
+      assert_receive {:telemetry, [:flux, :pipeline, :message, :processed], _, _}, 2_000
+    end
   end
 end
