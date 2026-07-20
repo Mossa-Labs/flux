@@ -4,7 +4,16 @@
 
 // Source configuration for different source types
 export interface SourceConfig {
-  type: 'queue' | 'webhook' | 'scheduled_poll' | 'kafka';
+  type:
+    | 'queue'
+    | 'webhook'
+    | 'scheduled_poll'
+    | 'kafka'
+    | 'sqs'
+    | 'kinesis'
+    | 'pubsub'
+    | 'rabbitmq_external'
+    | 'mqtt';
   // Queue source
   queue?: string;
   prefetchCount?: number;
@@ -22,7 +31,34 @@ export interface SourceConfig {
   bootstrapServers?: string;
   topic?: string;
   consumerGroup?: string;
-  authMode?: 'plaintext' | 'sasl_plain' | 'sasl_scram_256' | 'sasl_scram_512' | 'mtls';
+  // Shared auth mode (values vary by source type)
+  authMode?: string;
+  // AWS sources: SQS / Kinesis (Pro)
+  region?: string;
+  queueUrl?: string;
+  streamName?: string;
+  streamArn?: string;
+  startingPosition?: 'LATEST' | 'TRIM_HORIZON' | 'AT_TIMESTAMP';
+  atTimestamp?: string;
+  consumptionMode?: 'polling' | 'efo';
+  waitTimeSeconds?: number;
+  maxNumberOfMessages?: number;
+  // AWS static / assume-role credentials
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  sessionToken?: string;
+  roleArn?: string;
+  // MQTT source (Pro)
+  host?: string;
+  port?: number;
+  qos?: 0 | 1 | 2;
+  username?: string;
+  password?: string;
+  jwt?: string;
+  tls?: boolean;
+  sslCertfile?: string;
+  sslKeyfile?: string;
+  sslCacertfile?: string;
 }
 
 // IR node definition (source and sink nodes stored in IR)
