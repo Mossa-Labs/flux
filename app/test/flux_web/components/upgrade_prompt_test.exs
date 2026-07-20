@@ -48,6 +48,12 @@ defmodule FluxWeb.Components.UpgradePromptTest do
     assert html =~ "Flux Pro"
   end
 
+  test "renders the RabbitMQ (External) source label" do
+    html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :rabbitmq_source)
+    assert html =~ "RabbitMQ (External) source"
+    assert html =~ "Flux Pro"
+  end
+
   test "renders the Redis sink label" do
     html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :redis_sink)
     assert html =~ "Redis sink"

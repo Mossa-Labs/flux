@@ -29,6 +29,7 @@ defmodule FluxWeb.PipelineLive.Builder do
      |> assign(:sqs_source, Flux.License.has_feature?(:sqs_source))
      |> assign(:kinesis_source, Flux.License.has_feature?(:kinesis_source))
      |> assign(:pubsub_source, Flux.License.has_feature?(:pubsub_source))
+     |> assign(:rabbitmq_source, Flux.License.has_feature?(:rabbitmq_source))
      |> assign(:page_title, "Pipeline Builder")}
   end
 
@@ -131,6 +132,7 @@ defmodule FluxWeb.PipelineLive.Builder do
                 sqs_source={@sqs_source}
                 kinesis_source={@kinesis_source}
                 pubsub_source={@pubsub_source}
+                rabbitmq_source={@rabbitmq_source}
               />
             <% @selected_edge -> %>
               <.edge_config_form edge={@selected_edge} ir={@initial_ir} />
@@ -280,6 +282,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   sqs_source={@sqs_source}
   kinesis_source={@kinesis_source}
   pubsub_source={@pubsub_source}
+  rabbitmq_source={@rabbitmq_source}
 />"
 
   defp node_config_form(%{node: %{type: "step"}} = assigns),
@@ -355,6 +358,13 @@ defmodule FluxWeb.PipelineLive.Builder do
             >
               Google Pub/Sub {pro_suffix(@pubsub_source)}
             </option>
+            <option
+              value="rabbitmq_external"
+              selected={@source_type == "rabbitmq_external"}
+              disabled={!@rabbitmq_source}
+            >
+              RabbitMQ (External) {pro_suffix(@rabbitmq_source)}
+            </option>
           </select>
         </div>
 
@@ -375,6 +385,11 @@ defmodule FluxWeb.PipelineLive.Builder do
             <.kinesis_source_config config={@source_config} kinesis_source={@kinesis_source} />
           <% "pubsub" -> %>
             <.pubsub_source_config config={@source_config} pubsub_source={@pubsub_source} />
+          <% "rabbitmq_external" -> %>
+            <.rabbitmq_external_source_config
+              config={@source_config}
+              rabbitmq_source={@rabbitmq_source}
+            />
           <% _ -> %>
             <.queue_source_config config={@source_config} />
         <% end %>
@@ -386,6 +401,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp source_icon("webhook"), do: "hero-code-bracket-square"
   defp source_icon("scheduled_poll"), do: "hero-clock"
   defp source_icon("pubsub"), do: "hero-megaphone"
+  defp source_icon("rabbitmq_external"), do: "hero-inbox-stack"
   defp source_icon(_), do: "hero-arrow-down-tray"
 
   defp queue_source_config(assigns) do
@@ -914,6 +930,238 @@ defmodule FluxWeb.PipelineLive.Builder do
 
       <p :if={!@pubsub_source} class="text-xs text-base-content/50 mt-1">
         The Google Pub/Sub source connector requires a Pro license.
+      </p>
+    </div>
+    """
+  end
+
+  defp rabbitmq_external_source_config(assigns) do
+    assigns = assign(assigns, :auth_mode, assigns.config["authMode"] || "plain")
+
+    ~H"""
+    <div class="space-y-3">
+      <p class="text-xs text-base-content/50">
+        Consumes a customer's own external RabbitMQ broker. This is separate from Flux's
+        internal RabbitMQ queue backend — it uses its own connection and never touches the
+        internal exchanges.
+      </p>
+
+      <div class="grid grid-cols-3 gap-2">
+        <div class="form-control col-span-2">
+          <.field_label text="Host" tooltip="External RabbitMQ broker hostname" required />
+          <input
+            type="text"
+            name="sourceConfig[host]"
+            value={@config["host"] || ""}
+            placeholder="rabbit.example.com"
+            disabled={!@rabbitmq_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+        <div class="form-control">
+          <.field_label text="Port" tooltip="AMQP port (default 5672, or 5671 for TLS)" />
+          <input
+            type="text"
+            name="sourceConfig[port]"
+            value={@config["port"] || ""}
+            placeholder="5672"
+            disabled={!@rabbitmq_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+      </div>
+
+      <div class="form-control">
+        <.field_label text="Virtual Host" tooltip="AMQP virtual host (defaults to /)" />
+        <input
+          type="text"
+          name="sourceConfig[virtualHost]"
+          value={@config["virtualHost"] || ""}
+          placeholder="/"
+          disabled={!@rabbitmq_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label text="Queue" tooltip="Queue to consume from" required />
+        <input
+          type="text"
+          name="sourceConfig[queue]"
+          value={@config["queue"] || ""}
+          placeholder="orders"
+          disabled={!@rabbitmq_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label
+          text="Exchange Type"
+          tooltip="Bind the queue to an exchange, or consume the queue directly"
+        />
+        <select
+          name="sourceConfig[exchangeType]"
+          disabled={!@rabbitmq_source}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="none" selected={(@config["exchangeType"] || "none") == "none"}>
+            None — consume the queue directly
+          </option>
+          <option value="direct" selected={@config["exchangeType"] == "direct"}>Direct</option>
+          <option value="topic" selected={@config["exchangeType"] == "topic"}>Topic</option>
+          <option value="fanout" selected={@config["exchangeType"] == "fanout"}>Fanout</option>
+        </select>
+      </div>
+
+      <div
+        :if={@config["exchangeType"] not in [nil, "", "none"]}
+        class="grid grid-cols-2 gap-2"
+      >
+        <div class="form-control">
+          <.field_label text="Exchange" tooltip="Exchange name to bind to" />
+          <input
+            type="text"
+            name="sourceConfig[exchange]"
+            value={@config["exchange"] || ""}
+            placeholder="events"
+            disabled={!@rabbitmq_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+        <div class="form-control">
+          <.field_label
+            text="Routing Key"
+            tooltip="Binding key (ignored for fanout exchanges)"
+          />
+          <input
+            type="text"
+            name="sourceConfig[routingKey]"
+            value={@config["routingKey"] || ""}
+            placeholder="orders.#"
+            disabled={!@rabbitmq_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+      </div>
+
+      <div class="form-control">
+        <.field_label text="Auth Mode" tooltip="How Flux authenticates to the broker" />
+        <select
+          name="sourceConfig[authMode]"
+          disabled={!@rabbitmq_source}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="plain" selected={@auth_mode == "plain"}>
+            Username / password
+          </option>
+          <option value="mtls" selected={@auth_mode == "mtls"}>
+            X.509 client certificate (mTLS)
+          </option>
+          <option value="external" selected={@auth_mode == "external"}>
+            SASL EXTERNAL (identity from client cert)
+          </option>
+        </select>
+      </div>
+
+      <div :if={@auth_mode == "plain"} class="grid grid-cols-2 gap-2">
+        <div class="form-control">
+          <.field_label text="Username" tooltip="Broker username" required />
+          <input
+            type="text"
+            name="sourceConfig[username]"
+            value={@config["username"] || ""}
+            placeholder="flux"
+            disabled={!@rabbitmq_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+        <div class="form-control">
+          <.field_label text="Password" tooltip="Broker password (stored encrypted)" required />
+          <input
+            type="password"
+            name="sourceConfig[password]"
+            value={@config["password"] || ""}
+            disabled={!@rabbitmq_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+      </div>
+
+      <div :if={@auth_mode in ["mtls", "external"]} class="space-y-3">
+        <div class="form-control">
+          <.field_label
+            text="CA Certificate"
+            tooltip="PEM CA bundle used to verify the broker's certificate"
+            required
+          />
+          <textarea
+            name="sourceConfig[caCert]"
+            rows="2"
+            placeholder="-----BEGIN CERTIFICATE-----"
+            disabled={!@rabbitmq_source}
+            class="textarea textarea-bordered textarea-sm w-full font-mono"
+          >{@config["caCert"] || ""}</textarea>
+        </div>
+        <div class="form-control">
+          <.field_label text="Client Certificate" tooltip="PEM client certificate" required />
+          <textarea
+            name="sourceConfig[clientCert]"
+            rows="2"
+            placeholder="-----BEGIN CERTIFICATE-----"
+            disabled={!@rabbitmq_source}
+            class="textarea textarea-bordered textarea-sm w-full font-mono"
+          >{@config["clientCert"] || ""}</textarea>
+        </div>
+        <div class="form-control">
+          <.field_label
+            text="Client Key"
+            tooltip="PEM client private key (stored encrypted)"
+            required
+          />
+          <textarea
+            name="sourceConfig[clientKey]"
+            rows="2"
+            placeholder="-----BEGIN PRIVATE KEY-----"
+            disabled={!@rabbitmq_source}
+            class="textarea textarea-bordered textarea-sm w-full font-mono"
+          >{@config["clientKey"] || ""}</textarea>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <div class="form-control">
+          <.field_label
+            text="Prefetch Count"
+            tooltip="Unacked messages the broker may deliver at once (QoS, 1–65535)"
+          />
+          <input
+            type="text"
+            name="sourceConfig[prefetchCount]"
+            value={@config["prefetchCount"] || ""}
+            placeholder="50"
+            disabled={!@rabbitmq_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+        <div class="form-control">
+          <.field_label
+            text="Consumer Priority"
+            tooltip="Optional x-priority for this consumer (higher wins)"
+          />
+          <input
+            type="text"
+            name="sourceConfig[consumerPriority]"
+            value={@config["consumerPriority"] || ""}
+            placeholder="0"
+            disabled={!@rabbitmq_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+      </div>
+
+      <p :if={!@rabbitmq_source} class="text-xs text-base-content/50 mt-1">
+        The RabbitMQ (External) source connector requires a Pro license.
       </p>
     </div>
     """
@@ -1903,6 +2151,9 @@ defmodule FluxWeb.PipelineLive.Builder do
 
   defp missing_source_fields("pubsub", config),
     do: blank_fields(config, [{"projectId", "Project ID"}, {"subscription", "Subscription"}])
+
+  defp missing_source_fields("rabbitmq_external", config),
+    do: blank_fields(config, [{"host", "Host"}, {"queue", "Queue"}])
 
   defp missing_source_fields(_type, _config), do: []
 

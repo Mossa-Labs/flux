@@ -72,6 +72,7 @@ defmodule Flux.Registrations do
     Flux.Source.Registry.register("sqs", Flux.Source.Adapters.Stub)
     Flux.Source.Registry.register("kinesis", Flux.Source.Adapters.Stub)
     Flux.Source.Registry.register("pubsub", Flux.Source.Adapters.Stub)
+    Flux.Source.Registry.register("rabbitmq_external", Flux.Source.Adapters.Stub)
     :ok
   end
 

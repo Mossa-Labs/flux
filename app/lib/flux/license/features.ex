@@ -25,6 +25,8 @@ defmodule Flux.License.Features do
     * `:sqs_source` - Amazon SQS source connector (AWS managed queue)
     * `:kinesis_source` - Amazon Kinesis source connector (AWS streaming)
     * `:pubsub_source` - Google Pub/Sub source connector (GCP managed messaging)
+    * `:rabbitmq_source` - external RabbitMQ broker source connector (distinct
+      from the internal `:rabbit_mq_queue` backend)
     * `:rabbit_mq_queue`, `:dlq` - durable queue backend + dead-letter
     * `:advanced_ai` - anomaly detection step in the pipeline interpreter
     * `:live_signals` - the Live Signals monitoring page
@@ -63,6 +65,10 @@ defmodule Flux.License.Features do
       :kinesis_source,
       # Google Pub/Sub source connector — GCP managed messaging (see `Flux.Source`).
       :pubsub_source,
+      # External RabbitMQ broker source connector — consumes a customer's own
+      # broker (see `Flux.Source`). Distinct from `:rabbit_mq_queue`, the
+      # internal durable-queue backend.
+      :rabbitmq_source,
       :rabbit_mq_queue,
       :dlq,
       :advanced_ai,

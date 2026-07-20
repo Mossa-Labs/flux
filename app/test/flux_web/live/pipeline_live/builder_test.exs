@@ -71,6 +71,29 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
       assert html =~ ~s(Subscription<span class="text-error)
     end
 
+    test "rabbitmq_external source renders its Pro config form with required markers", %{
+      conn: conn
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      html =
+        render_hook(lv, "select_node", %{
+          "nodeId" => "node_1",
+          "nodeType" => "source",
+          "nodeData" => %{
+            "label" => "My Source",
+            "sourceConfig" => %{"type" => "rabbitmq_external"}
+          }
+        })
+
+      # The RabbitMQ (External) type is offered but gated (Community lacks the license).
+      assert html =~ "RabbitMQ (External)"
+      assert html =~ "requires a Pro license"
+      # Mandatory fields carry required markers.
+      assert html =~ ~s(Host<span class="text-error)
+      assert html =~ ~s(Queue<span class="text-error)
+    end
+
     test "empty select_node clears the config panel back to the empty state", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
 
