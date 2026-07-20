@@ -234,6 +234,61 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
       refute html =~ ~s(name="sourceConfig[secretAccessKey]")
     end
 
+    test "sftp source renders its Pro config form with required markers", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      html =
+        render_hook(lv, "select_node", %{
+          "nodeId" => "node_1",
+          "nodeType" => "source",
+          "nodeData" => %{"label" => "My Source", "sourceConfig" => %{"type" => "sftp"}}
+        })
+
+      # The SFTP type is offered but gated (Community lacks the license).
+      assert html =~ "SFTP"
+      assert html =~ "requires a Pro license"
+      # Mandatory fields carry required markers.
+      assert html =~ ~s(Host<span class="text-error)
+      assert html =~ ~s(Username<span class="text-error)
+      assert html =~ ~s(Remote Path<span class="text-error)
+      # Default auth mode (password) reveals the password input.
+      assert html =~ ~s(name="sourceConfig[password]")
+    end
+
+    test "sftp private_key auth reveals the private key field", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      html =
+        render_hook(lv, "select_node", %{
+          "nodeId" => "node_1",
+          "nodeType" => "source",
+          "nodeData" => %{
+            "label" => "My Source",
+            "sourceConfig" => %{"type" => "sftp", "authMode" => "private_key"}
+          }
+        })
+
+      assert html =~ ~s(name="sourceConfig[privateKey]")
+      # The password input belongs to a different auth mode.
+      refute html =~ ~s(name="sourceConfig[password]")
+    end
+
+    test "sftp move after-processing reveals the archive path field", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      html =
+        render_hook(lv, "select_node", %{
+          "nodeId" => "node_1",
+          "nodeType" => "source",
+          "nodeData" => %{
+            "label" => "My Source",
+            "sourceConfig" => %{"type" => "sftp", "afterProcessing" => "move"}
+          }
+        })
+
+      assert html =~ ~s(name="sourceConfig[archivePath]")
+    end
+
     test "empty select_node clears the config panel back to the empty state", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
 
@@ -382,6 +437,70 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
 
       assert html =~ "Host"
       assert html =~ "Topic"
+      refute html =~ "Pipeline saved"
+    end
+
+    test "saving an SFTP source missing host/username/path shows an error", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      ir = %{"nodes" => [%{"type" => "source", "sourceConfig" => %{"type" => "sftp"}}]}
+      render_hook(lv, "update_ir", %{"ir" => Jason.encode!(ir)})
+
+      html = render_click(lv, "save")
+
+      assert html =~ "Host"
+      assert html =~ "Remote Path"
+      refute html =~ "Pipeline saved"
+    end
+
+    test "saving a private_key SFTP source missing the key shows an error", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      ir = %{
+        "nodes" => [
+          %{
+            "type" => "source",
+            "sourceConfig" => %{
+              "type" => "sftp",
+              "host" => "sftp.example.com",
+              "username" => "flux",
+              "path" => "inbound/",
+              "authMode" => "private_key"
+            }
+          }
+        ]
+      }
+
+      render_hook(lv, "update_ir", %{"ir" => Jason.encode!(ir)})
+      html = render_click(lv, "save")
+
+      assert html =~ "Private Key"
+      refute html =~ "Pipeline saved"
+    end
+
+    test "saving a move-mode SFTP source missing the archive path shows an error", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      ir = %{
+        "nodes" => [
+          %{
+            "type" => "source",
+            "sourceConfig" => %{
+              "type" => "sftp",
+              "host" => "sftp.example.com",
+              "username" => "flux",
+              "path" => "inbound/",
+              "password" => "secret",
+              "afterProcessing" => "move"
+            }
+          }
+        ]
+      }
+
+      render_hook(lv, "update_ir", %{"ir" => Jason.encode!(ir)})
+      html = render_click(lv, "save")
+
+      assert html =~ "Archive Path"
       refute html =~ "Pipeline saved"
     end
   end

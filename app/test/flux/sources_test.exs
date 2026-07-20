@@ -141,6 +141,29 @@ defmodule Flux.SourcesTest do
     end
   end
 
+  describe "redact_config/1" do
+    test "masks SFTP secret fields (private key, passphrase, certificate, password)" do
+      config = %{
+        "host" => "sftp.example.com",
+        "username" => "flux",
+        "password" => "hunter2",
+        "private_key" => "-----BEGIN OPENSSH PRIVATE KEY-----",
+        "passphrase" => "s3cret",
+        "certificate" => "-----BEGIN CERTIFICATE-----"
+      }
+
+      redacted = Sources.redact_config(config)
+
+      assert redacted["password"] == "[REDACTED]"
+      assert redacted["private_key"] == "[REDACTED]"
+      assert redacted["passphrase"] == "[REDACTED]"
+      assert redacted["certificate"] == "[REDACTED]"
+      # Non-secret fields are untouched.
+      assert redacted["host"] == "sftp.example.com"
+      assert redacted["username"] == "flux"
+    end
+  end
+
   describe "list/enabled" do
     test "list_enabled_sources/1 excludes disabled", %{org_id: org_id} do
       {:ok, enabled} = Sources.create_source(webhook_attrs(org_id))

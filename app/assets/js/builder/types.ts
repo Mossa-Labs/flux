@@ -13,7 +13,8 @@ export interface SourceConfig {
     | 'kinesis'
     | 'pubsub'
     | 'rabbitmq_external'
-    | 'mqtt';
+    | 'mqtt'
+    | 'sftp';
   // Queue source
   queue?: string;
   prefetchCount?: number;
@@ -59,6 +60,17 @@ export interface SourceConfig {
   sslCertfile?: string;
   sslKeyfile?: string;
   sslCacertfile?: string;
+  // SFTP source (Pro) — host/port/username/password shared with the block above
+  path?: string;
+  filePattern?: string;
+  format?: 'csv' | 'jsonl' | 'xml';
+  privateKey?: string;
+  passphrase?: string;
+  certificate?: string;
+  schedule?: string;
+  afterProcessing?: 'leave' | 'move' | 'delete';
+  archivePath?: string;
+  requireCompleteMarker?: boolean;
 }
 
 // IR node definition (source and sink nodes stored in IR)

@@ -45,5 +45,6 @@ defmodule Flux.Source.Adapters.Stub do
   def feature_for_type("kinesis"), do: :kinesis_source
   def feature_for_type("pubsub"), do: :pubsub_source
   def feature_for_type("rabbitmq_external"), do: :rabbitmq_source
+  def feature_for_type("sftp"), do: :sftp_source
   def feature_for_type(_), do: @feature
 end
