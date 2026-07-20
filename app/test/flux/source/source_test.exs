@@ -28,6 +28,10 @@ defmodule Flux.SourceTest do
       assert {:ok, Flux.Source.Adapters.Stub} = Source.adapter_for_type("pubsub")
     end
 
+    test "returns Stub adapter for \"rabbitmq_external\" in Community (real RabbitMQ source is Pro)" do
+      assert {:ok, Flux.Source.Adapters.Stub} = Source.adapter_for_type("rabbitmq_external")
+    end
+
     test "returns error for unknown type" do
       assert {:error, :unknown_type} = Source.adapter_for_type("unknown")
     end
@@ -70,6 +74,14 @@ defmodule Flux.SourceTest do
       assert nil ==
                Source.ingestion_spec("pubsub", %{"type" => "pubsub", "subscription" => "orders"})
     end
+
+    test "the Pro RabbitMQ (external) stub starts nothing in Community" do
+      assert nil ==
+               Source.ingestion_spec("rabbitmq_external", %{
+                 "type" => "rabbitmq_external",
+                 "queue" => "orders"
+               })
+    end
   end
 
   describe "validate_config/2" do
@@ -111,6 +123,17 @@ defmodule Flux.SourceTest do
       assert msg =~ "Flux Pro"
     end
 
+    test "Community rabbitmq_external delegates to Stub and returns a pro_required message" do
+      config = %{
+        "type" => "rabbitmq_external",
+        "host" => "rabbit.example.com",
+        "queue" => "orders"
+      }
+
+      assert {:error, [msg]} = Source.validate_config("rabbitmq_external", config)
+      assert msg =~ "Flux Pro"
+    end
+
     test "returns error for unknown source type" do
       assert {:error, ["unknown source type: nope"]} = Source.validate_config("nope", %{})
     end
@@ -139,6 +162,11 @@ defmodule Flux.SourceTest do
     test "Community pubsub stub surfaces a structured pro_required tuple" do
       assert {:error, {:pro_required, :pubsub_source}} =
                Source.test_connection("pubsub", %{"type" => "pubsub"})
+    end
+
+    test "Community rabbitmq_external stub surfaces a structured pro_required tuple" do
+      assert {:error, {:pro_required, :rabbitmq_source}} =
+               Source.test_connection("rabbitmq_external", %{"type" => "rabbitmq_external"})
     end
   end
 end
