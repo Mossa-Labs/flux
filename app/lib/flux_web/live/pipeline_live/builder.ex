@@ -30,6 +30,7 @@ defmodule FluxWeb.PipelineLive.Builder do
      |> assign(:kinesis_source, Flux.License.has_feature?(:kinesis_source))
      |> assign(:pubsub_source, Flux.License.has_feature?(:pubsub_source))
      |> assign(:rabbitmq_source, Flux.License.has_feature?(:rabbitmq_source))
+     |> assign(:mqtt_source, Flux.License.has_feature?(:mqtt_source))
      |> assign(:page_title, "Pipeline Builder")}
   end
 
@@ -133,6 +134,7 @@ defmodule FluxWeb.PipelineLive.Builder do
                 kinesis_source={@kinesis_source}
                 pubsub_source={@pubsub_source}
                 rabbitmq_source={@rabbitmq_source}
+                mqtt_source={@mqtt_source}
               />
             <% @selected_edge -> %>
               <.edge_config_form edge={@selected_edge} ir={@initial_ir} />
@@ -283,6 +285,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   kinesis_source={@kinesis_source}
   pubsub_source={@pubsub_source}
   rabbitmq_source={@rabbitmq_source}
+  mqtt_source={@mqtt_source}
 />"
 
   defp node_config_form(%{node: %{type: "step"}} = assigns),
@@ -365,6 +368,9 @@ defmodule FluxWeb.PipelineLive.Builder do
             >
               RabbitMQ (External) {pro_suffix(@rabbitmq_source)}
             </option>
+            <option value="mqtt" selected={@source_type == "mqtt"} disabled={!@mqtt_source}>
+              MQTT Broker {pro_suffix(@mqtt_source)}
+            </option>
           </select>
         </div>
 
@@ -390,6 +396,8 @@ defmodule FluxWeb.PipelineLive.Builder do
               config={@source_config}
               rabbitmq_source={@rabbitmq_source}
             />
+          <% "mqtt" -> %>
+            <.mqtt_source_config config={@source_config} mqtt_source={@mqtt_source} />
           <% _ -> %>
             <.queue_source_config config={@source_config} />
         <% end %>
@@ -402,6 +410,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp source_icon("scheduled_poll"), do: "hero-clock"
   defp source_icon("pubsub"), do: "hero-megaphone"
   defp source_icon("rabbitmq_external"), do: "hero-inbox-stack"
+  defp source_icon("mqtt"), do: "hero-signal"
   defp source_icon(_), do: "hero-arrow-down-tray"
 
   defp queue_source_config(assigns) do
@@ -474,6 +483,11 @@ defmodule FluxWeb.PipelineLive.Builder do
           placeholder="/webhooks/my-pipeline"
           class="input input-bordered input-sm w-full font-mono"
         />
+        <p class="text-xs text-base-content/50 mt-1">
+          This pipeline consumes the <span class="font-mono">webhooks.&lt;path&gt;</span>
+          queue. To receive data, POST to <span class="font-mono">/api/webhooks/&lt;path&gt;</span>
+          or create a matching webhook source.
+        </p>
       </div>
 
       <div class="form-control">
@@ -520,6 +534,11 @@ defmodule FluxWeb.PipelineLive.Builder do
           placeholder="https://api.example.com/events"
           class="input input-bordered input-sm w-full font-mono"
         />
+        <p class="text-xs text-base-content/50 mt-1">
+          This pipeline consumes the <span class="font-mono">polling.&lt;source&gt;</span>
+          queue (derived from the node label). Create a matching scheduled-poll source
+          to provision the poller that publishes to it.
+        </p>
       </div>
 
       <div class="form-control">
@@ -687,6 +706,24 @@ defmodule FluxWeb.PipelineLive.Builder do
         </select>
       </div>
 
+      <.aws_static_credentials config={@config} enabled={@sqs_source} />
+
+      <div :if={@config["authMode"] == "assume_role"} class="form-control">
+        <.field_label
+          text="Role ARN"
+          tooltip="IAM role ARN to assume (required for cross-account access)"
+          required
+        />
+        <input
+          type="text"
+          name="sourceConfig[roleArn]"
+          value={@config["roleArn"] || ""}
+          placeholder="arn:aws:iam::123456789012:role/flux-sqs"
+          disabled={!@sqs_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
       <div class="form-control">
         <.field_label
           text="Wait Time (seconds)"
@@ -726,6 +763,60 @@ defmodule FluxWeb.PipelineLive.Builder do
     """
   end
 
+  # Shared conditional AWS static-credential inputs, revealed only when the source
+  # (SQS or Kinesis) uses `static` auth. `enabled` mirrors the parent's Pro flag.
+  attr :config, :map, required: true
+  attr :enabled, :boolean, required: true
+
+  defp aws_static_credentials(assigns) do
+    ~H"""
+    <div :if={@config["authMode"] == "static"} class="space-y-3">
+      <div class="form-control">
+        <.field_label
+          text="Access Key ID"
+          tooltip="AWS access key ID (required for static credentials)"
+          required
+        />
+        <input
+          type="text"
+          name="sourceConfig[accessKeyId]"
+          value={@config["accessKeyId"] || ""}
+          placeholder="AKIA..."
+          disabled={!@enabled}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+      <div class="form-control">
+        <.field_label
+          text="Secret Access Key"
+          tooltip="AWS secret access key (stored encrypted)"
+          required
+        />
+        <input
+          type="password"
+          name="sourceConfig[secretAccessKey]"
+          value={@config["secretAccessKey"] || ""}
+          disabled={!@enabled}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+      <div class="form-control">
+        <.field_label
+          text="Session Token"
+          tooltip="Optional session token for temporary credentials"
+        />
+        <input
+          type="password"
+          name="sourceConfig[sessionToken]"
+          value={@config["sessionToken"] || ""}
+          disabled={!@enabled}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+    </div>
+    """
+  end
+
   # Amazon Kinesis is a Pro source connector. Fields are disabled and a note is
   # shown when the license is not entitled, mirroring the SQS gating above.
   defp kinesis_source_config(assigns) do
@@ -734,7 +825,7 @@ defmodule FluxWeb.PipelineLive.Builder do
       <div class="form-control">
         <.field_label
           text="Stream Name"
-          tooltip="Kinesis data stream name (or set the ARN below)"
+          tooltip="Kinesis data stream name. Provide either a Stream Name or a Stream ARN."
           required
         />
         <input
@@ -742,6 +833,21 @@ defmodule FluxWeb.PipelineLive.Builder do
           name="sourceConfig[streamName]"
           value={@config["streamName"] || ""}
           placeholder="events"
+          disabled={!@kinesis_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label
+          text="Stream ARN"
+          tooltip="Full Kinesis stream ARN. Use instead of Stream Name (e.g. for cross-account streams)."
+        />
+        <input
+          type="text"
+          name="sourceConfig[streamArn]"
+          value={@config["streamArn"] || ""}
+          placeholder="arn:aws:kinesis:us-east-1:123456789012:stream/events"
           disabled={!@kinesis_source}
           class="input input-bordered input-sm w-full font-mono"
         />
@@ -775,6 +881,8 @@ defmodule FluxWeb.PipelineLive.Builder do
         </select>
       </div>
 
+      <.aws_static_credentials config={@config} enabled={@kinesis_source} />
+
       <div class="form-control">
         <.field_label
           text="Starting Position"
@@ -803,6 +911,22 @@ defmodule FluxWeb.PipelineLive.Builder do
         </select>
       </div>
 
+      <div :if={@config["startingPosition"] == "AT_TIMESTAMP"} class="form-control">
+        <.field_label
+          text="At Timestamp"
+          tooltip="ISO-8601 timestamp to start reading from (required for AT_TIMESTAMP)"
+          required
+        />
+        <input
+          type="text"
+          name="sourceConfig[atTimestamp]"
+          value={@config["atTimestamp"] || ""}
+          placeholder="2026-01-01T00:00:00Z"
+          disabled={!@kinesis_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
       <div class="form-control">
         <.field_label
           text="Consumption Mode"
@@ -824,6 +948,195 @@ defmodule FluxWeb.PipelineLive.Builder do
 
       <p :if={!@kinesis_source} class="text-xs text-base-content/50 mt-1">
         The Amazon Kinesis source connector requires a Pro license.
+      </p>
+    </div>
+    """
+  end
+
+  # MQTT is a Pro source connector. Fields are disabled and a note is shown when
+  # the license is not entitled, mirroring the Kinesis gating above. Field shape
+  # follows the MQTT connector's documented config (see docs/connectors/mqtt.md).
+  defp mqtt_source_config(assigns) do
+    ~H"""
+    <div class="space-y-3">
+      <div class="form-control">
+        <.field_label text="Host" tooltip="MQTT broker hostname or IP" required />
+        <input
+          type="text"
+          name="sourceConfig[host]"
+          value={@config["host"] || ""}
+          placeholder="broker.example.com"
+          disabled={!@mqtt_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label
+          text="Topic"
+          tooltip="Topic filter to subscribe to. Wildcards: + (single level), # (multi level, last only)"
+          required
+        />
+        <input
+          type="text"
+          name="sourceConfig[topic]"
+          value={@config["topic"] || ""}
+          placeholder="sensors/+/temperature"
+          disabled={!@mqtt_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div class="form-control">
+          <.field_label text="Port" tooltip="Broker port (1883 plaintext, 8883 for TLS)" />
+          <input
+            type="number"
+            name="sourceConfig[port]"
+            value={@config["port"] || 1883}
+            min="1"
+            max="65535"
+            disabled={!@mqtt_source}
+            class="input input-bordered input-sm w-full"
+          />
+        </div>
+
+        <div class="form-control">
+          <.field_label text="QoS" tooltip="Quality of Service level for the subscription" />
+          <select
+            name="sourceConfig[qos]"
+            disabled={!@mqtt_source}
+            class="select select-bordered select-sm w-full"
+          >
+            <option value="0" selected={to_string(@config["qos"]) == "0"}>
+              0 (at most once)
+            </option>
+            <option value="1" selected={(@config["qos"] || "1") |> to_string() == "1"}>
+              1 (at least once)
+            </option>
+            <option value="2" selected={to_string(@config["qos"]) == "2"}>
+              2 (exactly once)
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-control">
+        <.field_label text="Auth Mode" tooltip="How Flux authenticates to the broker" />
+        <select
+          name="sourceConfig[authMode]"
+          disabled={!@mqtt_source}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="none" selected={(@config["authMode"] || "none") == "none"}>
+            None (anonymous)
+          </option>
+          <option
+            value="username_password"
+            selected={@config["authMode"] == "username_password"}
+          >
+            Username / Password
+          </option>
+          <option value="mtls" selected={@config["authMode"] == "mtls"}>
+            Mutual TLS (client cert)
+          </option>
+          <option value="jwt" selected={@config["authMode"] == "jwt"}>
+            JWT
+          </option>
+        </select>
+      </div>
+
+      <div :if={@config["authMode"] == "username_password"} class="grid grid-cols-2 gap-3">
+        <div class="form-control">
+          <.field_label text="Username" tooltip="Broker username" required />
+          <input
+            type="text"
+            name="sourceConfig[username]"
+            value={@config["username"] || ""}
+            disabled={!@mqtt_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+        <div class="form-control">
+          <.field_label text="Password" tooltip="Broker password (stored encrypted)" required />
+          <input
+            type="password"
+            name="sourceConfig[password]"
+            value={@config["password"] || ""}
+            disabled={!@mqtt_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+      </div>
+
+      <div :if={@config["authMode"] == "mtls"} class="space-y-3">
+        <div class="form-control">
+          <.field_label text="Client Certificate" tooltip="PEM client certificate (mTLS)" required />
+          <textarea
+            name="sourceConfig[sslCertfile]"
+            rows="2"
+            placeholder="-----BEGIN CERTIFICATE-----"
+            disabled={!@mqtt_source}
+            class="textarea textarea-bordered textarea-sm w-full font-mono"
+          >{@config["sslCertfile"] || ""}</textarea>
+        </div>
+        <div class="form-control">
+          <.field_label text="Client Key" tooltip="PEM private key (mTLS, stored encrypted)" required />
+          <textarea
+            name="sourceConfig[sslKeyfile]"
+            rows="2"
+            placeholder="-----BEGIN PRIVATE KEY-----"
+            disabled={!@mqtt_source}
+            class="textarea textarea-bordered textarea-sm w-full font-mono"
+          >{@config["sslKeyfile"] || ""}</textarea>
+        </div>
+      </div>
+
+      <div :if={@config["authMode"] == "jwt"} class="form-control">
+        <.field_label
+          text="JWT"
+          tooltip="JSON Web Token presented to the broker (stored encrypted)"
+          required
+        />
+        <textarea
+          name="sourceConfig[jwt]"
+          rows="2"
+          placeholder="eyJhbGciOi..."
+          disabled={!@mqtt_source}
+          class="textarea textarea-bordered textarea-sm w-full font-mono"
+        >{@config["jwt"] || ""}</textarea>
+      </div>
+
+      <div class="form-control">
+        <label class="label cursor-pointer justify-start gap-2">
+          <input
+            type="checkbox"
+            name="sourceConfig[tls]"
+            value="true"
+            checked={@config["tls"] == "true"}
+            disabled={!@mqtt_source}
+            class="checkbox checkbox-sm"
+          />
+          <span class="label-text text-sm">Enable TLS</span>
+        </label>
+      </div>
+
+      <div :if={@config["tls"] == "true"} class="form-control">
+        <.field_label
+          text="CA Certificate"
+          tooltip="Optional PEM CA certificate to verify the broker (leave blank to use system trust store)"
+        />
+        <textarea
+          name="sourceConfig[sslCacertfile]"
+          rows="2"
+          placeholder="-----BEGIN CERTIFICATE-----"
+          disabled={!@mqtt_source}
+          class="textarea textarea-bordered textarea-sm w-full font-mono"
+        >{@config["sslCacertfile"] || ""}</textarea>
+      </div>
+
+      <p :if={!@mqtt_source} class="text-xs text-base-content/50 mt-1">
+        The MQTT source connector requires a Pro license.
       </p>
     </div>
     """
@@ -2143,11 +2456,24 @@ defmodule FluxWeb.PipelineLive.Builder do
         {"consumerGroup", "Consumer Group"}
       ])
 
-  defp missing_source_fields("sqs", config),
-    do: blank_fields(config, [{"queueUrl", "Queue URL"}, {"region", "Region"}])
+  defp missing_source_fields("sqs", config) do
+    blank_fields(config, [{"queueUrl", "Queue URL"}, {"region", "Region"}]) ++
+      aws_static_cred_fields(config) ++
+      aws_assume_role_fields(config)
+  end
 
-  defp missing_source_fields("kinesis", config),
-    do: blank_fields(config, [{"streamName", "Stream Name"}, {"region", "Region"}])
+  defp missing_source_fields("kinesis", config) do
+    # The adapter accepts EITHER a stream name or an ARN, so require at least one.
+    stream =
+      if blank?(config["streamName"]) and blank?(config["streamArn"]),
+        do: ["Stream Name or Stream ARN"],
+        else: []
+
+    stream ++
+      blank_fields(config, [{"region", "Region"}]) ++
+      aws_static_cred_fields(config) ++
+      kinesis_timestamp_fields(config)
+  end
 
   defp missing_source_fields("pubsub", config),
     do: blank_fields(config, [{"projectId", "Project ID"}, {"subscription", "Subscription"}])
@@ -2155,7 +2481,47 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp missing_source_fields("rabbitmq_external", config),
     do: blank_fields(config, [{"host", "Host"}, {"queue", "Queue"}])
 
+  defp missing_source_fields("mqtt", config) do
+    blank_fields(config, [{"host", "Host"}, {"topic", "Topic"}]) ++
+      mqtt_auth_fields(config)
+  end
+
   defp missing_source_fields(_type, _config), do: []
+
+  # AWS `static` auth requires an access key pair; only enforced in that mode.
+  defp aws_static_cred_fields(%{"authMode" => "static"} = config),
+    do:
+      blank_fields(config, [
+        {"accessKeyId", "Access Key ID"},
+        {"secretAccessKey", "Secret Access Key"}
+      ])
+
+  defp aws_static_cred_fields(_config), do: []
+
+  # SQS `assume_role` auth requires the role ARN to assume.
+  defp aws_assume_role_fields(%{"authMode" => "assume_role"} = config),
+    do: blank_fields(config, [{"roleArn", "Role ARN"}])
+
+  defp aws_assume_role_fields(_config), do: []
+
+  # Kinesis AT_TIMESTAMP start requires the timestamp to start from.
+  defp kinesis_timestamp_fields(%{"startingPosition" => "AT_TIMESTAMP"} = config),
+    do: blank_fields(config, [{"atTimestamp", "At Timestamp"}])
+
+  defp kinesis_timestamp_fields(_config), do: []
+
+  # MQTT credential requirements depend on the selected auth mode.
+  defp mqtt_auth_fields(%{"authMode" => "username_password"} = config),
+    do: blank_fields(config, [{"username", "Username"}, {"password", "Password"}])
+
+  defp mqtt_auth_fields(%{"authMode" => "mtls"} = config),
+    do:
+      blank_fields(config, [{"sslCertfile", "Client Certificate"}, {"sslKeyfile", "Client Key"}])
+
+  defp mqtt_auth_fields(%{"authMode" => "jwt"} = config),
+    do: blank_fields(config, [{"jwt", "JWT"}])
+
+  defp mqtt_auth_fields(_config), do: []
 
   defp blank_fields(config, fields) do
     for {key, label} <- fields, blank?(config[key]), do: label
@@ -2169,15 +2535,70 @@ defmodule FluxWeb.PipelineLive.Builder do
     case ir["nodes"] do
       nodes when is_list(nodes) ->
         case Enum.find(nodes, fn n -> n["type"] == "source" end) do
-          %{"sourceConfig" => %{"queue" => queue}} when is_binary(queue) and queue != "" ->
-            queue
-
-          _ ->
-            nil
+          %{} = node -> source_node_queue(node)
+          _ -> nil
         end
 
       _ ->
         nil
     end
   end
+
+  # Derives the internal queue a builder source node consumes.
+  #
+  # For `queue` sources the user supplies the queue name directly. For the
+  # passive `webhook` / `scheduled_poll` sources we derive the conventional queue
+  # name their upstream ingestion publishes to (`webhooks.<source>` /
+  # `polling.<source_id>`, see `Flux.Source.queue_name/2`) so the pipeline
+  # consumes real data instead of falling back to the shared "default" queue.
+  #
+  # NOTE: this only wires the *consumer* side. To actually receive data the
+  # upstream endpoint/poller must still be provisioned by creating a matching DB
+  # source (or POSTing to `/api/webhooks/<source>`). The derived `<source>` /
+  # `<source_id>` must match that DB source's id. Auto-provisioning the DB source
+  # on save is a follow-up.
+  defp source_node_queue(%{"sourceConfig" => config} = node) when is_map(config) do
+    case config["type"] do
+      "queue" ->
+        if blank?(config["queue"]), do: nil, else: config["queue"]
+
+      "webhook" ->
+        with source when source != "" <- slugify_source_id(config["webhookPath"]) do
+          Flux.Source.queue_name("webhook", %{"source" => source})
+        else
+          _ -> nil
+        end
+
+      "scheduled_poll" ->
+        with id when id != "" <- slugify_source_id(node["label"]) do
+          Flux.Source.queue_name("poll", %{"source_id" => id})
+        else
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp source_node_queue(_node), do: nil
+
+  # Normalizes a user-entered webhook path or node label into a safe,
+  # single-segment source identifier used to build the internal queue name
+  # (e.g. "/webhooks/My Pipeline" -> "my-pipeline").
+  defp slugify_source_id(value) when is_binary(value) do
+    value
+    |> String.split("/", trim: true)
+    |> List.last()
+    |> case do
+      nil -> ""
+      segment -> segment
+    end
+    |> String.trim()
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9_-]+/, "-")
+    |> String.trim("-")
+  end
+
+  defp slugify_source_id(_value), do: ""
 end

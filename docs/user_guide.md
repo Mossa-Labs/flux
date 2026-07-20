@@ -167,6 +167,19 @@ The builder has three panels:
 
 If no sinks are configured yet, the palette shows an "Add Sink" link that navigates to `/sinks/new`.
 
+### Source nodes consume a queue
+
+A pipeline's Source node is a **queue consumer** -- it reads from one internal queue. The queue it consumes depends on the source type you configure:
+
+| Source type | Consumes queue | Provisioned by |
+|-------------|----------------|----------------|
+| Queue | the queue name you enter | any producer publishing to that queue |
+| Webhook | `webhooks.<path>` | `POST /api/webhooks/<path>`, or a matching webhook source |
+| Scheduled Poll | `polling.<source>` (derived from the node label) | a matching scheduled-poll source |
+| Kafka / SQS / Kinesis / Pub/Sub / RabbitMQ (Pro) | the connector's queue | the corresponding managed source |
+
+> **Configuring a source node only wires the *consumer* side.** For Webhook and Scheduled Poll, the upstream endpoint/poller that *publishes* into the queue must still be provisioned separately -- for a webhook, by POSTing to `/api/webhooks/<path>` (or creating a webhook source with the same name); for a scheduled poll, by creating a scheduled-poll source whose id matches the derived `<source>`. A source node whose upstream is never provisioned will simply receive no data.
+
 ---
 
 ## Managing Sinks
