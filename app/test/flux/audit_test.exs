@@ -6,8 +6,20 @@ defmodule Flux.AuditTest do
   alias Flux.Audit.{Context, Event}
 
   setup do
+    # The audit provider registry is global (a single ETS entry), so a test that
+    # swaps in a capturing/raising provider must restore the prior one on exit —
+    # otherwise the leaked provider survives this async: false module and, under
+    # some seeds, fires {:audit_event, _} into a later LiveView's process (e.g.
+    # SystemSettingsLive), crashing it in handle_info. Capture-and-restore keeps
+    # the mutation contained to this module.
+    previous = Audit.Registry.active()
     Audit.Registry.set_active(Flux.Audit.Providers.Community)
-    on_exit(fn -> Context.clear() end)
+
+    on_exit(fn ->
+      Context.clear()
+      Audit.Registry.set_active(previous)
+    end)
+
     :ok
   end
 
