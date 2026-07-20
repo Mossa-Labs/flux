@@ -129,6 +129,41 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
       assert html =~ ~s(name="sourceConfig[password]")
     end
 
+    test "mqtt mtls auth reveals client certificate fields", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      html =
+        render_hook(lv, "select_node", %{
+          "nodeId" => "node_1",
+          "nodeType" => "source",
+          "nodeData" => %{
+            "label" => "My Source",
+            "sourceConfig" => %{"type" => "mqtt", "authMode" => "mtls"}
+          }
+        })
+
+      assert html =~ ~s(name="sourceConfig[sslCertfile]")
+      assert html =~ ~s(name="sourceConfig[sslKeyfile]")
+      # The username/password inputs belong to a different auth mode.
+      refute html =~ ~s(name="sourceConfig[username]")
+    end
+
+    test "mqtt jwt auth reveals the token field", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      html =
+        render_hook(lv, "select_node", %{
+          "nodeId" => "node_1",
+          "nodeType" => "source",
+          "nodeData" => %{
+            "label" => "My Source",
+            "sourceConfig" => %{"type" => "mqtt", "authMode" => "jwt"}
+          }
+        })
+
+      assert html =~ ~s(name="sourceConfig[jwt]")
+    end
+
     test "kinesis source exposes Stream ARN and reveals static creds when selected", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
 
@@ -180,6 +215,23 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
 
       assert html =~ ~s(name="sourceConfig[accessKeyId]")
       assert html =~ ~s(name="sourceConfig[secretAccessKey]")
+    end
+
+    test "aws static creds stay hidden under non-static (iam_role) auth", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      html =
+        render_hook(lv, "select_node", %{
+          "nodeId" => "node_1",
+          "nodeType" => "source",
+          "nodeData" => %{
+            "label" => "My Source",
+            "sourceConfig" => %{"type" => "kinesis", "authMode" => "iam_role"}
+          }
+        })
+
+      refute html =~ ~s(name="sourceConfig[accessKeyId]")
+      refute html =~ ~s(name="sourceConfig[secretAccessKey]")
     end
 
     test "empty select_node clears the config panel back to the empty state", %{conn: conn} do
@@ -381,6 +433,32 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
 
       pipeline = List.last(Flux.Pipelines.list_pipelines(scope.organization_id))
       assert pipeline.source_queue == "polling.my-poller"
+    end
+
+    test "a webhook path with slashes, case and punctuation is slugified", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      # Only the last path segment is used, lower-cased, with runs of unsafe
+      # characters collapsed to a single hyphen and trimmed.
+      ir = %{
+        "nodes" => [
+          %{
+            "type" => "source",
+            "label" => "Webhook",
+            "sourceConfig" => %{"type" => "webhook", "webhookPath" => "/api/My Webhook!"}
+          }
+        ]
+      }
+
+      render_hook(lv, "update_ir", %{"ir" => Jason.encode!(ir)})
+      html = render_click(lv, "save")
+      assert html =~ "Pipeline saved"
+
+      pipeline = List.last(Flux.Pipelines.list_pipelines(scope.organization_id))
+      assert pipeline.source_queue == "webhooks.my-webhook"
     end
   end
 end
