@@ -31,6 +31,7 @@ defmodule FluxWeb.PipelineLive.Builder do
      |> assign(:pubsub_source, Flux.License.has_feature?(:pubsub_source))
      |> assign(:rabbitmq_source, Flux.License.has_feature?(:rabbitmq_source))
      |> assign(:mqtt_source, Flux.License.has_feature?(:mqtt_source))
+     |> assign(:sftp_source, Flux.License.has_feature?(:sftp_source))
      |> assign(:page_title, "Pipeline Builder")}
   end
 
@@ -135,6 +136,7 @@ defmodule FluxWeb.PipelineLive.Builder do
                 pubsub_source={@pubsub_source}
                 rabbitmq_source={@rabbitmq_source}
                 mqtt_source={@mqtt_source}
+                sftp_source={@sftp_source}
               />
             <% @selected_edge -> %>
               <.edge_config_form edge={@selected_edge} ir={@initial_ir} />
@@ -286,6 +288,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   pubsub_source={@pubsub_source}
   rabbitmq_source={@rabbitmq_source}
   mqtt_source={@mqtt_source}
+  sftp_source={@sftp_source}
 />"
 
   defp node_config_form(%{node: %{type: "step"}} = assigns),
@@ -371,6 +374,9 @@ defmodule FluxWeb.PipelineLive.Builder do
             <option value="mqtt" selected={@source_type == "mqtt"} disabled={!@mqtt_source}>
               MQTT Broker {pro_suffix(@mqtt_source)}
             </option>
+            <option value="sftp" selected={@source_type == "sftp"} disabled={!@sftp_source}>
+              SFTP {pro_suffix(@sftp_source)}
+            </option>
           </select>
         </div>
 
@@ -398,6 +404,8 @@ defmodule FluxWeb.PipelineLive.Builder do
             />
           <% "mqtt" -> %>
             <.mqtt_source_config config={@source_config} mqtt_source={@mqtt_source} />
+          <% "sftp" -> %>
+            <.sftp_source_config config={@source_config} sftp_source={@sftp_source} />
           <% _ -> %>
             <.queue_source_config config={@source_config} />
         <% end %>
@@ -411,6 +419,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp source_icon("pubsub"), do: "hero-megaphone"
   defp source_icon("rabbitmq_external"), do: "hero-inbox-stack"
   defp source_icon("mqtt"), do: "hero-signal"
+  defp source_icon("sftp"), do: "hero-folder-arrow-down"
   defp source_icon(_), do: "hero-arrow-down-tray"
 
   defp queue_source_config(assigns) do
@@ -1480,6 +1489,234 @@ defmodule FluxWeb.PipelineLive.Builder do
     """
   end
 
+  # SFTP is a Pro source connector. Fields are disabled and a note is shown when
+  # the license is not entitled, mirroring the other Pro sources above. Auth
+  # modes (password / private key / cert) reveal different credential fields,
+  # following the RabbitMQ (External) conditional-reveal pattern.
+  defp sftp_source_config(assigns) do
+    assigns = assign(assigns, :auth_mode, assigns.config["authMode"] || "password")
+
+    ~H"""
+    <div class="space-y-3">
+      <p class="text-xs text-base-content/50">
+        Polls a remote SFTP directory on a schedule, parses each new file into records, and
+        publishes them onto this source's queue. Provision the source itself under
+        <span class="font-mono">/sources</span>
+        — the builder node consumes what it ingests.
+      </p>
+
+      <div class="grid grid-cols-3 gap-2">
+        <div class="form-control col-span-2">
+          <.field_label text="Host" tooltip="SFTP server hostname or IP" required />
+          <input
+            type="text"
+            name="sourceConfig[host]"
+            value={@config["host"] || ""}
+            placeholder="sftp.example.com"
+            disabled={!@sftp_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+        <div class="form-control">
+          <.field_label text="Port" tooltip="SSH port (default 22)" />
+          <input
+            type="number"
+            name="sourceConfig[port]"
+            value={@config["port"] || 22}
+            min="1"
+            max="65535"
+            disabled={!@sftp_source}
+            class="input input-bordered input-sm w-full"
+          />
+        </div>
+      </div>
+
+      <div class="form-control">
+        <.field_label text="Username" tooltip="SSH username" required />
+        <input
+          type="text"
+          name="sourceConfig[username]"
+          value={@config["username"] || ""}
+          placeholder="flux"
+          disabled={!@sftp_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <div class="form-control">
+          <.field_label text="Remote Path" tooltip="Directory to poll for files" required />
+          <input
+            type="text"
+            name="sourceConfig[path]"
+            value={@config["path"] || ""}
+            placeholder="inbound/"
+            disabled={!@sftp_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+        <div class="form-control">
+          <.field_label
+            text="File Pattern"
+            tooltip="Glob matched against filenames in the path (e.g. *.csv)"
+          />
+          <input
+            type="text"
+            name="sourceConfig[filePattern]"
+            value={@config["filePattern"] || ""}
+            placeholder="*.csv"
+            disabled={!@sftp_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+      </div>
+
+      <div class="form-control">
+        <.field_label text="File Format" tooltip="How each file is parsed into records" />
+        <select
+          name="sourceConfig[format]"
+          disabled={!@sftp_source}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="csv" selected={(@config["format"] || "csv") == "csv"}>CSV</option>
+          <option value="jsonl" selected={@config["format"] == "jsonl"}>JSON Lines</option>
+          <option value="xml" selected={@config["format"] == "xml"}>XML</option>
+        </select>
+      </div>
+
+      <div class="form-control">
+        <.field_label text="Auth Mode" tooltip="How Flux authenticates to the SFTP server" />
+        <select
+          name="sourceConfig[authMode]"
+          disabled={!@sftp_source}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="password" selected={@auth_mode == "password"}>Password</option>
+          <option value="private_key" selected={@auth_mode == "private_key"}>
+            Private key (RSA / Ed25519)
+          </option>
+          <option value="cert" selected={@auth_mode == "cert"}>
+            Certificate-based (OpenSSH cert)
+          </option>
+        </select>
+      </div>
+
+      <div :if={@auth_mode == "password"} class="form-control">
+        <.field_label text="Password" tooltip="SSH password (stored masked)" required />
+        <input
+          type="password"
+          name="sourceConfig[password]"
+          value={@config["password"] || ""}
+          disabled={!@sftp_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div :if={@auth_mode in ["private_key", "cert"]} class="space-y-3">
+        <div :if={@auth_mode == "cert"} class="form-control">
+          <.field_label text="Certificate" tooltip="OpenSSH user certificate (PEM)" required />
+          <textarea
+            name="sourceConfig[certificate]"
+            rows="2"
+            placeholder="-----BEGIN CERTIFICATE-----"
+            disabled={!@sftp_source}
+            class="textarea textarea-bordered textarea-sm w-full font-mono"
+          >{@config["certificate"] || ""}</textarea>
+        </div>
+        <div class="form-control">
+          <.field_label text="Private Key" tooltip="PEM private key (stored masked)" required />
+          <textarea
+            name="sourceConfig[privateKey]"
+            rows="2"
+            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+            disabled={!@sftp_source}
+            class="textarea textarea-bordered textarea-sm w-full font-mono"
+          >{@config["privateKey"] || ""}</textarea>
+        </div>
+        <div class="form-control">
+          <.field_label text="Passphrase" tooltip="Optional passphrase protecting the private key" />
+          <input
+            type="password"
+            name="sourceConfig[passphrase]"
+            value={@config["passphrase"] || ""}
+            disabled={!@sftp_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+      </div>
+
+      <div class="form-control">
+        <.field_label
+          text="Poll Schedule"
+          tooltip="Cron expression controlling how often the directory is polled"
+        />
+        <input
+          type="text"
+          name="sourceConfig[schedule]"
+          value={@config["schedule"] || ""}
+          placeholder="*/5 * * * *"
+          disabled={!@sftp_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label
+          text="After Processing"
+          tooltip="What to do with a file once all its records are published"
+        />
+        <select
+          name="sourceConfig[afterProcessing]"
+          disabled={!@sftp_source}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="leave" selected={(@config["afterProcessing"] || "leave") == "leave"}>
+            Leave (track by filename to avoid re-ingesting)
+          </option>
+          <option value="move" selected={@config["afterProcessing"] == "move"}>
+            Move to archive path
+          </option>
+          <option value="delete" selected={@config["afterProcessing"] == "delete"}>
+            Delete
+          </option>
+        </select>
+      </div>
+
+      <div :if={@config["afterProcessing"] == "move"} class="form-control">
+        <.field_label text="Archive Path" tooltip="Directory to move processed files into" required />
+        <input
+          type="text"
+          name="sourceConfig[archivePath]"
+          value={@config["archivePath"] || ""}
+          placeholder="processed/"
+          disabled={!@sftp_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
+      <div class="form-control">
+        <label class="label cursor-pointer justify-start gap-2">
+          <input
+            type="checkbox"
+            name="sourceConfig[requireCompleteMarker]"
+            value="true"
+            checked={@config["requireCompleteMarker"] == "true"}
+            disabled={!@sftp_source}
+            class="checkbox checkbox-sm"
+          />
+          <span class="label-text text-sm">
+            Require a <span class="font-mono">.complete</span> marker before ingesting a file
+          </span>
+        </label>
+      </div>
+
+      <p :if={!@sftp_source} class="text-xs text-base-content/50 mt-1">
+        The SFTP source connector requires a Pro license.
+      </p>
+    </div>
+    """
+  end
+
   defp format_content_types(nil), do: ""
   defp format_content_types(types) when is_list(types), do: Enum.join(types, ", ")
   defp format_content_types(types), do: to_string(types)
@@ -2486,6 +2723,12 @@ defmodule FluxWeb.PipelineLive.Builder do
       mqtt_auth_fields(config)
   end
 
+  defp missing_source_fields("sftp", config) do
+    blank_fields(config, [{"host", "Host"}, {"username", "Username"}, {"path", "Remote Path"}]) ++
+      sftp_auth_fields(config) ++
+      sftp_archive_fields(config)
+  end
+
   defp missing_source_fields(_type, _config), do: []
 
   # AWS `static` auth requires an access key pair; only enforced in that mode.
@@ -2522,6 +2765,29 @@ defmodule FluxWeb.PipelineLive.Builder do
     do: blank_fields(config, [{"jwt", "JWT"}])
 
   defp mqtt_auth_fields(_config), do: []
+
+  # SFTP credential requirements depend on the selected auth mode (default password).
+  defp sftp_auth_fields(config) do
+    case config["authMode"] || "password" do
+      "password" ->
+        blank_fields(config, [{"password", "Password"}])
+
+      "private_key" ->
+        blank_fields(config, [{"privateKey", "Private Key"}])
+
+      "cert" ->
+        blank_fields(config, [{"certificate", "Certificate"}, {"privateKey", "Private Key"}])
+
+      _ ->
+        []
+    end
+  end
+
+  # "move" after-processing requires a destination archive path.
+  defp sftp_archive_fields(%{"afterProcessing" => "move"} = config),
+    do: blank_fields(config, [{"archivePath", "Archive Path"}])
+
+  defp sftp_archive_fields(_config), do: []
 
   defp blank_fields(config, fields) do
     for {key, label} <- fields, blank?(config[key]), do: label
