@@ -113,6 +113,9 @@ defmodule FluxWeb.Router do
       # Observability — freshness SLO / volume baseline / schema drift (Pro-gated)
       live("/observability", ObservabilityLive.Index, :index)
 
+      # PII redaction dashboard (Enterprise-gated)
+      live("/redaction", PIILive.Index, :index)
+
       # System settings (owner only; 403 + redirect when unauthorized)
       live("/system/settings", SystemSettingsLive, :index)
 
