@@ -36,4 +36,24 @@ defmodule Flux.Pipeline.InterpreterGatingTest do
       assert result == data
     end)
   end
+
+  @redact_step %{
+    "version" => "1.0",
+    "steps" => [
+      %{
+        "id" => "s1",
+        "type" => "native",
+        "operation" => "redact",
+        "config" => %{"types" => "email"}
+      }
+    ]
+  }
+
+  test "Enterprise redact step passes data through unchanged on the community tier" do
+    # Community registers the pass-through stub for "redact" (the real detector
+    # ships in the Enterprise edition), so an imported Enterprise pipeline still
+    # runs — data flows through unredacted rather than halting.
+    data = %{"note" => "email jane@example.com"}
+    assert {:ok, ^data} = Interpreter.execute(data, @redact_step)
+  end
 end

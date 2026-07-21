@@ -40,6 +40,7 @@ defmodule Flux.Registrations do
     :ok = register_alerts_provider()
     :ok = register_observability_provider()
     :ok = register_audit_provider()
+    :ok = register_pii_provider()
     :ok = seed_active_queue()
 
     Logger.info("[Flux.Registrations] Community adapters registered")
@@ -87,6 +88,11 @@ defmodule Flux.Registrations do
     Flux.Pipeline.StepRegistry.register("map", Flux.Pipeline.Steps.Map)
     Flux.Pipeline.StepRegistry.register("filter", Flux.Pipeline.Steps.Filter)
     Flux.Pipeline.StepRegistry.register("rename", Flux.Pipeline.Steps.Rename)
+    # Enterprise PII steps (MOS-480) — the commercial edition registers the real
+    # detectors (Flux.Pipeline.Steps.Redact / .Classify) over these pass-through
+    # stubs at boot, gated on :pii_redaction.
+    Flux.Pipeline.StepRegistry.register("redact", Flux.Pipeline.Steps.Stub)
+    Flux.Pipeline.StepRegistry.register("classify", Flux.Pipeline.Steps.Stub)
     :ok
   end
 
@@ -132,6 +138,14 @@ defmodule Flux.Registrations do
       Application.get_env(:flux, Flux.Audit)[:provider] || Flux.Audit.Providers.Community
 
     Flux.Audit.Registry.set_active(provider)
+    :ok
+  end
+
+  defp register_pii_provider do
+    provider =
+      Application.get_env(:flux, Flux.PII)[:provider] || Flux.PII.Providers.Community
+
+    Flux.PII.Registry.set_active(provider)
     :ok
   end
 

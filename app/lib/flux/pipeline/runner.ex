@@ -36,12 +36,38 @@ defmodule Flux.Pipeline.Runner do
       context: %{
         pipeline_id: pipeline.id,
         version: pipeline.current_version,
-        steps: pipeline.steps,
+        steps: steps_with_context(pipeline),
         destination_queue: pipeline.destination_queue,
         sink_ids: pipeline.sink_ids || []
       }
     )
   end
+
+  # Injects pipeline context (id + organization) into every step's config so
+  # steps that need it — the anomaly detector keys rolling state by pipeline_id,
+  # the Enterprise redact/classify steps tag their telemetry/audit by org — get it
+  # without threading a separate context through the interpreter. Behavior-neutral
+  # for the plain Community steps (map/filter/rename/script ignore unknown keys).
+  defp steps_with_context(%Pipeline{steps: %{"steps" => steps} = ir} = pipeline)
+       when is_list(steps) do
+    ctx = %{"pipeline_id" => pipeline.id, "organization_id" => pipeline.organization_id}
+
+    updated =
+      Enum.map(steps, fn
+        %{"config" => config} = step when is_map(config) ->
+          Map.put(step, "config", Map.merge(ctx, config))
+
+        %{"type" => type} = step when type in ["native", "ai"] ->
+          Map.put(step, "config", ctx)
+
+        step ->
+          step
+      end)
+
+    Map.put(ir, "steps", updated)
+  end
+
+  defp steps_with_context(%Pipeline{steps: steps}), do: steps
 
   def child_spec(%Pipeline{} = pipeline) do
     %{
