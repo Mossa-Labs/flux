@@ -29,6 +29,7 @@ defmodule Flux.Audit.Event do
     api_key_created api_key_revoked
     rbac_mode_changed sso_configured
     alert_rule_created alert_rule_updated alert_rule_deleted alert_fired
+    pii_redacted pii_classified
   )a
 
   @actor_types ~w(user system api_key)a
