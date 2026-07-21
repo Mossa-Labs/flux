@@ -32,6 +32,7 @@ defmodule FluxWeb.PipelineLive.Builder do
      |> assign(:rabbitmq_source, Flux.License.has_feature?(:rabbitmq_source))
      |> assign(:mqtt_source, Flux.License.has_feature?(:mqtt_source))
      |> assign(:sftp_source, Flux.License.has_feature?(:sftp_source))
+     |> assign(:pii_redaction, Flux.License.has_feature?(:pii_redaction))
      |> assign(:page_title, "Pipeline Builder")}
   end
 
@@ -59,6 +60,8 @@ defmodule FluxWeb.PipelineLive.Builder do
           <.node_item type="rename" icon="hero-pencil" label="Rename" />
           <.node_item type="script" icon="hero-code-bracket" label="Script" />
           <.node_item type="anomaly" icon="hero-cpu-chip" label="AI Detect" />
+          <.node_item type="redact" icon="hero-lock-closed" label="Redact PII" />
+          <.node_item type="classify" icon="hero-tag" label="Classify" />
 
           <div class="divider text-xs">Outputs</div>
 
@@ -1839,6 +1842,10 @@ defmodule FluxWeb.PipelineLive.Builder do
             <.script_config node={@node} />
           <% "anomaly" -> %>
             <.anomaly_config node={@node} advanced_ai={@advanced_ai} />
+          <% "redact" -> %>
+            <.redact_config node={@node} pii_redaction={@pii_redaction} />
+          <% "classify" -> %>
+            <.classify_config node={@node} pii_redaction={@pii_redaction} />
           <% _ -> %>
             <p class="text-sm text-base-content/60">Unknown step type</p>
         <% end %>
@@ -1852,6 +1859,8 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp step_icon("rename"), do: "hero-pencil"
   defp step_icon("script"), do: "hero-code-bracket"
   defp step_icon("anomaly"), do: "hero-cpu-chip"
+  defp step_icon("redact"), do: "hero-lock-closed"
+  defp step_icon("classify"), do: "hero-tag"
   defp step_icon(_), do: "hero-cog-6-tooth"
 
   defp default_step_label("filter"), do: "Filter"
@@ -1859,6 +1868,8 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp default_step_label("rename"), do: "Rename"
   defp default_step_label("script"), do: "Script"
   defp default_step_label("anomaly"), do: "AI Detect"
+  defp default_step_label("redact"), do: "Redact PII"
+  defp default_step_label("classify"), do: "Classify"
   defp default_step_label(_), do: "Step"
 
   defp step_type_label("filter"), do: "Filter"
@@ -1866,6 +1877,8 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp step_type_label("rename"), do: "Rename"
   defp step_type_label("script"), do: "Script"
   defp step_type_label("anomaly"), do: "AI Detection"
+  defp step_type_label("redact"), do: "PII Redaction"
+  defp step_type_label("classify"), do: "Classification"
   defp step_type_label(_), do: "Processing"
 
   # Filter step configuration
@@ -2257,6 +2270,128 @@ defmodule FluxWeb.PipelineLive.Builder do
           max="10"
           class="input input-bordered input-sm w-full"
         />
+      </div>
+    </div>
+    """
+  end
+
+  # PII redaction step configuration (Enterprise). The real detectors ship in the
+  # Enterprise edition; the Community build registers a pass-through stub, so the
+  # form is fully disabled without a license.
+  defp redact_config(assigns) do
+    config = assigns.node.data["config"] || %{}
+    mask = config["mask"] || "redact"
+
+    assigns =
+      assigns
+      |> assign(:config, config)
+      |> assign(:mask, mask)
+
+    ~H"""
+    <div class="space-y-3">
+      <p :if={!@pii_redaction} class="text-xs text-base-content/50">
+        PII redaction is an Enterprise feature. Configure the step now; it activates once an Enterprise license is applied.
+      </p>
+
+      <div class="form-control">
+        <.field_label
+          text="Fields to Scan"
+          tooltip="Comma-separated dot-notation paths to scan for PII (e.g. user.email, notes). Leave blank to scan every string field."
+        />
+        <input
+          type="text"
+          name="config[fields]"
+          value={format_values(@config["fields"])}
+          placeholder="user.email, notes, address.line1"
+          disabled={!@pii_redaction}
+          class="input input-bordered input-sm w-full"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label
+          text="PII Types"
+          tooltip="Comma-separated PII types to detect: email, phone, ssn, credit_card, name, address. Leave blank to detect all."
+        />
+        <input
+          type="text"
+          name="config[types]"
+          value={format_values(@config["types"])}
+          placeholder="email, phone, ssn, credit_card, name, address"
+          disabled={!@pii_redaction}
+          class="input input-bordered input-sm w-full"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label
+          text="Mask Strategy"
+          tooltip="How detected PII is masked: replace with a fixed token, a stable hash (referential integrity), or a reversible token."
+        />
+        <select
+          name="config[mask]"
+          disabled={!@pii_redaction}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="redact" selected={@mask == "redact"}>
+            Redact — replace with [REDACTED]
+          </option>
+          <option value="hash" selected={@mask == "hash"}>Hash — stable SHA-256 digest</option>
+          <option value="tokenize" selected={@mask == "tokenize"}>Tokenize — reversible token</option>
+        </select>
+      </div>
+    </div>
+    """
+  end
+
+  # Sensitivity-classification step configuration (Enterprise).
+  defp classify_config(assigns) do
+    config = assigns.node.data["config"] || %{}
+    default_label = config["default_label"] || "internal"
+
+    assigns =
+      assigns
+      |> assign(:config, config)
+      |> assign(:default_label, default_label)
+
+    ~H"""
+    <div class="space-y-3">
+      <p :if={!@pii_redaction} class="text-xs text-base-content/50">
+        Classification is an Enterprise feature. Configure the step now; it activates once an Enterprise license is applied.
+      </p>
+
+      <div class="form-control">
+        <.field_label
+          text="Output Field"
+          tooltip="Field the deterministic sensitivity label is written to. Downstream steps can branch on it."
+        />
+        <input
+          type="text"
+          name="config[output_field]"
+          value={@config["output_field"] || "_classification"}
+          placeholder="_classification"
+          disabled={!@pii_redaction}
+          class="input input-bordered input-sm w-full"
+        />
+      </div>
+
+      <div class="form-control">
+        <.field_label
+          text="Default Label"
+          tooltip="Label applied when no higher-sensitivity PII is detected in the message."
+        />
+        <select
+          name="config[default_label]"
+          disabled={!@pii_redaction}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="public" selected={@default_label == "public"}>Public</option>
+          <option value="internal" selected={@default_label == "internal"}>Internal</option>
+          <option value="confidential" selected={@default_label == "confidential"}>
+            Confidential
+          </option>
+          <option value="restricted" selected={@default_label == "restricted"}>Restricted</option>
+        </select>
       </div>
     </div>
     """

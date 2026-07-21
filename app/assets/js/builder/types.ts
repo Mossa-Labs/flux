@@ -135,7 +135,7 @@ export interface SourceNodeData {
 
 export interface StepNodeData {
   label: string;
-  stepType: 'filter' | 'map' | 'rename' | 'script' | 'anomaly';
+  stepType: 'filter' | 'map' | 'rename' | 'script' | 'anomaly' | 'redact' | 'classify';
   config: Record<string, unknown>;
   [key: string]: unknown;
 }

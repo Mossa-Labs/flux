@@ -323,6 +323,8 @@ function getStepLabel(step: StepIR): string {
       filter: 'Filter',
       map: 'Transform',
       rename: 'Rename',
+      redact: 'Redact PII',
+      classify: 'Classify',
     };
     return labels[step.operation] || step.operation;
   }
@@ -336,6 +338,8 @@ function getStepType(step: StepIR): StepNodeData['stepType'] {
   if (step.type === 'ai') return 'anomaly';
   if (step.operation === 'filter') return 'filter';
   if (step.operation === 'rename') return 'rename';
+  if (step.operation === 'redact') return 'redact';
+  if (step.operation === 'classify') return 'classify';
   return 'map';
 }
 
@@ -353,6 +357,8 @@ export function createStepNode(
     rename: 'Rename',
     script: 'Script',
     anomaly: 'AI Detect',
+    redact: 'Redact PII',
+    classify: 'Classify',
   };
 
   return {

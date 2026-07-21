@@ -94,7 +94,9 @@ const PipelineCanvasInner = forwardRef<PipelineCanvasHandle, PipelineCanvasInner
       } else if (nodeType === 'sink' && sinkId != null) {
         const sink = availableSinks.find((s) => s.id === sinkId);
         return sink ? createSinkNode(getId(), sink, position) : null;
-      } else if (['filter', 'map', 'rename', 'script', 'anomaly'].includes(nodeType)) {
+      } else if (
+        ['filter', 'map', 'rename', 'script', 'anomaly', 'redact', 'classify'].includes(nodeType)
+      ) {
         return createStepNode(getId(), nodeType as StepNodeData['stepType'], position);
       }
       return null;
