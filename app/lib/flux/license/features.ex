@@ -38,6 +38,8 @@ defmodule Flux.License.Features do
     * `:alerting` - configurable alert rules + multi-channel notifications
     * `:observability` - freshness SLO, volume baseline & schema drift detectors
     * `:sso`, `:audit_log`, `:white_label`, `:mfa` - enterprise auth/compliance
+    * `:pii_redaction` - in-flight PII redaction (`redact`) + sensitivity
+      classification (`classify`) pipeline steps
   """
 
   @type tier :: :community | :pro | :enterprise
@@ -93,7 +95,11 @@ defmodule Flux.License.Features do
       :sso,
       :audit_log,
       :white_label,
-      :mfa
+      :mfa,
+      # In-flight PII redaction + sensitivity classification steps (MOS-480).
+      # The real detectors ship in the Enterprise edition; the Community build
+      # registers a pass-through stub for the `redact`/`classify` operations.
+      :pii_redaction
     ]
   }
 

@@ -122,6 +122,7 @@ defmodule FluxWeb.Components.UpgradePrompt do
   defp feature_label(:audit_log), do: "Audit logging"
   defp feature_label(:white_label), do: "White-label branding"
   defp feature_label(:mfa), do: "Multi-factor authentication"
+  defp feature_label(:pii_redaction), do: "PII redaction & classification"
   defp feature_label(:pro_sink), do: "This sink type"
   defp feature_label(:pro_source), do: "This source type"
   defp feature_label(:pro_queue), do: "This queue backend"
