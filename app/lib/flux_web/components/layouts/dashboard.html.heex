@@ -115,6 +115,14 @@
             <.icon name="hero-signal" class="w-5 h-5" /> Observability
           </.link>
         </li>
+        <li>
+          <.link
+            navigate={~p"/redaction"}
+            class={if assigns[:active_tab] == :redaction, do: "active", else: ""}
+          >
+            <.icon name="hero-shield-check" class="w-5 h-5" /> PII Redaction
+          </.link>
+        </li>
       <% end %>
       <li>
         <a class="text-base-content/50 cursor-not-allowed">
