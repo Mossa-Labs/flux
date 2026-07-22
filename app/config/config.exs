@@ -118,6 +118,11 @@ config :flux, Flux.Pipeline.Supervision, impl: Flux.Pipeline.Supervision.Local
 # burst rate per API key.
 config :flux, FluxWeb.Plugs.BurstLimiter, limit: 1_000, window_ms: 1_000
 
+# Field-level encryption at rest for sink secrets (MOS-587). When `key` is nil
+# the endpoint :secret_key_base is used, so encryption is on by default with no
+# extra config. Set FLUX_VAULT_KEY (see runtime.exs) to use a dedicated key.
+config :flux, Flux.Vault, key: nil
+
 # Per-org + node-wide caps on user-initiated pipeline starts (MOS-450).
 config :flux, Flux.Pipeline.Manager,
   start_limit: 20,
