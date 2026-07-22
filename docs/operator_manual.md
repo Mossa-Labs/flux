@@ -219,6 +219,26 @@ MIX_ENV=prod mix release
 | `POOL_SIZE` | No | Database connection pool size (default: `10`) |
 | `ECTO_IPV6` | No | Set to `true` or `1` to enable IPv6 for database connections |
 | `DNS_CLUSTER_QUERY` | No | DNS query for cluster node discovery |
+| `FLUX_VAULT_KEY` | No | Dedicated key for encrypting sink secrets at rest. If unset, derived from `SECRET_KEY_BASE`. See [Secret Encryption at Rest](#secret-encryption-at-rest) |
+
+### Secret Encryption at Rest
+
+Sensitive sink configuration values — database passwords, access keys, bearer
+tokens, service-account credentials — are encrypted at rest in the `sinks`
+config column (AES-GCM via `Flux.Vault`). Non-secret keys (URLs, hosts, table
+names) remain stored as plain JSONB. Encryption is transparent: application code
+and sink adapters always read plaintext.
+
+- **Key source.** By default the key is derived from `SECRET_KEY_BASE`, so
+  encryption is on with no extra configuration. Set `FLUX_VAULT_KEY` to use a
+  dedicated key independent of session signing.
+- **Existing deployments.** Reads of pre-existing plaintext rows keep working;
+  the next save of a sink encrypts it. To encrypt all rows immediately, run
+  `mix flux.vault.encrypt_sinks` (add `--dry-run` to preview).
+- **Key rotation.** Changing the base key (`SECRET_KEY_BASE` or
+  `FLUX_VAULT_KEY`) invalidates existing ciphertext. Rotate by keeping the old
+  key in place, re-encrypting via `mix flux.vault.encrypt_sinks`, then switching
+  the key only after every row is re-written.
 
 ### Starting the Application
 

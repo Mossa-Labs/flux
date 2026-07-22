@@ -10,12 +10,9 @@ defmodule Flux.Sinks do
   alias Flux.Repo
   alias Flux.Sinks.Sink
 
+  alias Flux.Sinks.Secrets
+
   @redacted "[REDACTED]"
-  # Secret config paths masked before a sink leaves the system (e.g. API GETs).
-  @secret_top_keys ~w(password private_key private_key_passphrase secret_access_key
-                      credentials database_url sasl_password ssl_keyfile uri
-                      webhook_url bot_token)
-  @secret_auth_keys ~w(token password username key)
 
   @doc """
   Returns a copy of a sink's `config` with known secret fields masked.
@@ -24,12 +21,13 @@ defmodule Flux.Sinks do
   (`password`, `database_url`), S3 (`secret_access_key`), BigQuery
   (`credentials`), Kafka (`sasl_password`, `ssl_keyfile`), and Snowflake
   key-pair material (`private_key`, `private_key_passphrase`). Safe to call on
-  any sink config map.
+  any sink config map. Secret locations come from `Flux.Sinks.Secrets`.
   """
   def redact_config(config) when is_map(config) do
     config
-    |> redact_keys(@secret_top_keys)
+    |> redact_keys(Secrets.top_keys())
     |> redact_auth()
+    |> scrub_wrappers()
   end
 
   def redact_config(other), do: other
@@ -41,10 +39,21 @@ defmodule Flux.Sinks do
   end
 
   defp redact_auth(%{"auth" => auth} = config) when is_map(auth) do
-    Map.put(config, "auth", redact_keys(auth, @secret_auth_keys))
+    Map.put(config, "auth", redact_keys(auth, Secrets.auth_keys()))
   end
 
   defp redact_auth(config), do: config
+
+  # Defense-in-depth: mask any encrypted wrapper that survives to the output —
+  # e.g. a ciphertext blob a caller planted in a non-secret field, which is not
+  # decrypted (see `Flux.Vault.decrypt_map/2`) and so would otherwise echo back.
+  defp scrub_wrappers(%{"encrypted" => true}), do: @redacted
+
+  defp scrub_wrappers(map) when is_map(map),
+    do: Map.new(map, fn {k, v} -> {k, scrub_wrappers(v)} end)
+
+  defp scrub_wrappers(list) when is_list(list), do: Enum.map(list, &scrub_wrappers/1)
+  defp scrub_wrappers(value), do: value
 
   @doc """
   Returns the list of sinks for an organization.

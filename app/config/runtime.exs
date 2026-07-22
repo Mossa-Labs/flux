@@ -52,6 +52,12 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
+  # Optional dedicated key for field-level secret encryption (MOS-587). When
+  # unset, Flux.Vault derives its key from :secret_key_base above.
+  if vault_key = System.get_env("FLUX_VAULT_KEY") do
+    config :flux, Flux.Vault, key: vault_key
+  end
+
   host = System.get_env("PHX_HOST") || "example.com"
 
   config :flux, FluxWeb.Endpoint,
