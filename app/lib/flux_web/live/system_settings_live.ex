@@ -132,9 +132,16 @@ defmodule FluxWeb.SystemSettingsLive do
     |> assign(:security_error, nil)
   end
 
-  # Textarea form: the allowlist renders one CIDR per line.
-  defp security_form(%Security.SecuritySettings{ip_allowlist: allowlist}) do
-    to_form(%{"ip_allowlist" => Enum.join(allowlist || [], "\n")}, as: :security)
+  # Shared form for the security section: the allowlist renders one CIDR per
+  # line, plus the current session-timeout selection.
+  defp security_form(%Security.SecuritySettings{} = settings) do
+    to_form(
+      %{
+        "ip_allowlist" => Enum.join(settings.ip_allowlist || [], "\n"),
+        "session_timeout_minutes" => to_string(settings.session_timeout_minutes || 43_200)
+      },
+      as: :security
+    )
   end
 
   defp security_error(changeset) do
@@ -291,9 +298,44 @@ defmodule FluxWeb.SystemSettingsLive do
           <p :if={@error} class="text-sm text-error" id="ip-allowlist-error">{@error}</p>
           <.button class="btn btn-primary btn-sm">Save allowlist</.button>
         </.form>
+
+        <div class="divider my-2"></div>
+
+        <h3 class="font-semibold text-sm">Session timeout</h3>
+        <p class="text-sm text-base-content/60">
+          Sign members out of the web app after this period of inactivity.
+        </p>
+
+        <.form
+          for={@form}
+          id="session-timeout-form"
+          phx-submit="save_session_timeout"
+          class="mt-2 flex flex-col sm:flex-row gap-2 sm:items-end"
+        >
+          <.input
+            field={@form[:session_timeout_minutes]}
+            type="select"
+            label="Idle timeout"
+            options={session_timeout_options()}
+          />
+          <.button class="btn btn-primary btn-sm">Save timeout</.button>
+        </.form>
       </div>
     </section>
     """
+  end
+
+  # Preset idle-session-timeout options ({label, minutes-as-string}). The stored
+  # minimum is 1 hour (enforced by the SecuritySettings changeset).
+  defp session_timeout_options do
+    [
+      {"1 hour", "60"},
+      {"8 hours", "480"},
+      {"1 day", "1440"},
+      {"7 days", "10080"},
+      {"30 days", "43200"},
+      {"90 days", "129600"}
+    ]
   end
 
   attr :license, :map, required: true
@@ -1087,10 +1129,42 @@ defmodule FluxWeb.SystemSettingsLive do
            |> put_flash(:info, "IP allowlist updated.")}
 
         {:error, changeset} ->
+          timeout = socket.assigns.security_settings.session_timeout_minutes
+
+          form =
+            to_form(
+              %{"ip_allowlist" => text, "session_timeout_minutes" => to_string(timeout)},
+              as: :security
+            )
+
           {:noreply,
            socket
-           |> assign(:security_form, to_form(%{"ip_allowlist" => text}, as: :security))
+           |> assign(:security_form, form)
            |> assign(:security_error, security_error(changeset))}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You are not allowed to manage security settings.")}
+    end
+  end
+
+  def handle_event(
+        "save_session_timeout",
+        %{"security" => %{"session_timeout_minutes" => minutes}},
+        socket
+      ) do
+    scope = socket.assigns.current_scope
+
+    if Permissions.can?(scope, :manage_security_settings) do
+      case Security.update_settings(scope.organization_id, %{session_timeout_minutes: minutes}) do
+        {:ok, settings} ->
+          {:noreply,
+           socket
+           |> assign(:security_settings, settings)
+           |> assign(:security_form, security_form(settings))
+           |> put_flash(:info, "Session timeout updated.")}
+
+        {:error, _changeset} ->
+          {:noreply, put_flash(socket, :error, "Session timeout must be at least 1 hour.")}
       end
     else
       {:noreply, put_flash(socket, :error, "You are not allowed to manage security settings.")}

@@ -191,6 +191,18 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       assert Flux.Security.get_settings(scope.organization_id).ip_allowlist == []
     end
 
+    test "saves the session timeout", %{conn: conn, owner_scope: scope} do
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      html =
+        lv
+        |> form("#session-timeout-form", security: %{session_timeout_minutes: "1440"})
+        |> render_submit()
+
+      assert html =~ "Session timeout updated."
+      assert Flux.Security.get_settings(scope.organization_id).session_timeout_minutes == 1440
+    end
+
     test "revokes an API key", %{conn: conn, user: user} do
       org =
         Flux.Structure.Organization
