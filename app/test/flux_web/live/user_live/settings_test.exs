@@ -37,6 +37,45 @@ defmodule FluxWeb.UserLive.SettingsTest do
     end
   end
 
+  describe "active sessions (MOS-589)" do
+    setup %{conn: conn} do
+      user = user_fixture()
+      %{conn: log_in_user(conn, user), user: user}
+    end
+
+    test "lists sessions and marks the current device", %{conn: conn, user: user} do
+      Accounts.generate_user_session_token(user, %{
+        "ip_address" => "10.0.0.9",
+        "user_agent" => "Mozilla/5.0 Firefox"
+      })
+
+      {:ok, _lv, html} = live(conn, ~p"/users/settings")
+      assert html =~ "Active sessions"
+      assert html =~ "This device"
+      assert html =~ "10.0.0.9"
+    end
+
+    test "revokes another session", %{conn: conn, user: user} do
+      other = Accounts.generate_user_session_token(user)
+      other_id = Flux.Repo.get_by(Accounts.UserToken, token: other).id
+
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      lv |> element("button[phx-value-id='#{other_id}']") |> render_click()
+
+      refute Accounts.get_user_by_session_token(other)
+    end
+
+    test "revokes all other sessions but keeps the current one", %{conn: conn, user: user} do
+      Accounts.generate_user_session_token(user)
+      Accounts.generate_user_session_token(user)
+
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      lv |> element("button", "Revoke all other sessions") |> render_click()
+
+      assert length(Accounts.list_user_sessions(user)) == 1
+    end
+  end
+
   describe "update email form" do
     setup %{conn: conn} do
       user = user_fixture()

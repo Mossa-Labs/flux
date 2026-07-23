@@ -64,6 +64,47 @@ defmodule FluxWeb.UserLive.Settings do
 
       <div class="divider" />
 
+      <section id="sessions">
+        <h2 class="text-lg font-semibold tracking-tight text-base-content">Active sessions</h2>
+        <p class="text-sm text-base-content/70 mb-3">
+          Devices currently signed in to your account. Revoke any you don't recognize.
+        </p>
+
+        <.table id="session-list" rows={@sessions}>
+          <:col :let={s} label="Device">
+            <span class="font-medium">{device_label(s.user_agent)}</span>
+            <span :if={s.token == @current_token} class="badge badge-sm badge-primary ml-1">
+              This device
+            </span>
+          </:col>
+          <:col :let={s} label="IP address">{s.ip_address || "—"}</:col>
+          <:col :let={s} label="Last active">{format_ts(s.last_active_at || s.inserted_at)}</:col>
+          <:col :let={s} label="Signed in">{format_ts(s.inserted_at)}</:col>
+          <:action :let={s}>
+            <.button
+              :if={s.token != @current_token}
+              phx-click="revoke_session"
+              phx-value-id={s.id}
+              data-confirm="Revoke this session?"
+              class="btn btn-ghost btn-xs text-error"
+            >
+              Revoke
+            </.button>
+          </:action>
+        </.table>
+
+        <.button
+          :if={length(@sessions) > 1}
+          phx-click="revoke_all_other_sessions"
+          data-confirm="Sign out all other sessions?"
+          class="btn btn-sm mt-3"
+        >
+          Revoke all other sessions
+        </.button>
+      </section>
+
+      <div class="divider" />
+
       <section id="appearance">
         <h2 class="text-lg font-semibold tracking-tight text-base-content">Appearance</h2>
         <p class="text-sm text-base-content/70 mb-3">
@@ -90,7 +131,7 @@ defmodule FluxWeb.UserLive.Settings do
     {:ok, push_navigate(socket, to: ~p"/users/settings")}
   end
 
-  def mount(_params, _session, socket) do
+  def mount(_params, session, socket) do
     user = socket.assigns.current_scope.user
     email_changeset = Accounts.change_user_email(user, %{}, validate_unique: false)
     password_changeset = Accounts.change_user_password(user, %{}, hash_password: false)
@@ -103,6 +144,8 @@ defmodule FluxWeb.UserLive.Settings do
       |> assign(:trigger_submit, false)
       |> assign(:page_title, "Account Settings")
       |> assign(:active_tab, :settings)
+      |> assign(:current_token, session["user_token"])
+      |> assign_sessions()
 
     {:ok, socket}
   end
@@ -166,4 +209,62 @@ defmodule FluxWeb.UserLive.Settings do
         {:noreply, assign(socket, password_form: to_form(changeset, action: :insert))}
     end
   end
+
+  def handle_event("revoke_session", %{"id" => id}, socket) do
+    user = socket.assigns.current_scope.user
+    true = Accounts.sudo_mode?(user)
+
+    with {int_id, ""} <- Integer.parse(id),
+         {:ok, token} <- Accounts.delete_user_session(user, int_id) do
+      FluxWeb.UserAuth.disconnect_sessions([token])
+      {:noreply, socket |> assign_sessions() |> put_flash(:info, "Session revoked.")}
+    else
+      _ -> {:noreply, put_flash(socket, :error, "That session could not be found.")}
+    end
+  end
+
+  def handle_event("revoke_all_other_sessions", _params, socket) do
+    user = socket.assigns.current_scope.user
+    true = Accounts.sudo_mode?(user)
+
+    tokens = Accounts.delete_other_user_sessions(user, socket.assigns.current_token)
+    FluxWeb.UserAuth.disconnect_sessions(tokens)
+
+    {:noreply,
+     socket |> assign_sessions() |> put_flash(:info, "All other sessions were revoked.")}
+  end
+
+  defp assign_sessions(socket) do
+    assign(socket, :sessions, Accounts.list_user_sessions(socket.assigns.current_scope.user))
+  end
+
+  # Compact, human-friendly label from a raw User-Agent string. Order matters:
+  # Chrome/Edge UAs also contain "Safari", so check the more specific tokens first.
+  defp device_label(nil), do: "Unknown device"
+
+  defp device_label(ua) when is_binary(ua) do
+    browser =
+      cond do
+        String.contains?(ua, "Edg") -> "Edge"
+        String.contains?(ua, "Chrome") -> "Chrome"
+        String.contains?(ua, "Firefox") -> "Firefox"
+        String.contains?(ua, "Safari") -> "Safari"
+        true -> "Browser"
+      end
+
+    os =
+      cond do
+        String.contains?(ua, "iPhone") or String.contains?(ua, "iPad") -> "iOS"
+        String.contains?(ua, "Android") -> "Android"
+        String.contains?(ua, "Mac OS") -> "macOS"
+        String.contains?(ua, "Windows") -> "Windows"
+        String.contains?(ua, "Linux") -> "Linux"
+        true -> "unknown OS"
+      end
+
+    "#{browser} · #{os}"
+  end
+
+  defp format_ts(nil), do: "—"
+  defp format_ts(%DateTime{} = dt), do: Calendar.strftime(dt, "%Y-%m-%d %H:%M UTC")
 end
