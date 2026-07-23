@@ -160,10 +160,15 @@ defmodule Flux.Accounts do
       iex> update_user_password(user, %{password: "too short"})
       {:error, %Ecto.Changeset{}}
 
+  ## Options
+
+  Accepts the same `opts` as `User.password_changeset/3` — notably `:org_id`, so
+  the org's password policy is enforced when the `:password_policy` feature is
+  entitled.
   """
-  def update_user_password(user, attrs) do
+  def update_user_password(user, attrs, opts \\ []) do
     user
-    |> User.password_changeset(attrs)
+    |> User.password_changeset(attrs, opts)
     |> update_user_and_delete_all_tokens()
   end
 

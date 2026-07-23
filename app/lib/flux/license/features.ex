@@ -38,6 +38,9 @@ defmodule Flux.License.Features do
     * `:alerting` - configurable alert rules + multi-channel notifications
     * `:observability` - freshness SLO, volume baseline & schema drift detectors
     * `:sso`, `:audit_log`, `:white_label`, `:mfa` - enterprise auth/compliance
+    * `:password_policy` - configurable per-org password policy (min length,
+      character-class complexity, rotation). Ungated builds keep the min-12
+      default; the real enforcement ships in the commercial edition.
     * `:pii_redaction` - in-flight PII redaction (`redact`) + sensitivity
       classification (`classify`) pipeline steps
   """
@@ -96,6 +99,10 @@ defmodule Flux.License.Features do
       :audit_log,
       :white_label,
       :mfa,
+      # Configurable per-org password policy — min length, character-class
+      # complexity, and rotation. The Community build keeps the min-12 default;
+      # the real enforcement ships in the commercial edition (MOS-590).
+      :password_policy,
       # In-flight PII redaction + sensitivity classification steps (MOS-480).
       # The real detectors ship in the Enterprise edition; the Community build
       # registers a pass-through stub for the `redact`/`classify` operations.

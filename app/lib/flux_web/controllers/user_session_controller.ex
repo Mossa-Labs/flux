@@ -75,9 +75,12 @@ defmodule FluxWeb.UserSessionController do
   end
 
   def update_password(conn, %{"user" => user_params} = params) do
-    user = conn.assigns.current_scope.user
+    scope = conn.assigns.current_scope
+    user = scope.user
     true = Accounts.sudo_mode?(user)
-    {:ok, {_user, expired_tokens}} = Accounts.update_user_password(user, user_params)
+
+    {:ok, {_user, expired_tokens}} =
+      Accounts.update_user_password(user, user_params, org_id: scope.organization_id)
 
     # disconnect all existing LiveViews with old sessions
     UserAuth.disconnect_sessions(expired_tokens)
