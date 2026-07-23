@@ -37,7 +37,10 @@ defmodule Flux.License.Features do
     * `:usage_metering` - per-org usage metering, usage card, and quota enforcement
     * `:alerting` - configurable alert rules + multi-channel notifications
     * `:observability` - freshness SLO, volume baseline & schema drift detectors
-    * `:sso`, `:audit_log`, `:white_label`, `:mfa` - enterprise auth/compliance
+    * `:sso`, `:audit_log`, `:white_label` - enterprise auth/compliance
+    * `:mfa_enforcement` - per-org "require MFA for all members" enforcement.
+      Per-user TOTP MFA itself is Community; only org-wide enforcement is gated
+      (MOS-591). The real enforcement ships in the commercial edition.
     * `:password_policy` - configurable per-org password policy (min length,
       character-class complexity, rotation). Ungated builds keep the min-12
       default; the real enforcement ships in the commercial edition.
@@ -98,7 +101,10 @@ defmodule Flux.License.Features do
       :sso,
       :audit_log,
       :white_label,
-      :mfa,
+      # Per-org "require MFA for all members" enforcement. Per-user TOTP MFA is
+      # Community (MOS-591); only org-wide enforcement is Enterprise-gated. The
+      # Community build ships a no-op enforcement stub.
+      :mfa_enforcement,
       # Configurable per-org password policy — min length, character-class
       # complexity, and rotation. The Community build keeps the min-12 default;
       # the real enforcement ships in the commercial edition (MOS-590).

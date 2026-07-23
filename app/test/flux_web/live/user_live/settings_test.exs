@@ -76,6 +76,84 @@ defmodule FluxWeb.UserLive.SettingsTest do
     end
   end
 
+  describe "two-factor authentication (MOS-591)" do
+    setup %{conn: conn} do
+      user = user_fixture()
+      %{conn: log_in_user(conn, user), user: user}
+    end
+
+    defp enroll_user(user) do
+      %{secret: secret} = Accounts.start_mfa_enrollment(user)
+
+      {:ok, codes} =
+        Accounts.confirm_mfa_enrollment(user, secret, NimbleTOTP.verification_code(secret))
+
+      {secret, codes}
+    end
+
+    test "shows the enable button when not enrolled", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/users/settings")
+      assert html =~ "Two-factor authentication"
+      assert html =~ "Enable 2FA"
+    end
+
+    test "enrolling shows a QR code then backup codes on a valid code", %{conn: conn, user: user} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      html = lv |> element("#enable-mfa") |> render_click()
+      assert html =~ "Scan this QR code"
+      assert html =~ "<svg"
+
+      # The manual-entry key is the base32-encoded secret the LiveView holds
+      # server-side — decode it to compute a valid code for this exact secret.
+      manual_key = Regex.run(~r/select-all">([A-Z2-7]+)</, html) |> Enum.at(1)
+      secret = Base.decode32!(manual_key, padding: false)
+
+      html =
+        lv
+        |> form("#mfa_confirm_form", mfa: %{code: NimbleTOTP.verification_code(secret)})
+        |> render_submit()
+
+      assert html =~ "Save your backup codes"
+      assert Accounts.mfa_enabled?(user)
+      assert Accounts.backup_codes_remaining(user) == 10
+    end
+
+    test "an invalid confirmation code does not enable MFA", %{conn: conn, user: user} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      lv |> element("#enable-mfa") |> render_click()
+
+      html =
+        lv
+        |> form("#mfa_confirm_form", mfa: %{code: "000000"})
+        |> render_submit()
+
+      assert html =~ "That code was invalid"
+      refute Accounts.mfa_enabled?(user)
+    end
+
+    test "disabling removes MFA", %{conn: conn, user: user} do
+      enroll_user(user)
+      assert Accounts.mfa_enabled?(user)
+
+      {:ok, lv, html} = live(conn, ~p"/users/settings")
+      assert html =~ "Two-factor authentication is"
+
+      lv |> element("button", "Disable") |> render_click()
+      refute Accounts.mfa_enabled?(user)
+    end
+
+    test "regenerating backup codes shows a fresh set", %{conn: conn, user: user} do
+      enroll_user(user)
+
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      html = lv |> element("button", "Regenerate backup codes") |> render_click()
+
+      assert html =~ "Save your backup codes"
+      assert Accounts.backup_codes_remaining(user) == 10
+    end
+  end
+
   describe "update email form" do
     setup %{conn: conn} do
       user = user_fixture()

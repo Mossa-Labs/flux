@@ -12,6 +12,8 @@ defmodule Flux.Accounts.User do
     field :password_changed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
 
+    has_one :mfa, Flux.Accounts.UserMfa
+
     timestamps(type: :utc_datetime)
   end
 

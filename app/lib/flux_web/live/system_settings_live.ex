@@ -47,6 +47,7 @@ defmodule FluxWeb.SystemSettingsLive do
        |> assign(:revealed_key, nil)
        |> assign(:api_key_scopes_enabled, Flux.License.has_feature?(:api_key_scopes))
        |> assign(:password_policy_enabled, Flux.License.has_feature?(:password_policy))
+       |> assign(:mfa_enforcement_enabled, Flux.License.has_feature?(:mfa_enforcement))
        |> assign(:usage_metering_enabled, usage_metering_enabled?())
        |> assign(:usage, load_usage(org_id))
        |> assign_security_settings(org_id)
@@ -145,7 +146,8 @@ defmodule FluxWeb.SystemSettingsLive do
         "password_require_lower" => settings.password_require_lower || false,
         "password_require_number" => settings.password_require_number || false,
         "password_require_special" => settings.password_require_special || false,
-        "password_rotation_days" => to_string(settings.password_rotation_days || "")
+        "password_rotation_days" => to_string(settings.password_rotation_days || ""),
+        "require_mfa" => settings.require_mfa || false
       },
       as: :security
     )
@@ -199,6 +201,7 @@ defmodule FluxWeb.SystemSettingsLive do
           revealed_key={@revealed_key}
           api_key_scopes_enabled={@api_key_scopes_enabled}
           password_policy_enabled={@password_policy_enabled}
+          mfa_enforcement_enabled={@mfa_enforcement_enabled}
           usage_metering_enabled={@usage_metering_enabled}
           usage={@usage}
           security_form={@security_form}
@@ -276,6 +279,7 @@ defmodule FluxWeb.SystemSettingsLive do
           form={@security_form}
           error={@security_error}
           password_policy_enabled={@password_policy_enabled}
+          mfa_enforcement_enabled={@mfa_enforcement_enabled}
         />
       <% else %>
         <p class="text-base-content/60">
@@ -289,6 +293,7 @@ defmodule FluxWeb.SystemSettingsLive do
   attr :form, :any, required: true
   attr :error, :string, default: nil
   attr :password_policy_enabled, :boolean, default: false
+  attr :mfa_enforcement_enabled, :boolean, default: false
 
   defp security_section(assigns) do
     ~H"""
@@ -410,6 +415,35 @@ defmodule FluxWeb.SystemSettingsLive do
         <% else %>
           <div class="mt-2">
             <UpgradePrompt.upgrade_prompt feature={:password_policy} size={:compact} />
+          </div>
+        <% end %>
+      </div>
+
+      <div class="mt-6">
+        <h3 class="text-sm font-semibold">Require two-factor authentication</h3>
+        <p class="text-sm text-base-content/70">
+          Require every member of this organization to enable two-factor
+          authentication. Members without it are prompted to enroll before they can
+          continue. Members set up their own authenticator under Account Settings.
+        </p>
+
+        <%= if @mfa_enforcement_enabled do %>
+          <.form
+            for={@form}
+            id="mfa-enforcement-form"
+            phx-submit="save_mfa_enforcement"
+            class="mt-2 space-y-3"
+          >
+            <.input
+              field={@form[:require_mfa]}
+              type="checkbox"
+              label="Require MFA for all members"
+            />
+            <.button class="btn btn-primary btn-sm">Save</.button>
+          </.form>
+        <% else %>
+          <div class="mt-2">
+            <UpgradePrompt.upgrade_prompt feature={:mfa_enforcement} size={:compact} />
           </div>
         <% end %>
       </div>
@@ -1293,6 +1327,29 @@ defmodule FluxWeb.SystemSettingsLive do
              to_form(Map.merge(socket.assigns.security_form.params, params), as: :security)
            )
            |> put_flash(:error, password_policy_error(changeset))}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You are not allowed to manage security settings.")}
+    end
+  end
+
+  def handle_event("save_mfa_enforcement", %{"security" => params}, socket) do
+    scope = socket.assigns.current_scope
+
+    if Permissions.can?(scope, :manage_security_settings) do
+      # An unchecked checkbox is absent from params; default to "false".
+      attrs = %{require_mfa: params["require_mfa"] || "false"}
+
+      case Security.update_settings(scope.organization_id, attrs) do
+        {:ok, settings} ->
+          {:noreply,
+           socket
+           |> assign(:security_settings, settings)
+           |> assign(:security_form, security_form(settings))
+           |> put_flash(:info, "MFA enforcement updated.")}
+
+        {:error, _changeset} ->
+          {:noreply, put_flash(socket, :error, "Could not update MFA enforcement.")}
       end
     else
       {:noreply, put_flash(socket, :error, "You are not allowed to manage security settings.")}

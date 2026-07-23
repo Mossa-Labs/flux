@@ -35,6 +35,10 @@ defmodule Flux.Security.SecuritySettings do
     field :password_require_special, :boolean, default: false
     field :password_rotation_days, :integer
 
+    # Per-org "require MFA for all members" (MOS-591). Only enforced when the
+    # :mfa_enforcement feature is entitled; ungated builds keep it off.
+    field :require_mfa, :boolean, default: false
+
     belongs_to :organization, Organization
 
     timestamps(type: :utc_datetime)
@@ -55,7 +59,8 @@ defmodule Flux.Security.SecuritySettings do
       :password_require_lower,
       :password_require_number,
       :password_require_special,
-      :password_rotation_days
+      :password_rotation_days,
+      :require_mfa
     ])
     |> validate_required([:organization_id, :session_timeout_minutes, :password_min_length])
     |> validate_number(:session_timeout_minutes,

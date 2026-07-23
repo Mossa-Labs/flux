@@ -24,7 +24,7 @@ defmodule Flux.LicenseTest do
         # :org_rbac is "Pro+", so it is entitled at the Pro tier.
         assert Flux.License.has_feature?(:org_rbac)
         refute Flux.License.has_feature?(:sso)
-        refute Flux.License.has_feature?(:mfa)
+        refute Flux.License.has_feature?(:mfa_enforcement)
       end)
     end
 
