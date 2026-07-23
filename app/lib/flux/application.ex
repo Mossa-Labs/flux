@@ -29,6 +29,9 @@ defmodule Flux.Application do
       # Abuse-protection safety valves (burst / pipeline-start limits) — owns the
       # rate-limiter ETS table; must be up before the endpoint serves requests.
       Flux.RateLimiter,
+      # Owns the per-org IP-allowlist cache ETS table (must be up before the
+      # endpoint serves requests).
+      Flux.Security.Cache,
       # Community self-registration (EE adds its own registrations on top).
       Flux.Registrations,
       # Records API-key last_used_at off the request path.
