@@ -155,6 +155,42 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       assert html =~ "viewer"
     end
 
+    test "shows the IP Allowlist section", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+      assert html =~ "IP Allowlist"
+    end
+
+    test "saves a valid allowlist and persists it", %{conn: conn, owner_scope: scope} do
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      html =
+        lv
+        |> form("#ip-allowlist-form", security: %{ip_allowlist: "10.0.0.0/8\n1.2.3.4"})
+        |> render_submit()
+
+      assert html =~ "IP allowlist updated."
+
+      assert Flux.Security.get_settings(scope.organization_id).ip_allowlist == [
+               "10.0.0.0/8",
+               "1.2.3.4/32"
+             ]
+    end
+
+    test "shows an inline error for an invalid CIDR and does not persist", %{
+      conn: conn,
+      owner_scope: scope
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      html =
+        lv
+        |> form("#ip-allowlist-form", security: %{ip_allowlist: "not-a-cidr"})
+        |> render_submit()
+
+      assert html =~ "invalid CIDR"
+      assert Flux.Security.get_settings(scope.organization_id).ip_allowlist == []
+    end
+
     test "revokes an API key", %{conn: conn, user: user} do
       org =
         Flux.Structure.Organization
