@@ -241,6 +241,19 @@ allows all IPs.
   used (correct when Flux is directly exposed or fronted by an L4/PROXY-protocol
   proxy).
 
+### Session Management
+
+Each user can review their active login sessions under **Account Settings →
+Active sessions**: device, IP address, last-active, and sign-in time, with the
+current session marked. They can revoke any individual session or all other
+sessions at once (revocation immediately disconnects that session's live views).
+
+Sessions expire after a per-org **idle timeout** — they are signed out after
+that period of inactivity. Owners configure it under **System Settings →
+Security → Session timeout** (default 30 days, minimum 1 hour). An absolute
+180-day cap always applies as a backstop. Session activity is recorded with a
+short throttle, so "last active" is accurate to within a few minutes.
+
 ### Secret Encryption at Rest
 
 Sensitive sink configuration values — database passwords, access keys, bearer
