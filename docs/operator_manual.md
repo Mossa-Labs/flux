@@ -220,6 +220,26 @@ MIX_ENV=prod mix release
 | `ECTO_IPV6` | No | Set to `true` or `1` to enable IPv6 for database connections |
 | `DNS_CLUSTER_QUERY` | No | DNS query for cluster node discovery |
 | `FLUX_VAULT_KEY` | No | Dedicated key for encrypting sink secrets at rest. If unset, derived from `SECRET_KEY_BASE`. See [Secret Encryption at Rest](#secret-encryption-at-rest) |
+| `FLUX_TRUSTED_PROXIES` | No | Comma-separated reverse-proxy CIDRs. Required for the IP allowlist to see the real client IP behind a load balancer. See [IP Allowlist](#ip-allowlist) |
+
+### IP Allowlist
+
+Each organization can restrict **API** access to a set of allowed CIDR ranges
+(configured in System Settings → IP Allowlist, owner only). Requests from IPs
+outside the allowlist receive `403 Forbidden`. An empty allowlist (the default)
+allows all IPs.
+
+- **Scope.** The allowlist covers the entire authenticated API, **including
+  inbound webhook ingestion** — size your ranges to include any webhook sources.
+  It does **not** restrict the web UI, so an owner can never be locked out of the
+  settings page.
+- **Client IP behind a proxy.** Enforcement uses the real client IP. Behind an
+  L7 load balancer, set `FLUX_TRUSTED_PROXIES` to your proxy CIDRs (e.g.
+  `FLUX_TRUSTED_PROXIES="10.0.0.0/8,172.16.0.0/12"`). Only then is
+  `X-Forwarded-For` trusted — and only from those proxies, so a spoofed header
+  from an untrusted client is ignored. If unset, the immediate TCP peer IP is
+  used (correct when Flux is directly exposed or fronted by an L4/PROXY-protocol
+  proxy).
 
 ### Secret Encryption at Rest
 
