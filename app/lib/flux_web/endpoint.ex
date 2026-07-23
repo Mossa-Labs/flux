@@ -42,6 +42,9 @@ defmodule FluxWeb.Endpoint do
     cookie_key: "request_logger"
 
   plug Plug.RequestId
+  # Resolve the real client IP (honoring X-Forwarded-For only from trusted
+  # proxies) before anything downstream reads or logs conn.remote_ip.
+  plug FluxWeb.Plugs.ClientIp
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
   plug Plug.Parsers,
