@@ -21,6 +21,9 @@ defmodule FluxWeb.Router do
   pipeline :api_authenticated do
     plug(:accepts, ["json"])
     plug(FluxWeb.Plugs.ApiAuth)
+    # Per-org IP allowlist — runs right after auth so the org is known, and
+    # before the burst valve so blocked IPs don't consume rate budget (MOS-588).
+    plug(FluxWeb.Plugs.IpAllowlist)
     # Burst safety valve — runs after auth so it can key on the API key (MOS-450).
     plug(FluxWeb.Plugs.BurstLimiter)
   end
