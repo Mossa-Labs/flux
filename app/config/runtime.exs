@@ -58,6 +58,14 @@ if config_env() == :prod do
     config :flux, Flux.Vault, key: vault_key
   end
 
+  # Trusted reverse-proxy CIDRs (MOS-588), comma-separated, e.g.
+  # FLUX_TRUSTED_PROXIES="10.0.0.0/8,172.16.0.0/12". Only when the immediate
+  # peer is one of these is X-Forwarded-For trusted for the real client IP.
+  if trusted = System.get_env("FLUX_TRUSTED_PROXIES") do
+    proxies = trusted |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
+    config :flux, FluxWeb.Plugs.ClientIp, proxies: proxies
+  end
+
   host = System.get_env("PHX_HOST") || "example.com"
 
   config :flux, FluxWeb.Endpoint,

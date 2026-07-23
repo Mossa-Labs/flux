@@ -123,6 +123,11 @@ config :flux, FluxWeb.Plugs.BurstLimiter, limit: 1_000, window_ms: 1_000
 # extra config. Set FLUX_VAULT_KEY (see runtime.exs) to use a dedicated key.
 config :flux, Flux.Vault, key: nil
 
+# Trusted reverse-proxy CIDRs for client-IP resolution (MOS-588). Empty by
+# default: conn.remote_ip is the TCP peer and X-Forwarded-For is not trusted.
+# Behind an L7 load balancer, set FLUX_TRUSTED_PROXIES (see runtime.exs).
+config :flux, FluxWeb.Plugs.ClientIp, proxies: []
+
 # Per-org + node-wide caps on user-initiated pipeline starts (MOS-450).
 config :flux, Flux.Pipeline.Manager,
   start_limit: 20,
