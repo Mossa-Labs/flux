@@ -53,6 +53,8 @@ defmodule Flux.Permissions do
       {:view_dashboard, _} -> role in ~w(owner admin member viewer)
       # System settings (owner only)
       {:view_system_settings, _} -> role == "owner"
+      # Security settings — IP allowlist etc. (owner only)
+      {:manage_security_settings, _} -> role == "owner"
       # Audit log (owner only) — Enterprise-gated at the LiveView/API layer
       {:view_audit_log, _} -> role == "owner"
       # Fallback: deny unknown actions

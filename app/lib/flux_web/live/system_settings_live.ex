@@ -8,6 +8,7 @@ defmodule FluxWeb.SystemSettingsLive do
   alias Flux.Accounts
   alias Flux.Permissions
   alias Flux.Repo
+  alias Flux.Security
   alias Flux.Structure
   alias Flux.Structure.{OrganizationMember, Team, TeamMember}
   alias FluxWeb.Components.UpgradePrompt
@@ -47,6 +48,7 @@ defmodule FluxWeb.SystemSettingsLive do
        |> assign(:api_key_scopes_enabled, Flux.License.has_feature?(:api_key_scopes))
        |> assign(:usage_metering_enabled, usage_metering_enabled?())
        |> assign(:usage, load_usage(org_id))
+       |> assign_security_settings(org_id)
        |> stream(:teams_stream, teams)}
     else
       Process.send_after(self(), :redirect_to_dashboard, @redirect_after_ms)
@@ -114,6 +116,34 @@ defmodule FluxWeb.SystemSettingsLive do
     end
   end
 
+  defp assign_security_settings(socket, nil) do
+    socket
+    |> assign(:security_settings, nil)
+    |> assign(:security_form, security_form(%Security.SecuritySettings{}))
+    |> assign(:security_error, nil)
+  end
+
+  defp assign_security_settings(socket, org_id) do
+    settings = Security.get_settings(org_id)
+
+    socket
+    |> assign(:security_settings, settings)
+    |> assign(:security_form, security_form(settings))
+    |> assign(:security_error, nil)
+  end
+
+  # Textarea form: the allowlist renders one CIDR per line.
+  defp security_form(%Security.SecuritySettings{ip_allowlist: allowlist}) do
+    to_form(%{"ip_allowlist" => Enum.join(allowlist || [], "\n")}, as: :security)
+  end
+
+  defp security_error(changeset) do
+    case Keyword.get(changeset.errors, :ip_allowlist) do
+      {msg, _opts} -> msg
+      _ -> "Could not save the IP allowlist."
+    end
+  end
+
   defp load_members(_scope, nil, _), do: []
 
   defp load_members(scope, _org_id, :org_centric),
@@ -144,6 +174,8 @@ defmodule FluxWeb.SystemSettingsLive do
           api_key_scopes_enabled={@api_key_scopes_enabled}
           usage_metering_enabled={@usage_metering_enabled}
           usage={@usage}
+          security_form={@security_form}
+          security_error={@security_error}
           streams={@streams}
         />
       <% else %>
@@ -213,12 +245,54 @@ defmodule FluxWeb.SystemSettingsLive do
           revealed_key={@revealed_key}
           scopes_enabled={@api_key_scopes_enabled}
         />
+        <.security_section form={@security_form} error={@security_error} />
       <% else %>
         <p class="text-base-content/60">
           No organization in scope. Create or select an organization first.
         </p>
       <% end %>
     </div>
+    """
+  end
+
+  attr :form, :any, required: true
+  attr :error, :string, default: nil
+
+  defp security_section(assigns) do
+    ~H"""
+    <section class="card bg-base-100 shadow-sm border border-base-200">
+      <div class="card-body">
+        <h2 class="card-title text-base font-bold">
+          <.icon name="hero-shield-check" class="w-5 h-5" /> IP Allowlist
+        </h2>
+        <p class="text-sm text-base-content/60">
+          Restrict <span class="font-semibold">API</span>
+          access to specific networks. One CIDR range per line
+          (e.g. <code>203.0.113.0/24</code>
+          or <code>198.51.100.7</code>). Leave empty to allow all
+          IPs. Applies to the whole API, including inbound webhooks — this does
+          <span class="font-semibold">not</span>
+          restrict this settings UI, so you cannot lock yourself out.
+        </p>
+
+        <.form
+          for={@form}
+          id="ip-allowlist-form"
+          phx-submit="save_security_settings"
+          class="mt-4 space-y-2"
+        >
+          <.input
+            field={@form[:ip_allowlist]}
+            type="textarea"
+            rows="4"
+            placeholder="203.0.113.0/24\n198.51.100.7"
+            class="font-mono"
+          />
+          <p :if={@error} class="text-sm text-error" id="ip-allowlist-error">{@error}</p>
+          <.button class="btn btn-primary btn-sm">Save allowlist</.button>
+        </.form>
+      </div>
+    </section>
     """
   end
 
@@ -995,6 +1069,32 @@ defmodule FluxWeb.SystemSettingsLive do
 
   def handle_event("dismiss_api_key", _params, socket) do
     {:noreply, assign(socket, :revealed_key, nil)}
+  end
+
+  def handle_event("save_security_settings", %{"security" => %{"ip_allowlist" => text}}, socket) do
+    scope = socket.assigns.current_scope
+
+    if Permissions.can?(scope, :manage_security_settings) do
+      entries = String.split(text, ~r/[\n,]/)
+
+      case Security.update_settings(scope.organization_id, %{ip_allowlist: entries}) do
+        {:ok, settings} ->
+          {:noreply,
+           socket
+           |> assign(:security_settings, settings)
+           |> assign(:security_form, security_form(settings))
+           |> assign(:security_error, nil)
+           |> put_flash(:info, "IP allowlist updated.")}
+
+        {:error, changeset} ->
+          {:noreply,
+           socket
+           |> assign(:security_form, to_form(%{"ip_allowlist" => text}, as: :security))
+           |> assign(:security_error, security_error(changeset))}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You are not allowed to manage security settings.")}
+    end
   end
 
   def handle_event("clear_team_form", _params, socket) do
