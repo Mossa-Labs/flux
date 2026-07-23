@@ -11,13 +11,22 @@ defmodule Flux.Accounts.UserToken do
   # since someone with access to the email may take over the account.
   @magic_link_validity_in_minutes 15
   @change_email_validity_in_days 7
-  @session_validity_in_days 14
+
+  # Absolute backstop: no session token is ever valid past this age regardless of
+  # activity. Kept above the maximum configurable idle timeout (90d) so the
+  # precise, per-org *idle* timeout enforced in FluxWeb.UserAuth against
+  # `last_active_at` always governs; this only stops a token living forever.
+  @session_absolute_cap_in_days 180
 
   schema "users_tokens" do
     field :token, :binary
     field :context, :string
     field :sent_to, :string
     field :authenticated_at, :utc_datetime
+    # Session device/activity tracking (MOS-589).
+    field :user_agent, :string
+    field :ip_address, :string
+    field :last_active_at, :utc_datetime
     belongs_to :user, Flux.Accounts.User
 
     timestamps(type: :utc_datetime, updated_at: false)
@@ -42,10 +51,21 @@ defmodule Flux.Accounts.UserToken do
   and devices in the UI and allow users to explicitly expire any
   session they deem invalid.
   """
-  def build_session_token(user) do
+  def build_session_token(user, meta \\ %{}) do
     token = :crypto.strong_rand_bytes(@rand_size)
-    dt = user.authenticated_at || DateTime.utc_now(:second)
-    {token, %UserToken{token: token, context: "session", user_id: user.id, authenticated_at: dt}}
+    now = DateTime.utc_now(:second)
+    dt = user.authenticated_at || now
+
+    {token,
+     %UserToken{
+       token: token,
+       context: "session",
+       user_id: user.id,
+       authenticated_at: dt,
+       last_active_at: now,
+       ip_address: meta["ip_address"],
+       user_agent: meta["user_agent"]
+     }}
   end
 
   @doc """
@@ -53,15 +73,19 @@ defmodule Flux.Accounts.UserToken do
 
   The query returns the user found by the token, if any, along with the token's creation time.
 
-  The token is valid if it matches the value in the database and it has
-  not expired (after @session_validity_in_days).
+  The token is valid if it matches the value in the database and it is within
+  the absolute cap (`@session_absolute_cap_in_days`). The precise per-org idle
+  timeout is applied by the caller (`FluxWeb.UserAuth`), which needs the returned
+  token's `last_active_at`.
   """
   def verify_session_token_query(token) do
     query =
       from token in by_token_and_context_query(token, "session"),
         join: user in assoc(token, :user),
-        where: token.inserted_at > ago(@session_validity_in_days, "day"),
-        select: {%{user | authenticated_at: token.authenticated_at}, token.inserted_at}
+        where:
+          coalesce(token.last_active_at, token.inserted_at) >
+            ago(@session_absolute_cap_in_days, "day"),
+        select: {%{user | authenticated_at: token.authenticated_at}, token}
 
     {:ok, query}
   end

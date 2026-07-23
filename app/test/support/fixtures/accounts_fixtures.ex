@@ -110,7 +110,7 @@ defmodule Flux.AccountsFixtures do
 
     Flux.Repo.update_all(
       from(ut in Accounts.UserToken, where: ut.token == ^token),
-      set: [inserted_at: dt, authenticated_at: dt]
+      set: [inserted_at: dt, authenticated_at: dt, last_active_at: dt]
     )
   end
 end
