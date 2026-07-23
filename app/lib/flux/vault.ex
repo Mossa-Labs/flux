@@ -41,6 +41,7 @@ defmodule Flux.Vault do
 
   @aes_salt "flux.vault.aes256.v1"
   @sign_salt "flux.vault.sign.v1"
+  @aead_salt "flux.vault.aead256.v1"
 
   @doc """
   Encrypts a single JSON-serializable value, returning the wrapper map.
@@ -73,6 +74,56 @@ defmodule Flux.Vault do
   end
 
   def decrypt_value(value), do: value
+
+  @doc """
+  Encrypts `value`, binding the ciphertext to `aad` (additional authenticated data).
+
+  Unlike `encrypt_value/1`, the token produced here can only be decrypted by supplying
+  the exact same `aad` to `decrypt_value/2`. Pass a stable record identifier (e.g. a
+  user id) so a stolen ciphertext cannot be lifted out of one row and replayed against
+  another — the GCM tag covers the AAD, so a mismatch fails authentication.
+
+  Uses AES-256-GCM directly (`:crypto`) because `Plug.Crypto.MessageEncryptor` exposes
+  no AAD channel. The token packs `iv <> tag <> ciphertext`, base64url-encoded, into the
+  same self-describing wrapper shape. The AAD itself is **not** stored — the caller must
+  supply it again at decrypt time.
+  """
+  @spec encrypt_value(term(), binary()) :: map()
+  def encrypt_value(value, aad) when is_binary(aad) do
+    key = aead_key()
+    iv = :crypto.strong_rand_bytes(12)
+
+    {ciphertext, tag} =
+      :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, Jason.encode!(value), aad, true)
+
+    token = Base.url_encode64(iv <> tag <> ciphertext, padding: false)
+    %{@wrapper_key => true, @ciphertext_key => token}
+  end
+
+  @doc """
+  Decrypts an AAD-bound wrapper produced by `encrypt_value/2`.
+
+  The `aad` must exactly match the value passed at encryption time. Non-wrapper values
+  pass through unchanged. Raises `Flux.Vault.DecryptError` on a wrong key, a tampered
+  token, or an AAD mismatch (the three are indistinguishable — a GCM authentication
+  failure — by design).
+  """
+  @spec decrypt_value(term(), binary()) :: term()
+  def decrypt_value(%{@wrapper_key => true, @ciphertext_key => token}, aad)
+      when is_binary(token) and is_binary(aad) do
+    key = aead_key()
+
+    with {:ok, <<iv::binary-size(12), tag::binary-size(16), ciphertext::binary>>} <-
+           Base.url_decode64(token, padding: false),
+         plaintext when is_binary(plaintext) <-
+           :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, ciphertext, aad, tag, false) do
+      Jason.decode!(plaintext)
+    else
+      _ -> raise Flux.Vault.DecryptError
+    end
+  end
+
+  def decrypt_value(value, _aad), do: value
 
   @doc """
   Encrypts the values at the given `paths` within `config`.
@@ -131,6 +182,12 @@ defmodule Flux.Vault do
     aes = Plug.Crypto.KeyGenerator.generate(base, @aes_salt, length: 32)
     sign = Plug.Crypto.KeyGenerator.generate(base, @sign_salt, length: 32)
     {aes, sign}
+  end
+
+  # Derives the AES-256-GCM key for AAD-bound encryption (encrypt_value/2). A distinct
+  # salt keeps it independent of the MessageEncryptor keys used for sink secrets.
+  defp aead_key do
+    Plug.Crypto.KeyGenerator.generate(base_key(), @aead_salt, length: 32)
   end
 
   defp base_key do

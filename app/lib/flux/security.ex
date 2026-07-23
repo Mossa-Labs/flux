@@ -54,7 +54,8 @@ defmodule Flux.Security do
           resource_id: org_id,
           changes: %{
             "ip_allowlist" => settings.ip_allowlist,
-            "session_timeout_minutes" => settings.session_timeout_minutes
+            "session_timeout_minutes" => settings.session_timeout_minutes,
+            "require_mfa" => settings.require_mfa
           }
         })
 
@@ -86,15 +87,29 @@ defmodule Flux.Security do
   def session_timeout_minutes(nil), do: @default_session_timeout_minutes
   def session_timeout_minutes(org_id), do: cached(org_id).timeout_minutes
 
+  @doc """
+  Whether the org requires every member to have MFA enabled. Served from the
+  cache; `nil` org (no organization in scope) is never required.
+
+  This reflects the stored per-org toggle only — entitlement gating lives in
+  `Flux.Accounts.MfaEnforcement`, which must be consulted for the effective
+  decision so a license downgrade can't lock members out.
+  """
+  @spec require_mfa?(term()) :: boolean()
+  def require_mfa?(nil), do: false
+  def require_mfa?(org_id), do: cached(org_id).require_mfa
+
   # Cached, derived view of an org's settings for the hot paths: parsed CIDR
-  # tuples + resolved timeout. One DB read populates both; busted on update.
+  # tuples + resolved timeout + MFA-required flag. One DB read populates all;
+  # busted on update.
   defp cached(org_id) do
     Cache.fetch(org_id, fn ->
       settings = get_settings(org_id)
 
       %{
         allowlist: Enum.flat_map(settings.ip_allowlist, &parse_cidr/1),
-        timeout_minutes: settings.session_timeout_minutes || @default_session_timeout_minutes
+        timeout_minutes: settings.session_timeout_minutes || @default_session_timeout_minutes,
+        require_mfa: settings.require_mfa || false
       }
     end)
   end

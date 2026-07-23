@@ -77,6 +77,9 @@ defmodule Flux.MixProject do
   defp deps do
     [
       {:argon2_elixir, "~> 4.0"},
+      # TOTP-based MFA: code generation/verification + QR for enrollment (MOS-591)
+      {:nimble_totp, "~> 1.0"},
+      {:eqrcode, "~> 0.2"},
       {:phoenix, "~> 1.8.3"},
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.13"},

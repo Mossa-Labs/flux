@@ -121,7 +121,7 @@ defmodule FluxWeb.Components.UpgradePrompt do
   defp feature_label(:sso), do: "SSO / SAML / OIDC"
   defp feature_label(:audit_log), do: "Audit logging"
   defp feature_label(:white_label), do: "White-label branding"
-  defp feature_label(:mfa), do: "Multi-factor authentication"
+  defp feature_label(:mfa_enforcement), do: "Require MFA for all members"
   defp feature_label(:password_policy), do: "Password policies"
   defp feature_label(:pii_redaction), do: "PII redaction & classification"
   defp feature_label(:pro_sink), do: "This sink type"

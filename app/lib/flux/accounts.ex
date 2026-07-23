@@ -60,6 +60,9 @@ defmodule Flux.Accounts do
   """
   def get_user!(id), do: Repo.get!(User, id)
 
+  @doc "Gets a user by id, returning `nil` if not found."
+  def get_user(id), do: Repo.get(User, id)
+
   ## User registration
 
   @doc """
@@ -477,6 +480,22 @@ defmodule Flux.Accounts do
 
     @api_key_prefix <> random
   end
+
+  ## MFA / TOTP (MOS-591) — see Flux.Accounts.Mfa
+
+  defdelegate mfa_enabled?(user), to: Flux.Accounts.Mfa
+  defdelegate get_user_mfa(user), to: Flux.Accounts.Mfa
+  defdelegate start_mfa_enrollment(user), to: Flux.Accounts.Mfa, as: :start_enrollment
+
+  defdelegate confirm_mfa_enrollment(user, secret, code),
+    to: Flux.Accounts.Mfa,
+    as: :confirm_enrollment
+
+  defdelegate verify_totp(user, code), to: Flux.Accounts.Mfa
+  defdelegate verify_backup_code(user, code), to: Flux.Accounts.Mfa
+  defdelegate backup_codes_remaining(user), to: Flux.Accounts.Mfa
+  defdelegate regenerate_backup_codes(user), to: Flux.Accounts.Mfa
+  defdelegate disable_mfa(user), to: Flux.Accounts.Mfa, as: :disable
 
   ## Token helper
 

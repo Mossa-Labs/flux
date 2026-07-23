@@ -262,6 +262,35 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       end)
     end
 
+    test "shows the MFA enforcement upgrade prompt without the Enterprise entitlement", %{
+      conn: conn
+    } do
+      {:ok, lv, html} = live(conn, ~p"/system/settings")
+
+      assert html =~ "Require two-factor authentication"
+      # Community build: locked — prompt shown, editable form absent.
+      assert html =~ "Require MFA for all members"
+      refute has_element?(lv, "#mfa-enforcement-form")
+    end
+
+    test "shows and saves the MFA enforcement toggle with the Enterprise entitlement", %{
+      conn: conn,
+      owner_scope: scope
+    } do
+      Flux.LicenseHelpers.with_license_tier(:enterprise, fn ->
+        {:ok, lv, _html} = live(conn, ~p"/system/settings")
+        assert has_element?(lv, "#mfa-enforcement-form")
+
+        html =
+          lv
+          |> form("#mfa-enforcement-form", security: %{require_mfa: "true"})
+          |> render_submit()
+
+        assert html =~ "MFA enforcement updated."
+        assert Flux.Security.get_settings(scope.organization_id).require_mfa
+      end)
+    end
+
     test "revokes an API key", %{conn: conn, user: user} do
       org =
         Flux.Structure.Organization

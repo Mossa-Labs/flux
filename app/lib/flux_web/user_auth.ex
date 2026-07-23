@@ -317,6 +317,39 @@ defmodule FluxWeb.UserAuth do
     end
   end
 
+  def on_mount(:require_mfa_enrollment, _params, session, socket) do
+    socket = mount_current_scope(socket, session)
+    scope = socket.assigns.current_scope
+
+    cond do
+      # Not authenticated — let :require_authenticated own that redirect.
+      is_nil(scope) || is_nil(scope.user) ->
+        {:cont, socket}
+
+      # The enrollment page itself must stay reachable, or enforcement loops.
+      socket.view == FluxWeb.UserLive.Settings ->
+        {:cont, socket}
+
+      # Org requires MFA (entitlement re-checked in MfaEnforcement) and this user
+      # hasn't enrolled — send them to Account Settings to set it up. A no-op on
+      # Community builds, where enforcement is never entitled (MOS-591).
+      Flux.Accounts.MfaEnforcement.enforced?(scope) &&
+          not Accounts.mfa_enabled?(scope.user) ->
+        socket =
+          socket
+          |> Phoenix.LiveView.put_flash(
+            :error,
+            "Your organization requires two-factor authentication. Enable it to continue."
+          )
+          |> Phoenix.LiveView.redirect(to: ~p"/users/settings")
+
+        {:halt, socket}
+
+      true ->
+        {:cont, socket}
+    end
+  end
+
   def on_mount(:require_sudo_mode, _params, session, socket) do
     socket = mount_current_scope(socket, session)
 

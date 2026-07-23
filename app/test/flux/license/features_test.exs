@@ -38,14 +38,14 @@ defmodule Flux.License.FeaturesTest do
     assert :org_rbac in pro
 
     refute :sso in pro
-    refute :mfa in pro
+    refute :mfa_enforcement in pro
   end
 
   test "enterprise includes enterprise-only features" do
     enterprise = Features.for_tier(:enterprise)
 
     assert :sso in enterprise
-    assert :mfa in enterprise
+    assert :mfa_enforcement in enterprise
     # Pro features remain available at the Enterprise tier (cumulative).
     assert :org_rbac in enterprise
   end

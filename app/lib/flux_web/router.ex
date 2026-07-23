@@ -90,14 +90,20 @@ defmodule FluxWeb.Router do
     # Builder uses minimal layout (no sidebar, full screen canvas)
     # NOTE: Must come BEFORE :dashboard routes so /pipelines/builder doesn't match /pipelines/:id
     live_session :builder,
-      on_mount: [{FluxWeb.UserAuth, :require_authenticated}],
+      on_mount: [
+        {FluxWeb.UserAuth, :require_authenticated},
+        {FluxWeb.UserAuth, :require_mfa_enrollment}
+      ],
       layout: {FluxWeb.Layouts, :builder} do
       live("/pipelines/builder", PipelineLive.Builder, :new)
       live("/pipelines/:id/builder", PipelineLive.Builder, :edit)
     end
 
     live_session :dashboard,
-      on_mount: [{FluxWeb.UserAuth, :require_authenticated}],
+      on_mount: [
+        {FluxWeb.UserAuth, :require_authenticated},
+        {FluxWeb.UserAuth, :require_mfa_enrollment}
+      ],
       layout: {FluxWeb.Layouts, :dashboard} do
       live("/dashboard", DashboardLive.Index, :index)
 
@@ -149,10 +155,14 @@ defmodule FluxWeb.Router do
       on_mount: [{FluxWeb.UserAuth, :mount_current_scope}] do
       live("/users/register", UserLive.Registration, :new)
       live("/users/log-in", UserLive.Login, :new)
+      # Second-factor (TOTP) challenge — kept off the "/users/log-in/:token" path
+      # so it isn't shadowed by the magic-link route.
+      live("/users/two-factor", UserLive.TotpChallenge, :new)
       live("/users/log-in/:token", UserLive.Confirmation, :new)
     end
 
     post("/users/log-in", UserSessionController, :create)
+    post("/users/two-factor", UserSessionController, :verify_totp)
     delete("/users/log-out", UserSessionController, :delete)
   end
 end

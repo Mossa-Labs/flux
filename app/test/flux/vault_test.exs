@@ -105,4 +105,48 @@ defmodule Flux.VaultTest do
       assert Vault.decrypt_map(config, Secrets.paths()) == config
     end
   end
+
+  describe "encrypt_value/2 and decrypt_value/2 (AAD-bound)" do
+    test "round-trips when the AAD matches" do
+      for value <- ["totp-secret", %{"codes" => ["a", "b"]}, 7, ["x", "y"]] do
+        wrapper = Vault.encrypt_value(value, "user:42")
+        assert %{"encrypted" => true, "ciphertext" => ct} = wrapper
+        assert is_binary(ct)
+        assert Vault.decrypt_value(wrapper, "user:42") == value
+      end
+    end
+
+    test "ciphertext does not contain the plaintext" do
+      %{"ciphertext" => ct} = Vault.encrypt_value("hunter2", "user:42")
+      refute ct =~ "hunter2"
+    end
+
+    test "decrypting with a different AAD raises (ciphertext bound to its record)" do
+      wrapper = Vault.encrypt_value("totp-secret", "user:42")
+
+      assert_raise Flux.Vault.DecryptError, fn ->
+        Vault.decrypt_value(wrapper, "user:99")
+      end
+    end
+
+    test "each encryption uses a fresh IV (same value + AAD yields different tokens)" do
+      %{"ciphertext" => a} = Vault.encrypt_value("totp-secret", "user:42")
+      %{"ciphertext" => b} = Vault.encrypt_value("totp-secret", "user:42")
+      refute a == b
+    end
+
+    test "decrypting a tampered token raises" do
+      assert_raise Flux.Vault.DecryptError, fn ->
+        Vault.decrypt_value(
+          %{"encrypted" => true, "ciphertext" => "not-a-valid-token"},
+          "user:42"
+        )
+      end
+    end
+
+    test "decrypt_value/2 passes plain (non-wrapper) values through unchanged" do
+      assert Vault.decrypt_value("plain", "user:42") == "plain"
+      assert Vault.decrypt_value(nil, "user:42") == nil
+    end
+  end
 end
