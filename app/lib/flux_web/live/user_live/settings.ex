@@ -186,10 +186,14 @@ defmodule FluxWeb.UserLive.Settings do
 
   def handle_event("validate_password", params, socket) do
     %{"user" => user_params} = params
+    scope = socket.assigns.current_scope
 
     password_form =
-      socket.assigns.current_scope.user
-      |> Accounts.change_user_password(user_params, hash_password: false)
+      scope.user
+      |> Accounts.change_user_password(user_params,
+        hash_password: false,
+        org_id: scope.organization_id
+      )
       |> Map.put(:action, :validate)
       |> to_form()
 
@@ -198,10 +202,11 @@ defmodule FluxWeb.UserLive.Settings do
 
   def handle_event("update_password", params, socket) do
     %{"user" => user_params} = params
-    user = socket.assigns.current_scope.user
+    scope = socket.assigns.current_scope
+    user = scope.user
     true = Accounts.sudo_mode?(user)
 
-    case Accounts.change_user_password(user, user_params) do
+    case Accounts.change_user_password(user, user_params, org_id: scope.organization_id) do
       %{valid?: true} = changeset ->
         {:noreply, assign(socket, trigger_submit: true, password_form: to_form(changeset))}
 

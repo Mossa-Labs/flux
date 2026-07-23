@@ -3,9 +3,11 @@ defmodule Flux.Security.SecuritySettings do
   Per-organization security settings (MOS-588).
 
   A single row per organization holding application-layer security policy:
-  `ip_allowlist` (CIDR ranges allowed to reach the API; empty = no restriction)
-  and `session_timeout_minutes` (idle session timeout; default 30d, min 1h).
-  This table is the shared home for later security policy (e.g. password policy).
+  `ip_allowlist` (CIDR ranges allowed to reach the API; empty = no restriction),
+  `session_timeout_minutes` (idle session timeout; default 30d, min 1h), and the
+  password policy (MOS-590): minimum length, character-class complexity, and
+  rotation. The password policy is only enforced when the `:password_policy`
+  feature is entitled; ungated builds keep the min-12 default.
   """
 
   use Ecto.Schema
@@ -18,24 +20,50 @@ defmodule Flux.Security.SecuritySettings do
   # Minimum idle session timeout: 1 hour.
   @min_session_timeout_minutes 60
 
+  # Community password floor. A policy can raise the minimum length but never
+  # lower it below this — the base rule stays enforced even when entitled.
+  @min_password_length 12
+
   schema "security_settings" do
     field :ip_allowlist, {:array, :string}, default: []
     field :session_timeout_minutes, :integer, default: 43_200
+
+    field :password_min_length, :integer, default: 12
+    field :password_require_upper, :boolean, default: false
+    field :password_require_lower, :boolean, default: false
+    field :password_require_number, :boolean, default: false
+    field :password_require_special, :boolean, default: false
+    field :password_rotation_days, :integer
 
     belongs_to :organization, Organization
 
     timestamps(type: :utc_datetime)
   end
 
+  @doc "The Community password floor (minimum length a policy may not go below)."
+  def min_password_length, do: @min_password_length
+
   @doc false
   def changeset(settings, attrs) do
     settings
     # organization_id is set programmatically (via the context), never cast.
-    |> cast(attrs, [:ip_allowlist, :session_timeout_minutes])
-    |> validate_required([:organization_id, :session_timeout_minutes])
+    |> cast(attrs, [
+      :ip_allowlist,
+      :session_timeout_minutes,
+      :password_min_length,
+      :password_require_upper,
+      :password_require_lower,
+      :password_require_number,
+      :password_require_special,
+      :password_rotation_days
+    ])
+    |> validate_required([:organization_id, :session_timeout_minutes, :password_min_length])
     |> validate_number(:session_timeout_minutes,
       greater_than_or_equal_to: @min_session_timeout_minutes
     )
+    # A policy can raise the minimum length but never weaken the Community floor.
+    |> validate_number(:password_min_length, greater_than_or_equal_to: @min_password_length)
+    |> validate_number(:password_rotation_days, greater_than: 0)
     |> normalize_cidrs()
     |> validate_cidrs()
     |> unique_constraint(:organization_id)

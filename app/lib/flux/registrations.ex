@@ -41,6 +41,7 @@ defmodule Flux.Registrations do
     :ok = register_observability_provider()
     :ok = register_audit_provider()
     :ok = register_pii_provider()
+    :ok = register_password_policy_provider()
     :ok = seed_active_queue()
 
     Logger.info("[Flux.Registrations] Community adapters registered")
@@ -146,6 +147,15 @@ defmodule Flux.Registrations do
       Application.get_env(:flux, Flux.PII)[:provider] || Flux.PII.Providers.Community
 
     Flux.PII.Registry.set_active(provider)
+    :ok
+  end
+
+  defp register_password_policy_provider do
+    provider =
+      Application.get_env(:flux, Flux.Accounts.PasswordPolicy)[:provider] ||
+        Flux.Accounts.PasswordPolicy.Providers.Community
+
+    Flux.Accounts.PasswordPolicy.Registry.set_active(provider)
     :ok
   end
 

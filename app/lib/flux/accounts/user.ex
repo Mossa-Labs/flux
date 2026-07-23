@@ -8,6 +8,8 @@ defmodule Flux.Accounts.User do
     field :password, :string, virtual: true, redact: true
     field :hashed_password, :string, redact: true
     field :confirmed_at, :utc_datetime
+    # When the password was last set. Drives rotation enforcement (MOS-590).
+    field :password_changed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
 
     timestamps(type: :utc_datetime)
@@ -71,6 +73,9 @@ defmodule Flux.Accounts.User do
       password field is not desired (like when using this changeset for
       validations on a LiveView form), this option can be set to `false`.
       Defaults to `true`.
+    * `:org_id` - the organization whose password policy to enforce on top of
+      the base rules. Passed to `Flux.Accounts.PasswordPolicy`; a no-op on
+      ungated builds. Defaults to `nil` (base rules only).
   """
   def password_changeset(user, attrs, opts \\ []) do
     user
@@ -79,14 +84,15 @@ defmodule Flux.Accounts.User do
     |> validate_password(opts)
   end
 
+  # The base rules (required, min: 12, max: 128) always run and are never
+  # bypassable. On top of them, the org's password policy may *strengthen* the
+  # requirements (higher minimum, character-class complexity) when the
+  # `:password_policy` feature is entitled; the Community provider is a no-op.
   defp validate_password(changeset, opts) do
     changeset
     |> validate_required([:password])
     |> validate_length(:password, min: 12, max: 128)
-    # Examples of additional password validation:
-    # |> validate_format(:password, ~r/[a-z]/, message: "at least one lower case character")
-    # |> validate_format(:password, ~r/[A-Z]/, message: "at least one upper case character")
-    # |> validate_format(:password, ~r/[!?@#$%^&*_0-9]/, message: "at least one digit or punctuation character")
+    |> Flux.Accounts.PasswordPolicy.validate(Keyword.get(opts, :org_id))
     |> maybe_hash_password(opts)
   end
 
@@ -99,6 +105,8 @@ defmodule Flux.Accounts.User do
       # Hashing could be done with `Ecto.Changeset.prepare_changes/2`, but that
       # would keep the database transaction open longer and hurt performance.
       |> put_change(:hashed_password, Argon2.hash_pwd_salt(password))
+      # Stamp the rotation clock only when a new password is actually persisted.
+      |> put_change(:password_changed_at, DateTime.utc_now(:second))
       |> delete_change(:password)
     else
       changeset

@@ -117,6 +117,20 @@ defmodule FluxWeb.UserAuth do
           |> redirect(to: ~p"/users/log-in")
           |> halt()
 
+        password_rotation_required?(conn, scope) ->
+          # The org's password rotation policy has lapsed for this user. The
+          # session stays valid (they just authenticated / are still trusted) but
+          # they are steered to the settings page to choose a new password before
+          # doing anything else. The settings page, the password-change POST, and
+          # log-out are exempt so they can actually rotate it (see
+          # password_change_escape_path?/1). Enforcement decision lives in the
+          # password-policy provider — a no-op on Community/ungated builds.
+          conn
+          |> assign(:current_scope, scope)
+          |> put_flash(:error, "Your password has expired. Please choose a new one to continue.")
+          |> redirect(to: ~p"/users/settings")
+          |> halt()
+
         true ->
           Accounts.touch_session_activity(user_token)
 
@@ -144,6 +158,21 @@ defmodule FluxWeb.UserAuth do
     timeout_minutes = Flux.Security.session_timeout_minutes(scope.organization_id)
     last_active = user_token.last_active_at || user_token.inserted_at
     DateTime.diff(DateTime.utc_now(:second), last_active, :minute) >= timeout_minutes
+  end
+
+  # Whether the org's rotation policy requires this user to set a new password
+  # before proceeding. The decision is delegated to the active password-policy
+  # provider (a no-op on Community). We never redirect while the user is already
+  # on an escape path (settings / password-change POST / log-out), otherwise the
+  # redirect to settings would loop.
+  defp password_rotation_required?(conn, scope) do
+    not password_change_escape_path?(conn) and Flux.Accounts.PasswordPolicy.expired?(scope)
+  end
+
+  @password_change_escape_paths ~w(/users/settings /users/update-password /users/log-out)
+
+  defp password_change_escape_path?(%Plug.Conn{request_path: path}) do
+    Enum.any?(@password_change_escape_paths, &String.starts_with?(path, &1))
   end
 
   defp ensure_user_token(conn) do

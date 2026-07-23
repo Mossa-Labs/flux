@@ -203,6 +203,65 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       assert Flux.Security.get_settings(scope.organization_id).session_timeout_minutes == 1440
     end
 
+    test "shows the password policy upgrade prompt without the Enterprise entitlement", %{
+      conn: conn
+    } do
+      {:ok, lv, html} = live(conn, ~p"/system/settings")
+
+      assert html =~ "Password policy"
+      # Community build: locked — prompt shown, editable form absent.
+      assert html =~ "Password policies"
+      refute has_element?(lv, "#password-policy-form")
+    end
+
+    test "shows the editable password policy form with the Enterprise entitlement", %{conn: conn} do
+      Flux.LicenseHelpers.with_license_tier(:enterprise, fn ->
+        {:ok, lv, _html} = live(conn, ~p"/system/settings")
+        assert has_element?(lv, "#password-policy-form")
+      end)
+    end
+
+    test "saves a valid password policy and persists it", %{conn: conn, owner_scope: scope} do
+      Flux.LicenseHelpers.with_license_tier(:enterprise, fn ->
+        {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+        html =
+          lv
+          |> form("#password-policy-form",
+            security: %{
+              password_min_length: "16",
+              password_require_upper: "true",
+              password_require_number: "true",
+              password_rotation_days: "90"
+            }
+          )
+          |> render_submit()
+
+        assert html =~ "Password policy updated."
+
+        settings = Flux.Security.get_settings(scope.organization_id)
+        assert settings.password_min_length == 16
+        assert settings.password_require_upper
+        assert settings.password_require_number
+        refute settings.password_require_special
+        assert settings.password_rotation_days == 90
+      end)
+    end
+
+    test "rejects a password policy below the min-12 floor", %{conn: conn, owner_scope: scope} do
+      Flux.LicenseHelpers.with_license_tier(:enterprise, fn ->
+        {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+        html =
+          lv
+          |> form("#password-policy-form", security: %{password_min_length: "8"})
+          |> render_submit()
+
+        assert html =~ "Password min length"
+        assert Flux.Security.get_settings(scope.organization_id).password_min_length == 12
+      end)
+    end
+
     test "revokes an API key", %{conn: conn, user: user} do
       org =
         Flux.Structure.Organization

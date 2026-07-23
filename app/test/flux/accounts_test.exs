@@ -240,6 +240,15 @@ defmodule Flux.AccountsTest do
       assert Accounts.get_user_by_email_and_password(user.email, "new valid password")
     end
 
+    test "stamps password_changed_at for rotation tracking (MOS-590)", %{user: user} do
+      {:ok, {updated, _}} =
+        Accounts.update_user_password(user, %{password: "new valid password"})
+
+      assert updated.password_changed_at
+      # Advanced past the original stamp set at insert time.
+      assert DateTime.compare(updated.password_changed_at, user.password_changed_at) in [:gt, :eq]
+    end
+
     test "deletes all tokens for the given user", %{user: user} do
       _ = Accounts.generate_user_session_token(user)
 

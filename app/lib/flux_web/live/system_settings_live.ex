@@ -46,6 +46,7 @@ defmodule FluxWeb.SystemSettingsLive do
        |> assign(:api_key_form, new_api_key_form())
        |> assign(:revealed_key, nil)
        |> assign(:api_key_scopes_enabled, Flux.License.has_feature?(:api_key_scopes))
+       |> assign(:password_policy_enabled, Flux.License.has_feature?(:password_policy))
        |> assign(:usage_metering_enabled, usage_metering_enabled?())
        |> assign(:usage, load_usage(org_id))
        |> assign_security_settings(org_id)
@@ -133,12 +134,18 @@ defmodule FluxWeb.SystemSettingsLive do
   end
 
   # Shared form for the security section: the allowlist renders one CIDR per
-  # line, plus the current session-timeout selection.
+  # line, the current session-timeout selection, and the password policy.
   defp security_form(%Security.SecuritySettings{} = settings) do
     to_form(
       %{
         "ip_allowlist" => Enum.join(settings.ip_allowlist || [], "\n"),
-        "session_timeout_minutes" => to_string(settings.session_timeout_minutes || 43_200)
+        "session_timeout_minutes" => to_string(settings.session_timeout_minutes || 43_200),
+        "password_min_length" => to_string(settings.password_min_length || 12),
+        "password_require_upper" => settings.password_require_upper || false,
+        "password_require_lower" => settings.password_require_lower || false,
+        "password_require_number" => settings.password_require_number || false,
+        "password_require_special" => settings.password_require_special || false,
+        "password_rotation_days" => to_string(settings.password_rotation_days || "")
       },
       as: :security
     )
@@ -148,6 +155,18 @@ defmodule FluxWeb.SystemSettingsLive do
     case Keyword.get(changeset.errors, :ip_allowlist) do
       {msg, _opts} -> msg
       _ -> "Could not save the IP allowlist."
+    end
+  end
+
+  # Surface the first password-policy field error (min length / rotation) with
+  # the offending field name, falling back to a generic message.
+  defp password_policy_error(changeset) do
+    case changeset.errors do
+      [{field, {msg, _opts}} | _] ->
+        "#{field |> to_string() |> String.replace("_", " ") |> String.capitalize()} #{msg}."
+
+      _ ->
+        "Could not save the password policy."
     end
   end
 
@@ -179,6 +198,7 @@ defmodule FluxWeb.SystemSettingsLive do
           api_key_form={@api_key_form}
           revealed_key={@revealed_key}
           api_key_scopes_enabled={@api_key_scopes_enabled}
+          password_policy_enabled={@password_policy_enabled}
           usage_metering_enabled={@usage_metering_enabled}
           usage={@usage}
           security_form={@security_form}
@@ -252,7 +272,11 @@ defmodule FluxWeb.SystemSettingsLive do
           revealed_key={@revealed_key}
           scopes_enabled={@api_key_scopes_enabled}
         />
-        <.security_section form={@security_form} error={@security_error} />
+        <.security_section
+          form={@security_form}
+          error={@security_error}
+          password_policy_enabled={@password_policy_enabled}
+        />
       <% else %>
         <p class="text-base-content/60">
           No organization in scope. Create or select an organization first.
@@ -264,6 +288,7 @@ defmodule FluxWeb.SystemSettingsLive do
 
   attr :form, :any, required: true
   attr :error, :string, default: nil
+  attr :password_policy_enabled, :boolean, default: false
 
   defp security_section(assigns) do
     ~H"""
@@ -320,6 +345,73 @@ defmodule FluxWeb.SystemSettingsLive do
           />
           <.button class="btn btn-primary btn-sm">Save timeout</.button>
         </.form>
+
+        <div class="divider my-2"></div>
+
+        <h3 class="font-semibold text-sm">
+          <.icon name="hero-key" class="w-4 h-4" /> Password policy
+        </h3>
+        <p class="text-sm text-base-content/60">
+          Strengthen the rules new passwords must satisfy, on top of the built-in
+          12-character minimum. Optionally require members to rotate their password
+          on a schedule.
+        </p>
+
+        <%= if @password_policy_enabled do %>
+          <.form
+            for={@form}
+            id="password-policy-form"
+            phx-submit="save_password_policy"
+            class="mt-2 space-y-3"
+          >
+            <div class="flex flex-col sm:flex-row gap-2 sm:items-end">
+              <.input
+                field={@form[:password_min_length]}
+                type="number"
+                min="12"
+                max="128"
+                label="Minimum length"
+              />
+              <.input
+                field={@form[:password_rotation_days]}
+                type="number"
+                min="1"
+                label="Rotate every (days)"
+                placeholder="Never"
+              />
+            </div>
+
+            <fieldset class="flex flex-col gap-1">
+              <legend class="text-sm font-medium">Require at least one…</legend>
+              <.input
+                field={@form[:password_require_upper]}
+                type="checkbox"
+                label="Uppercase letter (A–Z)"
+              />
+              <.input
+                field={@form[:password_require_lower]}
+                type="checkbox"
+                label="Lowercase letter (a–z)"
+              />
+              <.input
+                field={@form[:password_require_number]}
+                type="checkbox"
+                label="Number (0–9)"
+              />
+              <.input
+                field={@form[:password_require_special]}
+                type="checkbox"
+                label="Special character (!?@#$…)"
+              />
+            </fieldset>
+
+            <.button class="btn btn-primary btn-sm">Save password policy</.button>
+          </.form>
+        <% else %>
+          <div class="mt-2">
+            <UpgradePrompt.upgrade_prompt feature={:password_policy} size={:compact} />
+          </div>
+        <% end %>
       </div>
     </section>
     """
@@ -1165,6 +1257,42 @@ defmodule FluxWeb.SystemSettingsLive do
 
         {:error, _changeset} ->
           {:noreply, put_flash(socket, :error, "Session timeout must be at least 1 hour.")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You are not allowed to manage security settings.")}
+    end
+  end
+
+  def handle_event("save_password_policy", %{"security" => params}, socket) do
+    scope = socket.assigns.current_scope
+
+    if Permissions.can?(scope, :manage_security_settings) do
+      attrs = %{
+        password_min_length: params["password_min_length"],
+        password_require_upper: params["password_require_upper"],
+        password_require_lower: params["password_require_lower"],
+        password_require_number: params["password_require_number"],
+        password_require_special: params["password_require_special"],
+        # Blank clears rotation (disabled); the changeset casts "" to nil.
+        password_rotation_days: params["password_rotation_days"]
+      }
+
+      case Security.update_settings(scope.organization_id, attrs) do
+        {:ok, settings} ->
+          {:noreply,
+           socket
+           |> assign(:security_settings, settings)
+           |> assign(:security_form, security_form(settings))
+           |> put_flash(:info, "Password policy updated.")}
+
+        {:error, changeset} ->
+          {:noreply,
+           socket
+           |> assign(
+             :security_form,
+             to_form(Map.merge(socket.assigns.security_form.params, params), as: :security)
+           )
+           |> put_flash(:error, password_policy_error(changeset))}
       end
     else
       {:noreply, put_flash(socket, :error, "You are not allowed to manage security settings.")}
