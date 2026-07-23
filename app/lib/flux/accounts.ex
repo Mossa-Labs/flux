@@ -170,10 +170,13 @@ defmodule Flux.Accounts do
   ## Session
 
   @doc """
-  Generates a session token.
+  Generates a session token, recording the request device/IP (MOS-589).
+
+  `meta` is a string-keyed map as produced by `FluxWeb.AuditMeta.from_conn/1`
+  (`"ip_address"`, `"user_agent"`); both are optional.
   """
-  def generate_user_session_token(user) do
-    {token, user_token} = UserToken.build_session_token(user)
+  def generate_user_session_token(user, meta \\ %{}) do
+    {token, user_token} = UserToken.build_session_token(user, meta)
     Repo.insert!(user_token)
     token
   end
@@ -181,11 +184,76 @@ defmodule Flux.Accounts do
   @doc """
   Gets the user with the given signed token.
 
-  If the token is valid `{user, token_inserted_at}` is returned, otherwise `nil` is returned.
+  If the token is valid `{user, user_token}` is returned (the `user_token`
+  carries `inserted_at`/`last_active_at` for timeout enforcement), otherwise
+  `nil` is returned.
   """
   def get_user_by_session_token(token) do
     {:ok, query} = UserToken.verify_session_token_query(token)
     Repo.one(query)
+  end
+
+  @doc """
+  Lists a user's active session tokens, most-recently-active first (MOS-589).
+  """
+  def list_user_sessions(%User{} = user) do
+    from(t in UserToken,
+      where: t.user_id == ^user.id and t.context == "session",
+      order_by: [desc: coalesce(t.last_active_at, t.inserted_at)]
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  Records session activity by bumping `last_active_at`, throttled so at most one
+  write happens per `@activity_throttle_seconds` window (keeps this off the
+  write-hot path). Returns `:ok`.
+  """
+  @activity_throttle_seconds 300
+  def touch_session_activity(%UserToken{id: id}) do
+    now = DateTime.utc_now(:second)
+    cutoff = DateTime.add(now, -@activity_throttle_seconds, :second)
+
+    Repo.update_all(
+      from(t in UserToken,
+        where: t.id == ^id and (is_nil(t.last_active_at) or t.last_active_at < ^cutoff)
+      ),
+      set: [last_active_at: now]
+    )
+
+    :ok
+  end
+
+  @doc """
+  Deletes one of the user's session tokens by id, scoped to the owning user (no
+  IDOR). Returns `{:ok, token}` with the deleted token (raw value, for socket
+  disconnect), or `:error` if it does not exist / belongs to another user.
+  """
+  def delete_user_session(%User{} = user, id) do
+    from(t in UserToken,
+      where: t.id == ^id and t.user_id == ^user.id and t.context == "session",
+      select: t
+    )
+    |> Repo.delete_all()
+    |> case do
+      {1, [token]} -> {:ok, token}
+      _ -> :error
+    end
+  end
+
+  @doc """
+  Deletes all of the user's session tokens EXCEPT the current one. Returns the
+  list of deleted tokens (for socket disconnect).
+  """
+  def delete_other_user_sessions(%User{} = user, current_token) do
+    {_count, tokens} =
+      from(t in UserToken,
+        where: t.user_id == ^user.id and t.context == "session" and t.token != ^current_token,
+        select: t
+      )
+      |> Repo.delete_all()
+
+    tokens
   end
 
   @doc """

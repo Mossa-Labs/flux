@@ -290,19 +290,25 @@ defmodule Flux.AccountsTest do
     end
 
     test "returns user by token", %{user: user, token: token} do
-      assert {session_user, token_inserted_at} = Accounts.get_user_by_session_token(token)
+      assert {session_user, user_token} = Accounts.get_user_by_session_token(token)
       assert session_user.id == user.id
       assert session_user.authenticated_at != nil
-      assert token_inserted_at != nil
+      assert user_token.inserted_at != nil
+      assert user_token.last_active_at != nil
     end
 
     test "does not return user for invalid token" do
       refute Accounts.get_user_by_session_token("oops")
     end
 
-    test "does not return user for expired token", %{token: token} do
+    test "does not return user for a token past the absolute cap", %{token: token} do
       dt = ~N[2020-01-01 00:00:00]
-      {1, nil} = Repo.update_all(UserToken, set: [inserted_at: dt, authenticated_at: dt])
+
+      {1, nil} =
+        Repo.update_all(UserToken,
+          set: [inserted_at: dt, authenticated_at: dt, last_active_at: dt]
+        )
+
       refute Accounts.get_user_by_session_token(token)
     end
   end
@@ -373,6 +379,82 @@ defmodule Flux.AccountsTest do
       token = Accounts.generate_user_session_token(user)
       assert Accounts.delete_user_session_token(token) == :ok
       refute Accounts.get_user_by_session_token(token)
+    end
+  end
+
+  describe "session management (MOS-589)" do
+    test "records device/IP metadata on the session token" do
+      user = user_fixture()
+      meta = %{"ip_address" => "203.0.113.7", "user_agent" => "Mozilla/5.0 Chrome"}
+      token = Accounts.generate_user_session_token(user, meta)
+
+      ut = Repo.get_by(UserToken, token: token)
+      assert ut.ip_address == "203.0.113.7"
+      assert ut.user_agent == "Mozilla/5.0 Chrome"
+      assert ut.last_active_at != nil
+    end
+
+    test "list_user_sessions/1 returns only the user's session tokens" do
+      user = user_fixture()
+      other = user_fixture()
+      Accounts.generate_user_session_token(user)
+      Accounts.generate_user_session_token(user)
+      Accounts.generate_user_session_token(other)
+
+      sessions = Accounts.list_user_sessions(user)
+      assert length(sessions) == 2
+      assert Enum.all?(sessions, &(&1.user_id == user.id and &1.context == "session"))
+    end
+
+    test "touch_session_activity/1 is throttled" do
+      user = user_fixture()
+      token = Accounts.generate_user_session_token(user)
+      ut = Repo.get_by(UserToken, token: token)
+
+      # Within the throttle window: no update.
+      :ok = Accounts.touch_session_activity(ut)
+      assert Repo.get(UserToken, ut.id).last_active_at == ut.last_active_at
+
+      # Backdate last_active beyond the window: it bumps.
+      old = DateTime.add(DateTime.utc_now(:second), -3600, :second)
+      Repo.update_all(UserToken, set: [last_active_at: old])
+      :ok = Accounts.touch_session_activity(%{ut | last_active_at: old})
+      assert DateTime.compare(Repo.get(UserToken, ut.id).last_active_at, old) == :gt
+    end
+
+    test "delete_user_session/2 deletes a scoped session and returns it" do
+      user = user_fixture()
+      token = Accounts.generate_user_session_token(user)
+      ut = Repo.get_by(UserToken, token: token)
+
+      assert {:ok, deleted} = Accounts.delete_user_session(user, ut.id)
+      assert deleted.token == ut.token
+      refute Repo.get(UserToken, ut.id)
+    end
+
+    test "delete_user_session/2 refuses another user's session (no IDOR)" do
+      user = user_fixture()
+      attacker = user_fixture()
+      token = Accounts.generate_user_session_token(user)
+      ut = Repo.get_by(UserToken, token: token)
+
+      assert Accounts.delete_user_session(attacker, ut.id) == :error
+      # The victim's session is untouched.
+      assert Repo.get(UserToken, ut.id)
+    end
+
+    test "delete_other_user_sessions/2 keeps the current token, removes the rest" do
+      user = user_fixture()
+      current = Accounts.generate_user_session_token(user)
+      _other1 = Accounts.generate_user_session_token(user)
+      _other2 = Accounts.generate_user_session_token(user)
+
+      deleted = Accounts.delete_other_user_sessions(user, current)
+      assert length(deleted) == 2
+
+      remaining = Accounts.list_user_sessions(user)
+      assert [only] = remaining
+      assert only.token == current
     end
   end
 

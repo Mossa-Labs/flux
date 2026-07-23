@@ -91,34 +91,59 @@ defmodule FluxWeb.UserAuth do
   """
   def fetch_current_scope_for_user(conn, _opts) do
     with {token, conn} <- ensure_user_token(conn),
-         {user, token_inserted_at} <- Accounts.get_user_by_session_token(token) do
-      if Scope.user_can_log_in?(user) do
-        scope = Scope.for_user(user)
+         {user, user_token} <- Accounts.get_user_by_session_token(token) do
+      scope = Scope.for_user(user)
 
-        # Seed the ambient audit context for any mutation this request performs.
-        Flux.Audit.Context.put(%{
-          actor: scope,
-          organization_id: scope.organization_id,
-          metadata: FluxWeb.AuditMeta.from_conn(conn)
-        })
+      cond do
+        not Scope.user_can_log_in?(user) ->
+          # User was disabled since logging in; revoke session and redirect to login
+          Accounts.delete_user_session_token(token)
 
-        conn
-        |> assign(:current_scope, scope)
-        |> maybe_reissue_user_session_token(user, token_inserted_at)
-      else
-        # User was disabled since logging in; revoke session and redirect to login
-        Accounts.delete_user_session_token(token)
+          conn
+          |> renew_session(nil)
+          |> delete_resp_cookie(@remember_me_cookie, [])
+          |> put_flash(:error, "Your account has been disabled. Contact your administrator.")
+          |> redirect(to: ~p"/users/log-in")
+          |> halt()
 
-        conn
-        |> renew_session(nil)
-        |> delete_resp_cookie(@remember_me_cookie, [])
-        |> put_flash(:error, "Your account has been disabled. Contact your administrator.")
-        |> redirect(to: ~p"/users/log-in")
-        |> halt()
+        session_idle_expired?(scope, user_token) ->
+          # Idle longer than the org's session timeout; revoke and re-login.
+          Accounts.delete_user_session_token(token)
+
+          conn
+          |> renew_session(nil)
+          |> delete_resp_cookie(@remember_me_cookie, [])
+          |> put_flash(:error, "Your session expired due to inactivity. Please log in again.")
+          |> redirect(to: ~p"/users/log-in")
+          |> halt()
+
+        true ->
+          Accounts.touch_session_activity(user_token)
+
+          # Seed the ambient audit context for any mutation this request performs.
+          Flux.Audit.Context.put(%{
+            actor: scope,
+            organization_id: scope.organization_id,
+            metadata: FluxWeb.AuditMeta.from_conn(conn)
+          })
+
+          conn
+          |> assign(:current_scope, scope)
+          |> maybe_reissue_user_session_token(user, user_token.inserted_at)
       end
     else
       nil -> assign(conn, :current_scope, Scope.for_user(nil))
     end
+  end
+
+  # A session is expired when its last activity is older than the org's
+  # configured idle timeout (default 30d; see Flux.Security). last_active_at may
+  # be nil for tokens created before MOS-589, in which case we fall back to when
+  # the token was issued.
+  defp session_idle_expired?(scope, user_token) do
+    timeout_minutes = Flux.Security.session_timeout_minutes(scope.organization_id)
+    last_active = user_token.last_active_at || user_token.inserted_at
+    DateTime.diff(DateTime.utc_now(:second), last_active, :minute) >= timeout_minutes
   end
 
   defp ensure_user_token(conn) do
@@ -155,7 +180,7 @@ defmodule FluxWeb.UserAuth do
   # function will clear the session to avoid fixation attacks. See the
   # renew_session function to customize this behaviour.
   defp create_or_extend_session(conn, user, params) do
-    token = Accounts.generate_user_session_token(user)
+    token = Accounts.generate_user_session_token(user, FluxWeb.AuditMeta.from_conn(conn))
     remember_me = get_session(conn, :user_remember_me)
 
     conn

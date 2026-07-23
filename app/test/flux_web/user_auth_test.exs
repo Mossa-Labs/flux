@@ -183,6 +183,48 @@ defmodule FluxWeb.UserAuthTest do
       refute conn.assigns.current_scope
     end
 
+    test "records the client IP and user-agent on login (MOS-589)", %{conn: conn, user: user} do
+      conn =
+        conn
+        |> Map.put(:remote_ip, {203, 0, 113, 9})
+        |> put_req_header("user-agent", "Mozilla/5.0 Chrome")
+        |> UserAuth.log_in_user(user)
+
+      token = get_session(conn, :user_token)
+      ut = Flux.Repo.get_by(Accounts.UserToken, token: token)
+      assert ut.ip_address == "203.0.113.9"
+      assert ut.user_agent == "Mozilla/5.0 Chrome"
+    end
+
+    test "expires a session idle beyond the org timeout (MOS-589)", %{conn: conn, user: user} do
+      token = Accounts.generate_user_session_token(user)
+      # Idle for 40 days — past the 30-day default idle timeout.
+      offset_user_token(token, -40, :day)
+
+      conn =
+        conn
+        # The browser pipeline fetches flash before this plug runs.
+        |> Phoenix.Controller.fetch_flash([])
+        |> put_session(:user_token, token)
+        |> UserAuth.fetch_current_scope_for_user([])
+
+      assert conn.halted
+      assert redirected_to(conn) == ~p"/users/log-in"
+      refute Accounts.get_user_by_session_token(token)
+    end
+
+    test "keeps a session active within the org timeout (MOS-589)", %{conn: conn, user: user} do
+      token = Accounts.generate_user_session_token(user)
+      # Idle for 5 days — well within the 30-day default.
+      offset_user_token(token, -5, :day)
+
+      conn =
+        conn |> put_session(:user_token, token) |> UserAuth.fetch_current_scope_for_user([])
+
+      refute conn.halted
+      assert conn.assigns.current_scope.user.id == user.id
+    end
+
     test "reissues a new token after a few days and refreshes cookie", %{conn: conn, user: user} do
       logged_in_conn =
         conn |> fetch_cookies() |> UserAuth.log_in_user(user, %{"remember_me" => "true"})
@@ -300,8 +342,8 @@ defmodule FluxWeb.UserAuthTest do
       eleven_minutes_ago = DateTime.utc_now(:second) |> DateTime.add(-11, :minute)
       user = %{user | authenticated_at: eleven_minutes_ago}
       user_token = Accounts.generate_user_session_token(user)
-      {user, token_inserted_at} = Accounts.get_user_by_session_token(user_token)
-      assert DateTime.compare(token_inserted_at, user.authenticated_at) == :gt
+      {user, user_token_struct} = Accounts.get_user_by_session_token(user_token)
+      assert DateTime.compare(user_token_struct.inserted_at, user.authenticated_at) == :gt
       session = conn |> put_session(:user_token, user_token) |> get_session()
 
       socket = %LiveView.Socket{
