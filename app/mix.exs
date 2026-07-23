@@ -107,6 +107,9 @@ defmodule Flux.MixProject do
       {:broadway, "~> 1.0"},
       {:nx, "~> 0.9"},
       {:luerl, "~> 1.2"},
+      # Trustworthy client IP behind proxies + CIDR matching for the IP allowlist
+      {:remote_ip, "~> 1.2"},
+      {:inet_cidr, "~> 1.0"},
       # Testing & Documentation
       {:stream_data, "~> 1.0", only: [:test, :dev]},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
