@@ -2,10 +2,10 @@ defmodule Flux.Security.SecuritySettings do
   @moduledoc """
   Per-organization security settings (MOS-588).
 
-  A single row per organization holding application-layer security policy.
-  Currently: `ip_allowlist`, a list of CIDR ranges allowed to reach the API
-  (empty = no restriction). This table is the shared home for later security
-  policy — session timeout, password policy — added by their own slices.
+  A single row per organization holding application-layer security policy:
+  `ip_allowlist` (CIDR ranges allowed to reach the API; empty = no restriction)
+  and `session_timeout_minutes` (idle session timeout; default 30d, min 1h).
+  This table is the shared home for later security policy (e.g. password policy).
   """
 
   use Ecto.Schema
@@ -15,8 +15,12 @@ defmodule Flux.Security.SecuritySettings do
 
   @type t :: %__MODULE__{}
 
+  # Minimum idle session timeout: 1 hour.
+  @min_session_timeout_minutes 60
+
   schema "security_settings" do
     field :ip_allowlist, {:array, :string}, default: []
+    field :session_timeout_minutes, :integer, default: 43_200
 
     belongs_to :organization, Organization
 
@@ -27,8 +31,11 @@ defmodule Flux.Security.SecuritySettings do
   def changeset(settings, attrs) do
     settings
     # organization_id is set programmatically (via the context), never cast.
-    |> cast(attrs, [:ip_allowlist])
-    |> validate_required([:organization_id])
+    |> cast(attrs, [:ip_allowlist, :session_timeout_minutes])
+    |> validate_required([:organization_id, :session_timeout_minutes])
+    |> validate_number(:session_timeout_minutes,
+      greater_than_or_equal_to: @min_session_timeout_minutes
+    )
     |> normalize_cidrs()
     |> validate_cidrs()
     |> unique_constraint(:organization_id)

@@ -3,17 +3,19 @@ defmodule Flux.Security do
   The Security context: per-organization application-layer security settings
   (MOS-588).
 
-  Currently exposes the IP allowlist — per-org CIDR ranges permitted to reach
-  the authenticated API. An empty allowlist means no restriction. Enforcement
-  lives in `FluxWeb.Plugs.IpAllowlist`; this context owns storage, validation,
-  and the allow/deny decision (`ip_allowed?/2`), with a short-lived cache
-  (`Flux.Security.Cache`) on the hot path.
+  Exposes the IP allowlist — per-org CIDR ranges permitted to reach the
+  authenticated API (empty = no restriction; enforced in
+  `FluxWeb.Plugs.IpAllowlist`) — and the per-org idle **session timeout**
+  (`session_timeout_minutes/1`, enforced in `FluxWeb.UserAuth`). Both hot-path
+  reads are served from a short-lived cache (`Flux.Security.Cache`).
   """
 
   import Ecto.Query, warn: false
 
   alias Flux.Repo
   alias Flux.Security.{Cache, SecuritySettings}
+
+  @default_session_timeout_minutes 43_200
 
   @doc """
   Returns the org's security settings, or an unsaved default (empty allowlist)
@@ -50,7 +52,10 @@ defmodule Flux.Security do
           action: :security_settings_updated,
           resource_type: :organization,
           resource_id: org_id,
-          changes: %{"ip_allowlist" => settings.ip_allowlist}
+          changes: %{
+            "ip_allowlist" => settings.ip_allowlist,
+            "session_timeout_minutes" => settings.session_timeout_minutes
+          }
         })
 
         {:ok, settings}
@@ -67,20 +72,30 @@ defmodule Flux.Security do
   """
   @spec ip_allowed?(term(), :inet.ip_address()) :: boolean()
   def ip_allowed?(org_id, ip) when is_tuple(ip) do
-    case allowlist(org_id) do
+    case cached(org_id).allowlist do
       [] -> true
       cidrs -> Enum.any?(cidrs, &InetCidr.contains?(&1, ip))
     end
   end
 
-  # Parsed CIDR tuples for the org, cached. Invalid stored entries are dropped
-  # defensively (they cannot normally be saved — see the changeset validation).
-  defp allowlist(org_id) do
+  @doc """
+  The org's idle session timeout in minutes (default 30 days). Served from the
+  cache; `nil` org (no organization in scope) yields the default.
+  """
+  @spec session_timeout_minutes(term()) :: pos_integer()
+  def session_timeout_minutes(nil), do: @default_session_timeout_minutes
+  def session_timeout_minutes(org_id), do: cached(org_id).timeout_minutes
+
+  # Cached, derived view of an org's settings for the hot paths: parsed CIDR
+  # tuples + resolved timeout. One DB read populates both; busted on update.
+  defp cached(org_id) do
     Cache.fetch(org_id, fn ->
-      org_id
-      |> get_settings()
-      |> Map.fetch!(:ip_allowlist)
-      |> Enum.flat_map(&parse_cidr/1)
+      settings = get_settings(org_id)
+
+      %{
+        allowlist: Enum.flat_map(settings.ip_allowlist, &parse_cidr/1),
+        timeout_minutes: settings.session_timeout_minutes || @default_session_timeout_minutes
+      }
     end)
   end
 
