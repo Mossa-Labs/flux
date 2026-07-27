@@ -8,8 +8,23 @@
 # Build (context = app/):
 #   docker build -f app/Dockerfile.release -t ghcr.io/mossa-labs/flux/community:latest app/
 #
+# Multi-arch (amd64 + arm64/Graviton/Apple Silicon) needs buildx, and MUST use a
+# native runner per architecture. QEMU emulation does not work: the BEAM fails to
+# boot under it ("failed_to_start_child,user,nouser" at the first `mix` call),
+# which reproduces with the stock hexpm/elixir image and is not specific to this
+# Dockerfile. Build each arch on its own runner and merge the manifests:
+#
+#   # on an amd64 runner, and again on an arm64 runner
+#   docker buildx build -f app/Dockerfile.release \
+#     -t ghcr.io/mossa-labs/flux/community:<version>-$(uname -m) --push app/
+#   docker buildx imagetools create -t ghcr.io/mossa-labs/flux/community:<version> \
+#     ghcr.io/mossa-labs/flux/community:<version>-x86_64 \
+#     ghcr.io/mossa-labs/flux/community:<version>-aarch64
+#
+# Run migrations as a one-shot before starting the app:
+#   bin/flux eval "Flux.Release.migrate()"
+#
 # The plain `app/Dockerfile` remains the local-dev container (runs phx.server).
-# NOTE: this release image is not built/verified in this change.
 
 ARG ELIXIR_VERSION=1.19.4
 ARG OTP_VERSION=28.2
@@ -37,6 +52,11 @@ RUN mix deps.compile
 COPY priv priv
 COPY lib lib
 COPY assets assets
+# Release node-distribution config (rel/env.sh.eex pins RELEASE_NODE). Mix picks
+# `rel/` up as rel_templates_path during `mix release`, so it must be present in
+# the build context — otherwise the release silently ships without it and the
+# node name falls back to the default.
+COPY rel rel
 # JS deps (uplot, React Flow) — assets/node_modules is gitignored, so install
 # in-image rather than relying on the host's copy.
 RUN npm --prefix assets ci
@@ -61,11 +81,15 @@ ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8
 WORKDIR /app
 RUN chown nobody /app
 ENV MIX_ENV=prod
+# config/runtime.exs only starts the endpoint when PHX_SERVER is set, and this
+# release has no generated `bin/server` script — without this the container boots
+# the app with nothing listening on $PORT.
+ENV PHX_SERVER=true
 
 COPY --from=builder --chown=nobody:root /app/_build/prod/rel/flux ./
 
 USER nobody
 
-# Default release boot. (Run migrations via `bin/flux eval "Flux.Release.migrate"`
-# once a release module is added, or an init container.)
+# Default release boot. Run migrations first as a one-shot:
+#   bin/flux eval "Flux.Release.migrate()"
 CMD ["/app/bin/flux", "start"]
