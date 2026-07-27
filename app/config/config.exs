@@ -7,6 +7,20 @@
 # General application configuration
 import Config
 
+# Build identity (MOS-586). Git is unavailable at runtime and `.git` is excluded
+# from the Docker build context, so the revision has to be injected at build time
+# — the release pipeline passes these as Docker build args promoted to ENV.
+# Absent (a laptop build) → "dev", which `Flux.BuildInfo` reports as unreleased so
+# an unreproducible build is obvious rather than passing for a shipped one.
+#
+# Read here rather than in runtime.exs because `Flux.BuildInfo` resolves them with
+# `Application.compile_env/3`: that tracks changes and forces a recompile, whereas
+# a module attribute reading `System.get_env/1` would silently bake a stale SHA.
+config :flux, :build_info,
+  version: Mix.Project.config()[:version],
+  core_sha: System.get_env("FLUX_CORE_SHA"),
+  built_at: System.get_env("FLUX_BUILD_TIME")
+
 config :flux, :scopes,
   accounts_user: [
     default: false,

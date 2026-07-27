@@ -286,7 +286,90 @@ defmodule FluxWeb.SystemSettingsLive do
           No organization in scope. Create or select an organization first.
         </p>
       <% end %>
+
+      <.about_section />
     </div>
+    """
+  end
+
+  # Full build identity, behind auth. The footer carries version + revision for
+  # everyone; the toolchain and exact build time sit here because an
+  # unauthenticated, precisely-versioned instance is easier to match against
+  # published CVEs.
+  defp about_section(assigns) do
+    assigns = assign(assigns, :build, Flux.BuildInfo.to_map())
+
+    ~H"""
+    <section class="card bg-base-100 shadow-sm border border-base-200">
+      <div class="card-body">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 class="card-title text-base-content">About this build</h2>
+            <p class="text-sm text-base-content/60 mt-1">
+              Quote this when contacting support.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-sm btn-ghost gap-2"
+            id="copy-build-info"
+            phx-hook=".CopyBuildInfo"
+            data-build={Flux.BuildInfo.long()}
+          >
+            <.icon name="hero-clipboard-document" class="w-4 h-4" /> Copy
+          </button>
+        </div>
+
+        <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 text-sm">
+          <div class="flex justify-between sm:block">
+            <dt class="text-base-content/60">Edition</dt>
+            <dd class="font-medium text-base-content">{@build.edition}</dd>
+          </div>
+          <div class="flex justify-between sm:block">
+            <dt class="text-base-content/60">Version</dt>
+            <dd class="font-medium text-base-content">{@build.version}</dd>
+          </div>
+          <div class="flex justify-between sm:block">
+            <dt class="text-base-content/60">Core revision</dt>
+            <dd class="font-mono text-xs text-base-content">{@build.core_sha}</dd>
+          </div>
+          <div :if={@build.edition_sha} class="flex justify-between sm:block">
+            <dt class="text-base-content/60">Edition revision</dt>
+            <dd class="font-mono text-xs text-base-content">{@build.edition_sha}</dd>
+          </div>
+          <div class="flex justify-between sm:block">
+            <dt class="text-base-content/60">Toolchain</dt>
+            <dd class="font-medium text-base-content">
+              OTP {@build.otp} / Elixir {@build.elixir}
+            </dd>
+          </div>
+          <div class="flex justify-between sm:block">
+            <dt class="text-base-content/60">Built</dt>
+            <dd class="font-medium text-base-content">{@build.built_at || "—"}</dd>
+          </div>
+        </dl>
+
+        <p :if={not @build.released} class="mt-4 text-xs text-warning">
+          <.icon name="hero-exclamation-triangle" class="w-4 h-4 inline-block align-text-bottom" />
+          This build carries no source revision, so it was not produced by the release
+          pipeline and cannot be reproduced from a tag.
+        </p>
+      </div>
+    </section>
+
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".CopyBuildInfo">
+      export default {
+        mounted() {
+          this.el.addEventListener("click", () => {
+            navigator.clipboard.writeText(this.el.dataset.build).then(() => {
+              const original = this.el.innerHTML
+              this.el.textContent = "Copied"
+              setTimeout(() => { this.el.innerHTML = original }, 1500)
+            })
+          })
+        }
+      }
+    </script>
     """
   end
 

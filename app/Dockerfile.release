@@ -43,6 +43,15 @@ RUN mix local.hex --force && mix local.rebar --force
 
 ENV MIX_ENV=prod
 
+# Build identity (MOS-586). Injected, because git is unavailable at runtime and
+# `.git` is excluded from the build context. Promoted to ENV so config/config.exs
+# can read them at COMPILE time — Flux.BuildInfo resolves them via compile_env.
+# Left unset (a local build) they resolve to "dev" and the build reports itself
+# as unreleased.
+ARG FLUX_CORE_SHA
+ARG FLUX_BUILD_TIME
+ENV FLUX_CORE_SHA=${FLUX_CORE_SHA} FLUX_BUILD_TIME=${FLUX_BUILD_TIME}
+
 COPY mix.exs mix.lock ./
 RUN mix deps.get --only prod
 RUN mkdir config
@@ -85,6 +94,30 @@ ENV MIX_ENV=prod
 # release has no generated `bin/server` script — without this the container boots
 # the app with nothing listening on $PORT.
 ENV PHX_SERVER=true
+
+ARG FLUX_CORE_SHA
+ARG FLUX_BUILD_TIME
+ARG FLUX_VERSION=0.1.0
+
+# os-release-style identity file. Readable with `docker exec cat /etc/flux-release`
+# even when the app will not boot — which is exactly when the build identity is
+# most needed and the running app can no longer report it.
+RUN printf '%s\n' \
+  "FLUX_EDITION=Community" \
+  "FLUX_VERSION=${FLUX_VERSION}" \
+  "FLUX_CORE_SHA=${FLUX_CORE_SHA:-dev}" \
+  "FLUX_BUILD_TIME=${FLUX_BUILD_TIME:-unknown}" \
+  > /etc/flux-release
+
+# Standard OCI annotations: `docker inspect` answers "what is this image?" WITHOUT
+# running the container, which is the only option when triaging a crash-looping
+# deploy or auditing what a customer actually pulled.
+LABEL org.opencontainers.image.title="Flux Community" \
+      org.opencontainers.image.description="Self-hosted ETL/ELT platform (Community Edition)" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.version="${FLUX_VERSION}" \
+      org.opencontainers.image.revision="${FLUX_CORE_SHA}" \
+      org.opencontainers.image.created="${FLUX_BUILD_TIME}"
 
 COPY --from=builder --chown=nobody:root /app/_build/prod/rel/flux ./
 

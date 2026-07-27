@@ -5,8 +5,14 @@ defmodule Flux.Application do
 
   use Application
 
+  require Logger
+
   @impl true
   def start(_type, _args) do
+    # First line in the log identifies the build, so any support log or crash
+    # report answers "which build is this?" without a follow-up round trip.
+    Logger.info("[Flux] starting #{Flux.BuildInfo.long()}")
+
     children = [
       FluxWeb.Telemetry,
       Flux.Repo,
