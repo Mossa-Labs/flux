@@ -54,5 +54,21 @@ defmodule Flux.License.Provider do
   """
   @callback apply_license(token :: String.t()) :: {:ok, license()} | {:error, term()}
 
-  @optional_callbacks entitled?: 1, apply_license: 1
+  @doc """
+  Optional: what each node in the cluster currently has loaded.
+
+  On a multi-node deployment, applying a license is only meaningful cluster-wide —
+  a confirmation from whichever node served the request says nothing about the
+  others. Providers that support clustering report per-node state so the UI can
+  show that a renewal actually landed everywhere; single-node providers omit it
+  and `Flux.License.node_states/0` reports just this node.
+
+  Each entry carries at least `:node` and `:tier`. A node that could not be
+  reached is reported with tier `:unreachable` rather than dropped — during a
+  rolling restart, "we could not ask" and "it is not licensed" mean very
+  different things.
+  """
+  @callback node_states() :: [map()]
+
+  @optional_callbacks entitled?: 1, apply_license: 1, node_states: 0
 end

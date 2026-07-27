@@ -329,8 +329,53 @@ defmodule FluxWeb.SystemSettingsLiveTest do
         |> form("#activate-license-form", license: %{token: "a-signed-token"})
         |> render_submit()
 
-      assert html =~ "Pro activated"
+      assert html =~ "Pro license applied"
+      # Feature gating flips at once but services are wired at boot, so the
+      # operator has to be told the change is not fully live yet.
       assert html =~ "restart"
+    end
+
+    test "on a cluster the message names every node that needs restarting", %{conn: conn} do
+      use_activation_provider()
+
+      Application.put_env(:flux, :test_node_states, [
+        %{node: :"flux@10.0.0.1", tier: :pro, license_id: "lic-1", valid_until: nil},
+        %{node: :"flux@10.0.0.2", tier: :community, license_id: nil, valid_until: nil}
+      ])
+
+      on_exit(fn -> Application.delete_env(:flux, :test_node_states) end)
+
+      {:ok, lv, html} = live(conn, ~p"/system/settings")
+
+      # Per-node state is shown, and the divergence is called out — "applied" on
+      # the node that served the form says nothing about the others.
+      assert html =~ "flux@10.0.0.1"
+      assert html =~ "flux@10.0.0.2"
+      assert html =~ "Not yet consistent"
+
+      applied =
+        lv
+        |> form("#activate-license-form", license: %{token: "a-signed-token"})
+        |> render_submit()
+
+      assert applied =~ "across 2 nodes"
+    end
+
+    test "an unreachable node is reported as such, not as unlicensed", %{conn: conn} do
+      use_activation_provider()
+
+      Application.put_env(:flux, :test_node_states, [
+        %{node: :"flux@10.0.0.1", tier: :pro, license_id: "lic-1", valid_until: nil},
+        %{node: :"flux@10.0.0.2", tier: :unreachable, license_id: nil, valid_until: nil}
+      ])
+
+      on_exit(fn -> Application.delete_env(:flux, :test_node_states) end)
+
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+
+      # During a rolling restart "we could not ask" and "it has no license" send
+      # the operator in different directions.
+      assert html =~ "unreachable"
     end
 
     test "renders a near-expiry banner from the license status", %{conn: conn} do
