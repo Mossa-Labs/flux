@@ -49,12 +49,43 @@ defmodule FluxWeb.Layouts do
       </div>
     </header>
 
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
+    <main class="px-4 pt-20 pb-8 sm:px-6 lg:px-8">
       <div class="mx-auto max-w-2xl space-y-4">
         <.flash_group flash={@flash} />
         {render_slot(@inner_block)}
       </div>
     </main>
+
+    <.build_footer />
+    """
+  end
+
+  @doc """
+  Build identity, rendered small and unobtrusive at the bottom of every page.
+
+  Deliberately always visible: the first question in any support conversation is
+  which build the customer is on, and an answer they can read off the screen beats
+  one that needs shell access. Kept to version + short revision — the full detail
+  (toolchain, build time) lives behind auth in System Settings.
+  """
+  def build_footer(assigns) do
+    assigns = assign(assigns, :build, Flux.BuildInfo)
+
+    ~H"""
+    <footer class="px-4 pb-8 sm:px-6 lg:px-8">
+      <div class="mx-auto max-w-2xl">
+        <p class="text-center text-xs text-base-content/40">
+          {@build.short()}
+          <span
+            :if={not @build.released?()}
+            class="ml-1 text-warning/70"
+            title="Built outside the release pipeline"
+          >
+            · dev build
+          </span>
+        </p>
+      </div>
+    </footer>
     """
   end
 
