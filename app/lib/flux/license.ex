@@ -112,24 +112,6 @@ defmodule Flux.License do
     end
   end
 
-  @doc """
-  Whether the cluster disagrees about the licence it is running.
-
-  True while a change has reached some nodes but not others — which, because
-  service-level changes only take effect on restart, is exactly when an operator
-  needs to be told to finish the rolling restart.
-  """
-  @spec cluster_divergent?() :: boolean()
-  def cluster_divergent? do
-    states = node_states()
-
-    states != [] and
-      states
-      |> Enum.map(&{Map.get(&1, :tier), Map.get(&1, :license_id)})
-      |> Enum.uniq()
-      |> length() > 1
-  end
-
   # `function_exported?/3` does not auto-load the module, so ensure it's loaded
   # before checking (the provider is referenced only as an atom in config).
   defp supports_apply?(mod),
