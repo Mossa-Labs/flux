@@ -35,6 +35,7 @@ defmodule FluxWeb.SystemSettingsLive do
        |> assign(:org_id, org_id)
        |> assign(:rbac_mode, rbac_mode)
        |> assign(:license, load_license())
+       |> assign(:node_states, Flux.License.node_states())
        |> assign(:activation_supported, Flux.License.activation_supported?())
        |> assign(:license_form, to_form(%{"token" => ""}, as: :license))
        |> assign(:teams, teams)
@@ -94,6 +95,23 @@ defmodule FluxWeb.SystemSettingsLive do
 
   defp activate_license(""), do: {:error, :empty}
   defp activate_license(token), do: Flux.License.apply_license(token)
+
+  # Feature gating flips immediately, but services are wired up at boot, so a
+  # tier change is not fully in effect until the node restarts. On a cluster that
+  # means every node — saying "restart the node" would understate the work and
+  # leave the deployment half-changed.
+  defp activation_message(license) do
+    tier = license |> Map.get(:tier, Flux.License.tier()) |> to_string() |> String.capitalize()
+
+    case length(Flux.License.node_states()) do
+      n when n > 1 ->
+        "#{tier} license applied across #{n} nodes — roll a restart of each node to finish " <>
+          "enabling its features."
+
+      _ ->
+        "#{tier} license applied — restart the node to finish enabling its features."
+    end
+  end
 
   defp license_error(:empty), do: "the token is empty"
   defp license_error(:unsupported), do: "activation isn't available in this build"
@@ -190,6 +208,7 @@ defmodule FluxWeb.SystemSettingsLive do
           license={@license}
           activation_supported={@activation_supported}
           license_form={@license_form}
+          node_states={@node_states}
           teams={@teams}
           members={@members}
           rbac_mode={@rbac_mode}
@@ -249,6 +268,7 @@ defmodule FluxWeb.SystemSettingsLive do
         license={@license}
         activation_supported={@activation_supported}
         license_form={@license_form}
+        node_states={@node_states}
       />
 
       <.usage_section enabled={@usage_metering_enabled} usage={@usage} />
@@ -550,6 +570,7 @@ defmodule FluxWeb.SystemSettingsLive do
   attr :license, :map, required: true
   attr :activation_supported, :boolean, default: false
   attr :license_form, :any, default: nil
+  attr :node_states, :list, default: []
 
   defp license_section(assigns) do
     ~H"""
@@ -590,11 +611,62 @@ defmodule FluxWeb.SystemSettingsLive do
           to unlock Pro and Enterprise features.
         </p>
 
+        <.cluster_license_state node_states={@node_states} />
+
         <.activate_license_form :if={@activation_supported} form={@license_form} />
       </div>
     </section>
     """
   end
+
+  attr :node_states, :list, default: []
+
+  # Only meaningful on a cluster. A single-node install already knows its own
+  # state from the badge above, so showing a one-row table there is noise.
+  defp cluster_license_state(assigns) do
+    ~H"""
+    <div :if={length(@node_states) > 1} class="mt-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-base-content/80">Nodes</h3>
+        <span :if={divergent?(@node_states)} class="badge badge-warning badge-sm gap-1">
+          <.icon name="hero-exclamation-triangle" class="w-3 h-3" /> Not yet consistent
+        </span>
+      </div>
+
+      <p :if={divergent?(@node_states)} class="mt-1 text-xs text-base-content/60">
+        These nodes are not all running the same license yet. Feature gating follows
+        the license immediately, but services are wired up at boot — finish the
+        rolling restart so every node matches.
+      </p>
+
+      <ul class="mt-2 divide-y divide-base-200 rounded-md border border-base-200">
+        <li :for={n <- @node_states} class="flex items-center justify-between px-3 py-2 text-sm">
+          <span class="font-mono text-xs text-base-content/70">{n.node}</span>
+          <span class={[
+            "badge badge-sm capitalize",
+            node_tier_class(Map.get(n, :tier))
+          ]}>
+            {Map.get(n, :tier)}
+          </span>
+        </li>
+      </ul>
+    </div>
+    """
+  end
+
+  defp divergent?(node_states) do
+    node_states
+    |> Enum.map(&{Map.get(&1, :tier), Map.get(&1, :license_id)})
+    |> Enum.uniq()
+    |> length() > 1
+  end
+
+  # An unreachable node is called out rather than shown as unlicensed: during a
+  # rolling restart "we could not ask" and "it has no license" are different
+  # problems, and conflating them sends the operator the wrong way.
+  defp node_tier_class(:unreachable), do: "badge-ghost text-base-content/50"
+  defp node_tier_class(:community), do: "badge-ghost"
+  defp node_tier_class(_), do: "badge-success"
 
   attr :license, :map, required: true
 
@@ -1272,11 +1344,9 @@ defmodule FluxWeb.SystemSettingsLive do
         {:noreply,
          socket
          |> assign(:license, Map.put_new(license, :tier, Flux.License.tier()))
+         |> assign(:node_states, Flux.License.node_states())
          |> assign(:license_form, to_form(%{"token" => ""}, as: :license))
-         |> put_flash(
-           :info,
-           "Pro activated — restart the node to finish enabling all Pro features."
-         )}
+         |> put_flash(:info, activation_message(license))}
 
       {:error, reason} ->
         {:noreply,

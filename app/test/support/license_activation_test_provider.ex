@@ -7,6 +7,9 @@ defmodule Flux.LicenseActivationTestProvider do
       and `status/0` (default: a Pro license with `status: :active`).
     * `:test_activation_result` — the `apply_license/1` return value
       (default: `{:ok, <license>}`).
+    * `:test_node_states` — the `node_states/0` list, for exercising the
+      cluster-aware UI (default: unset, so the callback is absent and
+      `Flux.License.node_states/0` falls back to reporting this node).
 
   Tests using it MUST be `async: false` (it swaps the global provider config).
   """
@@ -33,4 +36,12 @@ defmodule Flux.LicenseActivationTestProvider do
     do: Application.get_env(:flux, :test_activation_result, {:ok, license_map()})
 
   defp license_map, do: Application.get_env(:flux, :test_activation_license, @default)
+
+  # Only answers when a test opts in, so the default provider still exercises the
+  # single-node fallback in `Flux.License.node_states/0`.
+  @impl Flux.License.Provider
+  def node_states do
+    Application.get_env(:flux, :test_node_states) ||
+      [%{node: node(), tier: license_map().tier, license_id: nil, valid_until: nil}]
+  end
 end
