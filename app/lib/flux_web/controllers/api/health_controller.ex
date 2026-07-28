@@ -58,10 +58,13 @@ defmodule FluxWeb.API.HealthController do
     end
   end
 
-  defp version do
-    case Application.spec(:flux, :vsn) do
-      nil -> "unknown"
-      vsn -> to_string(vsn)
-    end
-  end
+  # `Flux.BuildInfo`, not `Application.spec(:flux, :vsn)`. The latter reports the
+  # core application's version, which in a layered build is not the version of the
+  # thing the customer installed — so /health disagreed with the image tag, the
+  # OCI labels, /etc/flux-release and the UI footer. One identity, one source.
+  #
+  # Deliberately version only, no revision: this endpoint is unauthenticated, and
+  # an exact build is easier to match against published CVEs. The full detail
+  # lives behind auth in System Settings.
+  defp version, do: Flux.BuildInfo.version()
 end
