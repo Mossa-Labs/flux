@@ -1,0 +1,149 @@
+name: Release (flux Community)
+
+# Publishes the Community image from a tag (MOS-586).
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# The package inherits this repository's visibility, so while the repo is private
+# the image is private too. Opening it later is a visibility toggle on the
+# package rather than new pipeline work — which is the point of publishing it now
+# instead of waiting: the path is proven before anyone depends on it.
+#
+# ONE ARCH PER NATIVE RUNNER, then a manifest merge. QEMU is not an option: the
+# BEAM fails to boot under it ("failed_to_start_child,user,nouser" at the first
+# `mix` call), which reproduces with the stock hexpm/elixir image and is a
+# platform limitation rather than something the Dockerfile can fix.
+#
+# Simpler than the edition's pipeline: this builds from its own source, so there
+# is no SSH key, no git dependency and no pinned revision to resolve.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (no leading v), e.g. 0.2.0-rc1"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/mossa-labs/flux/community
+
+jobs:
+  build:
+    strategy:
+      # Never publish a half-built manifest: if one architecture fails, the other
+      # must not be tagged and merged on its own.
+      fail-fast: true
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+
+          {
+            echo "version=$VERSION"
+            echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Building $VERSION for ${{ matrix.arch }}"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.arch }}
+        uses: docker/build-push-action@v6
+        with:
+          # Context is app/ — the mix project lives there, not at the repo root.
+          context: ./app
+          file: ./app/Dockerfile.release
+          push: true
+          tags: ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}-${{ matrix.arch }}
+          provenance: false
+          build-args: |
+            FLUX_CORE_SHA=${{ github.sha }}
+            FLUX_BUILD_TIME=${{ steps.meta.outputs.built_at }}
+            FLUX_VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Resolve version
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compose the multi-arch manifest
+        env:
+          V: ${{ steps.meta.outputs.version }}
+        run: |
+          docker buildx imagetools create -t "$IMAGE:$V" \
+            "$IMAGE:$V-amd64" "$IMAGE:$V-arm64"
+
+          # `latest` only ever moves for a real release. A -rc / -beta build is
+          # pullable by its exact version but must not become the default tag.
+          case "$V" in
+            *-*) echo "Pre-release $V — leaving :latest where it is" ;;
+            *)
+              docker buildx imagetools create -t "$IMAGE:latest" \
+                "$IMAGE:$V-amd64" "$IMAGE:$V-arm64"
+              ;;
+          esac
+
+      - name: Verify the published manifest
+        env:
+          V: ${{ steps.meta.outputs.version }}
+        run: |
+          echo "## Published \`$IMAGE:$V\`" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          docker buildx imagetools inspect "$IMAGE:$V" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          # A manifest missing an architecture is worse than a failed build: it
+          # publishes something that will be pulled and found unrunnable.
+          for arch in amd64 arm64; do
+            docker buildx imagetools inspect "$IMAGE:$V" \
+              | grep -q "linux/$arch" || { echo "::error::manifest is missing linux/$arch"; exit 1; }
+          done

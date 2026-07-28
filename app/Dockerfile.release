@@ -82,6 +82,10 @@ FROM ${RUNNER_IMAGE}
 
 RUN apt-get update -y \
   && apt-get install -y libstdc++6 openssl libncurses6 locales ca-certificates \
+  `# curl: a container healthcheck and any k8s/ECS probe need an HTTP client.` \
+  `# ubuntu:noble ships none, so a healthcheck against /health fails forever` \
+  `# and the container reports unhealthy while serving traffic perfectly well.` \
+  curl \
   && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
