@@ -11,9 +11,9 @@ defmodule Flux.Observability.SchemaFingerprint do
   This module is intentionally dumb: it derives the sorted set of
   `{key, value_type}` pairs and hashes it with `:erlang.phash2/1`. It makes **no**
   judgement about drift — it does not compare fingerprints, score severity, or
-  emit alerts. All of that is proprietary and lives in `flux_pro`. Keep it that
-  way: if this grows comparison or scoring logic, that logic belongs in the Pro
-  edition, not here.
+  emit alerts. All of that is proprietary and belongs to the Pro edition. Keep it
+  that way: if this grows comparison or scoring logic, that logic belongs there,
+  not here.
 
   Only top-level keys are considered; nested maps contribute their `:map` type but
   not their inner shape. This keeps the fingerprint cheap and stable while still

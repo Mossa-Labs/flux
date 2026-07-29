@@ -3,8 +3,8 @@ defmodule Flux.Pipeline.Supervision do
   Seam over pipeline process supervision and registration.
 
   The Community (`:flux`) build uses `Flux.Pipeline.Supervision.Local` — a plain
-  `Registry` + `DynamicSupervisor`, single node only. The Pro build (`flux_pro`)
-  swaps in a Horde-backed distributed implementation by overriding the config:
+  `Registry` + `DynamicSupervisor`, single node only. The Pro build swaps in a
+  Horde-backed distributed implementation by overriding the config:
 
       config :flux, Flux.Pipeline.Supervision, impl: Flux.Pipeline.Supervision.Distributed
 

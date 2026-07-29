@@ -4,24 +4,24 @@ name: Release (flux Community)
 #
 #   git tag v0.2.0 && git push origin v0.2.0
 #
-# The package inherits this repository's visibility, so while the repo is private
-# the image is private too. Opening it later is a visibility toggle on the
-# package rather than new pipeline work — which is the point of publishing it now
-# instead of waiting: the path is proven before anyone depends on it.
+# The published package inherits this repository's visibility, so the image is as
+# public or private as the repo is. Changing that later is a visibility toggle on
+# the package rather than new pipeline work.
 #
 # ONE ARCH PER NATIVE RUNNER, then a manifest merge. QEMU is not an option: the
 # BEAM fails to boot under it ("failed_to_start_child,user,nouser" at the first
 # `mix` call), which reproduces with the stock hexpm/elixir image and is a
 # platform limitation rather than something the Dockerfile can fix.
 #
-# Simpler than the edition's pipeline: this builds from its own source, so there
-# is no SSH key, no git dependency and no pinned revision to resolve.
+# Everything is built from this repository's own source: no SSH key, no git
+# dependency and no pinned external revision to resolve, so a release is
+# reproducible from its tag alone.
 #
 # THIRD-PARTY ACTIONS ARE PINNED BY COMMIT SHA, not by tag. A tag is mutable: the
 # owner (or anyone who compromises the account) can repoint it, and the next
-# release would silently run different code inside the job holding `packages:
-# write` and the deploy key. The trailing `# v4` comments record the intended
-# version for humans; only the SHA is authoritative.
+# release would silently run different code inside a job holding `packages:
+# write`. The trailing `# v4` comments record the intended version for humans;
+# only the SHA is authoritative.
 
 on:
   push:

@@ -1,7 +1,7 @@
 defmodule Flux.PasswordPolicyTestProvider do
   @moduledoc """
-  Test-only password policy provider for exercising the enforcement seam in the
-  public repo (the real Enterprise provider lives in flux-ee).
+  Test-only password policy provider for exercising the enforcement seam here.
+  The real Enterprise provider is supplied at runtime by the commercial edition.
 
   Behaviour is driven by `config :flux, :test_password_policy`, a keyword list:
 
