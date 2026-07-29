@@ -140,8 +140,8 @@ config :flux, Oban,
 config :flux, Flux.Audit, retention_days: 90
 
 # Pipeline supervision backend. The Community edition is single-node only.
-# The Pro build (flux_pro) overrides this with the Horde-backed distributed
-# backend to enable horizontal scaling / HA.
+# The Pro build overrides this with a Horde-backed distributed backend to enable
+# horizontal scaling / HA.
 config :flux, Flux.Pipeline.Supervision, impl: Flux.Pipeline.Supervision.Local
 
 # Abuse-protection safety valve (MOS-450), cross-tier / not license-gated:

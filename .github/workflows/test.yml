@@ -39,6 +39,26 @@ jobs:
         working-directory: .
         run: scripts/gen_ai_context.sh --check
 
+      # Runs before the build, and on every PR, because the cost of catching this
+      # late is asymmetric: this repository is public and Apache-2.0, so a
+      # reference to the private edition that reaches the published history
+      # cannot be retracted from anyone's clone (MOS-595).
+      - name: Check for references to the private edition
+        working-directory: .
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # On a PR, also scan the commit MESSAGES being merged. A message is as
+          # public as a file and far harder to fix afterwards — amending a merged
+          # commit rewrites every SHA after it. The commit that first removed
+          # these references quoted them in its own message, and a files-only
+          # check passed it.
+          if [ -n "$BASE" ]; then
+            scripts/check_no_private_refs.sh "$BASE..HEAD"
+          else
+            scripts/check_no_private_refs.sh
+          fi
+
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:

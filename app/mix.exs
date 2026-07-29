@@ -166,6 +166,9 @@ defmodule Flux.MixProject do
         "deps.unlock --unused",
         "format",
         "cmd ../scripts/gen_ai_context.sh --check",
+        # This repo is public and Apache-2.0; a reference to the private edition
+        # cannot be retracted once it is in a published history (MOS-595).
+        "cmd ../scripts/check_no_private_refs.sh",
         "test"
       ]
     ]
