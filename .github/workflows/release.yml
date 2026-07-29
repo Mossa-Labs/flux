@@ -113,6 +113,31 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
+      # The version appears in four places and nothing ever compared them, so
+      # 0.2.1 published an image whose label said 0.2.1 while the app, the boot
+      # log and /app/releases/ all said 0.2.0. They had only ever agreed by
+      # coincidence — mix.exs happened to carry the same number — so the defect
+      # was invisible until a release actually changed the version.
+      #
+      # No BEAM boot and no database needed: all three reads are static.
+      - name: Verify the image reports the version it is tagged with
+        env:
+          REF: ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}-${{ matrix.arch }}
+          V: ${{ steps.meta.outputs.version }}
+        run: |
+          LABEL="$(docker buildx imagetools inspect --format \
+            '{{ index .Image.Config.Labels "org.opencontainers.image.version" }}' "$REF")"
+          FILE="$(docker run --rm --entrypoint sh "$REF" -c '. /etc/flux-release; printf %s "$FLUX_VERSION"')"
+          REL="$(docker run --rm --entrypoint awk "$REF" '{print $2}' /app/releases/start_erl.data)"
+
+          echo "tag=$V  label=$LABEL  /etc/flux-release=$FILE  release=$REL"
+
+          fail=0
+          [ "$LABEL" = "$V" ] || { echo "::error::OCI label '$LABEL' != tag '$V'"; fail=1; }
+          [ "$FILE"  = "$V" ] || { echo "::error::/etc/flux-release '$FILE' != tag '$V'"; fail=1; }
+          [ "$REL"   = "$V" ] || { echo "::error::image boots release '$REL', tag is '$V'"; fail=1; }
+          exit $fail
+
   manifest:
     needs: build
     runs-on: ubuntu-latest

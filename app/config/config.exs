@@ -16,10 +16,26 @@ import Config
 # Read here rather than in runtime.exs because `Flux.BuildInfo` resolves them with
 # `Application.compile_env/3`: that tracks changes and forces a recompile, whereas
 # a module attribute reading `System.get_env/1` would silently bake a stale SHA.
+#
+# Blank is not the same as absent. `ENV FOO=${BAR}` with an undeclared build arg
+# sets FOO to the EMPTY STRING, and "" is truthy in Elixir — so `get(...) || "dev"`
+# kept the "", and every arg-less build reported itself as a *release* with a
+# blank revision (`Flux Enterprise 0.2.0 ()`, plus a dangling "built " in long/0).
+# Normalise blank to nil so the "dev" fallback actually fires.
+build_env = fn name ->
+  case String.trim(System.get_env(name) || "") do
+    "" -> nil
+    value -> value
+  end
+end
+
 config :flux, :build_info,
+  # Not read from the environment here: `mix.exs` already resolves FLUX_VERSION,
+  # and going through the project version keeps the app, the OTP release
+  # directory and RELEASE_VSN on one number (MOS-596).
   version: Mix.Project.config()[:version],
-  core_sha: System.get_env("FLUX_CORE_SHA"),
-  built_at: System.get_env("FLUX_BUILD_TIME")
+  core_sha: build_env.("FLUX_CORE_SHA"),
+  built_at: build_env.("FLUX_BUILD_TIME")
 
 config :flux, :scopes,
   accounts_user: [
