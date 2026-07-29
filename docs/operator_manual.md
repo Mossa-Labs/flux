@@ -218,7 +218,10 @@ MIX_ENV=prod mix release
 | `PORT` | No | HTTP port (default: `4000`) |
 | `POOL_SIZE` | No | Database connection pool size (default: `10`) |
 | `ECTO_IPV6` | No | Set to `true` or `1` to enable IPv6 for database connections |
-| `DNS_CLUSTER_QUERY` | No | DNS query for cluster node discovery |
+| `DNS_CLUSTER_QUERY` | No | DNS query for cluster node discovery. Read in every build, but only takes effect when a clustering backend is active — see [Architecture](#architecture) |
+| `RELEASE_NODE` | No | Overrides this node's name. Derived from the host address otherwise; the booted name is recorded so `bin/flux rpc`/`remote`/`stop` reach the running node |
+| `POD_IP` | No | Host/pod address used to build the node name when `RELEASE_NODE` is unset. Kubernetes can inject it via `fieldRef` |
+| `RELEASE_COOKIE` | No | Shared distribution secret. **Set it explicitly for any multi-node deployment** — otherwise each build bakes a random cookie and separately-built images cannot connect |
 | `FLUX_VAULT_KEY` | No | Dedicated key for encrypting sink secrets at rest. If unset, derived from `SECRET_KEY_BASE`. See [Secret Encryption at Rest](#secret-encryption-at-rest) |
 | `FLUX_TRUSTED_PROXIES` | No | Comma-separated reverse-proxy CIDRs. Required for the IP allowlist to see the real client IP behind a load balancer. See [IP Allowlist](#ip-allowlist) |
 
@@ -300,7 +303,20 @@ graph TB
     style OBAN fill:#d97706,color:#fff
 ```
 
-Flux forms a cluster across nodes for high availability: the engine distributes pipeline supervision with Horde and aggregates metrics cluster-wide. Use `DNS_CLUSTER_QUERY` to enable automatic node discovery.
+Pipeline supervision sits behind a seam (`Flux.Pipeline.Supervision`). This build
+ships the single-node implementation: pipelines are supervised by a local
+`Registry` and `DynamicSupervisor`, and it does **not** cluster. Multi-node high
+availability — distributed supervision, DNS-based cluster formation and
+cluster-wide metric aggregation — is a paid capability supplied at runtime by the
+commercial edition.
+
+`DNS_CLUSTER_QUERY` is read in every build but has no effect unless a clustering
+backend is active, so setting it here changes nothing.
+
+> **Do not run two nodes of this build against one database.** Without
+> distributed supervision there is no cluster-wide singleton, so each node
+> independently starts every enabled pipeline — polling sources would ingest the
+> same data twice.
 
 ---
 

@@ -358,7 +358,102 @@ defmodule FluxWeb.SystemSettingsLiveTest do
         |> form("#activate-license-form", license: %{token: "a-signed-token"})
         |> render_submit()
 
-      assert applied =~ "across 2 nodes"
+      assert applied =~ "restart every Flux node"
+    end
+
+    test "tells a single visible node to restart every node anyway", %{conn: conn} do
+      use_activation_provider()
+
+      # THE REGRESSION TEST. This used to say "restart the node", singular, and it
+      # said it precisely when it was most wrong: cluster formation is a licensed
+      # capability, so a multi-node deployment being licensed for the first time
+      # has not clustered yet and reports exactly one node. The operator would
+      # restart one of three and wonder why nothing changed.
+      Application.put_env(:flux, :test_node_states, [
+        %{node: :"flux@10.0.0.1", tier: :enterprise, license_id: "abc", valid_until: nil}
+      ])
+
+      {:ok, lv, _} = live(conn, ~p"/system/settings")
+
+      applied =
+        lv
+        |> form("#activate-license-form", license: %{token: "a-signed-token"})
+        |> render_submit()
+
+      assert applied =~ "restart every Flux node"
+      refute applied =~ "restart the node to finish"
+    end
+
+    test "says so when fewer nodes are reachable than are licensed", %{conn: conn} do
+      use_activation_provider()
+
+      # Licensed for 3, only 1 has restarted and joined. Previously the table hid
+      # itself at one row, so this said nothing at all — the operator had no way to
+      # tell "my other nodes have not picked this up" from "everything is fine".
+      Application.put_env(:flux, :test_activation_license, %{
+        tier: :enterprise,
+        features: [],
+        org: "Acme",
+        valid_until: nil,
+        node_count: 3,
+        status: :active
+      })
+
+      Application.put_env(:flux, :test_node_states, [
+        %{node: :"flux@10.0.0.1", tier: :enterprise, license_id: "abc", valid_until: nil}
+      ])
+
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+
+      assert html =~ "Licensed for 3 nodes"
+      assert html =~ "1 currently reachable"
+    end
+
+    test "stays quiet for a single-node license on a single node", %{conn: conn} do
+      use_activation_provider()
+
+      # No shortfall and nothing to compare, so the table would be pure noise —
+      # the badge above already reports this node's tier.
+      Application.put_env(:flux, :test_activation_license, %{
+        tier: :pro,
+        features: [],
+        org: "Acme",
+        valid_until: nil,
+        node_count: 1,
+        status: :active
+      })
+
+      Application.put_env(:flux, :test_node_states, [
+        %{node: :"flux@10.0.0.1", tier: :pro, license_id: "abc", valid_until: nil}
+      ])
+
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+
+      refute html =~ "currently reachable"
+      refute html =~ ~s(<h3 class="text-sm font-semibold text-base-content/80">Nodes</h3>)
+    end
+
+    test "an unlimited license never reports a shortfall", %{conn: conn} do
+      use_activation_provider()
+
+      # node_count nil means unlimited. A naive `node_count > length(...)` would
+      # compare nil and blow up, or treat it as zero and hide the table forever.
+      Application.put_env(:flux, :test_activation_license, %{
+        tier: :enterprise,
+        features: [],
+        org: "Acme",
+        valid_until: nil,
+        node_count: nil,
+        status: :active
+      })
+
+      Application.put_env(:flux, :test_node_states, [
+        %{node: :"flux@10.0.0.1", tier: :enterprise, license_id: "abc", valid_until: nil}
+      ])
+
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+
+      refute html =~ "currently reachable"
     end
 
     test "an unreachable node is reported as such, not as unlicensed", %{conn: conn} do
