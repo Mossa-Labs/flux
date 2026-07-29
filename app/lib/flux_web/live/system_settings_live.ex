@@ -96,21 +96,22 @@ defmodule FluxWeb.SystemSettingsLive do
   defp activate_license(""), do: {:error, :empty}
   defp activate_license(token), do: Flux.License.apply_license(token)
 
-  # Feature gating flips immediately, but services are wired up at boot, so a
-  # tier change is not fully in effect until the node restarts. On a cluster that
-  # means every node — saying "restart the node" would understate the work and
-  # leave the deployment half-changed.
+  # Feature gating flips immediately, but services are wired up at boot, so a tier
+  # change is not fully in effect until every node restarts.
+  #
+  # Do NOT branch on how many nodes are visible. That count is what this node can
+  # currently SEE, and on a first activation it can see nothing: cluster formation
+  # is itself a licensed capability, so nodes that have never been licensed have
+  # not connected and each reports a cluster of one. Branching on it produced
+  # exactly the wrong advice — "restart the node", singular — on precisely the
+  # deployments where every node needs restarting.
+  #
+  # "Every node" is true at every size, so it needs no condition.
   defp activation_message(license) do
     tier = license |> Map.get(:tier, Flux.License.tier()) |> to_string() |> String.capitalize()
 
-    case length(Flux.License.node_states()) do
-      n when n > 1 ->
-        "#{tier} license applied across #{n} nodes — roll a restart of each node to finish " <>
-          "enabling its features."
-
-      _ ->
-        "#{tier} license applied — restart the node to finish enabling its features."
-    end
+    "#{tier} license applied — restart every Flux node to finish enabling its features. " <>
+      "On a multi-node deployment that means all of them, including this one."
   end
 
   defp license_error(:empty), do: "the token is empty"
@@ -611,7 +612,10 @@ defmodule FluxWeb.SystemSettingsLive do
           to unlock Pro and Enterprise features.
         </p>
 
-        <.cluster_license_state node_states={@node_states} />
+        <.cluster_license_state
+          node_states={@node_states}
+          node_count={Map.get(@license, :node_count)}
+        />
 
         <.activate_license_form :if={@activation_supported} form={@license_form} />
       </div>
@@ -619,13 +623,35 @@ defmodule FluxWeb.SystemSettingsLive do
     """
   end
 
-  attr :node_states, :list, default: []
+  # Shown when there is more than one node to compare, OR when the license covers
+  # more nodes than are currently reachable.
+  #
+  # That second case is the one that used to be invisible. Cluster formation is a
+  # licensed capability, so a freshly-licensed multi-node deployment reports
+  # exactly one node until each has restarted — and a table that hid itself at one
+  # row turned "your other nodes have not picked this up yet" into silence.
+  #
+  # A single-node install with a single-node license still shows nothing: the badge
+  # above already says everything, and a one-row table would be noise.
+  defp show_cluster_state?(node_states, node_count) do
+    length(node_states) > 1 or
+      (is_integer(node_count) and node_count > length(node_states))
+  end
 
-  # Only meaningful on a cluster. A single-node install already knows its own
-  # state from the badge above, so showing a one-row table there is noise.
+  # `node_count` is nil for an unlimited license — the is_integer/1 guard keeps
+  # that out of the comparison rather than treating it as zero.
+  defp node_shortfall(node_states, node_count) do
+    if is_integer(node_count) and node_count > length(node_states) do
+      {node_count, length(node_states)}
+    end
+  end
+
+  attr :node_states, :list, default: []
+  attr :node_count, :any, default: nil
+
   defp cluster_license_state(assigns) do
     ~H"""
-    <div :if={length(@node_states) > 1} class="mt-4">
+    <div :if={show_cluster_state?(@node_states, @node_count)} class="mt-4">
       <div class="flex items-center justify-between">
         <h3 class="text-sm font-semibold text-base-content/80">Nodes</h3>
         <span :if={divergent?(@node_states)} class="badge badge-warning badge-sm gap-1">
@@ -637,6 +663,18 @@ defmodule FluxWeb.SystemSettingsLive do
         These nodes are not all running the same license yet. Feature gating follows
         the license immediately, but services are wired up at boot — finish the
         rolling restart so every node matches.
+      </p>
+
+      <%!--
+      Distinct from the divergence warning above: that one means the nodes we can
+      see disagree, this one means we cannot see all the nodes we are licensed for.
+      A node that has not restarted since activation has not joined the cluster, so
+      it is absent rather than inconsistent.
+      --%>
+      <p :if={shortfall = node_shortfall(@node_states, @node_count)} class="mt-1 text-xs text-warning">
+        Licensed for {elem(shortfall, 0)} nodes; {elem(shortfall, 1)} currently reachable.
+        A node that has not restarted since the license was applied does not join the
+        cluster and will not appear here.
       </p>
 
       <ul class="mt-2 divide-y divide-base-200 rounded-md border border-base-200">
