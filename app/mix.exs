@@ -1,10 +1,28 @@
 defmodule Flux.MixProject do
   use Mix.Project
 
+  # The release tag drives the version (MOS-586/MOS-596). This value does more
+  # than label the app: it names the OTP release directory (`/app/releases/<vsn>`)
+  # and sets RELEASE_VSN. An image tagged 0.2.1 previously shipped a release
+  # directory called 0.2.0, because the tag reached the image's labels and
+  # /etc/flux-release but never reached the compiler.
+  #
+  # Injecting it here rather than overriding `:build_info` downstream is what
+  # keeps those surfaces from drifting apart again — they all derive from this
+  # one value.
+  #
+  # The `case` rather than `||`: Docker's `ENV FOO=${BAR}` with an undeclared
+  # build arg sets FOO to the EMPTY STRING, and "" is truthy in Elixir, so `||`
+  # would stamp a blank version on every local build.
+  @version (case String.trim(System.get_env("FLUX_VERSION") || "") do
+              "" -> "0.2.0"
+              version -> version
+            end)
+
   def project do
     [
       app: :flux,
-      version: "0.2.0",
+      version: @version,
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,

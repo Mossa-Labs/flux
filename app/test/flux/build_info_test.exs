@@ -29,6 +29,27 @@ defmodule Flux.BuildInfoTest do
       assert BuildInfo.core_sha() == "dev"
       refute BuildInfo.released?()
     end
+
+    test "a blank injected value counts as absent, not as a release" do
+      # Docker's `ENV FOO=${BAR}` with an undeclared build arg sets FOO to "",
+      # and "" is truthy in Elixir — so `get(...) || "dev"` used to keep the ""
+      # and every arg-less image claimed released?() == true with a blank
+      # revision (MOS-596). config.exs normalises blank to nil; assert the
+      # invariant here because this suite's environment cannot reproduce the
+      # empty-string case directly.
+      refute BuildInfo.core_sha() == ""
+      refute BuildInfo.built_at() == ""
+    end
+  end
+
+  describe "version/0" do
+    test "reports the project version, which is also the OTP release version" do
+      # The version must not be sourced separately from mix.exs: it names the
+      # release directory and RELEASE_VSN too, so a second source would let
+      # /health and /app/releases/<vsn> disagree (MOS-596). mix.exs resolves
+      # FLUX_VERSION; everything downstream reads it through here.
+      assert BuildInfo.version() == Mix.Project.config()[:version]
+    end
   end
 
   describe "short/0 and long/0" do
