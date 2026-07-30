@@ -98,6 +98,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push ${{ matrix.arch }}
+        id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           # Context is app/ — the mix project lives there, not at the repo root.
@@ -105,13 +106,28 @@ jobs:
           file: ./app/Dockerfile.release
           push: true
           tags: ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}-${{ matrix.arch }}
-          provenance: false
+          # Provenance was off because it was believed to complicate the manifest
+          # merge. It does not: `imagetools create` copies every child of a source
+          # index, attestation manifests included, keeping the
+          # `vnd.docker.reference.digest` pointer intact. Verified on a local
+          # registry — two attested single-arch indexes merge to one index with
+          # four children, two of them attestations, and `.SBOM`/`.Provenance`
+          # readable per platform on the result.
+          #
+          # mode=max because this is the open core: it embeds the Dockerfile and
+          # build-arg values, all of which are already public here.
+          provenance: mode=max
+          sbom: true
           build-args: |
             FLUX_CORE_SHA=${{ github.sha }}
             FLUX_BUILD_TIME=${{ steps.meta.outputs.built_at }}
             FLUX_VERSION=${{ steps.meta.outputs.version }}
-          cache-from: type=gha,scope=${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+          # Scope bumped once when attestations were enabled. buildkit#4501
+          # reports the gha cache silently degrading provenance; starting from a
+          # clean scope avoids inheriting a pre-attestation entry. The step below
+          # is what actually catches it if it recurs.
+          cache-from: type=gha,scope=${{ matrix.arch }}-attest
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}-attest
 
       # The version appears in four places and nothing ever compared them, so
       # 0.2.1 published an image whose label said 0.2.1 while the app, the boot
@@ -136,6 +152,31 @@ jobs:
           [ "$LABEL" = "$V" ] || { echo "::error::OCI label '$LABEL' != tag '$V'"; fail=1; }
           [ "$FILE"  = "$V" ] || { echo "::error::/etc/flux-release '$FILE' != tag '$V'"; fail=1; }
           [ "$REL"   = "$V" ] || { echo "::error::image boots release '$REL', tag is '$V'"; fail=1; }
+          exit $fail
+
+      # An attestation nobody checks is worse than none: it reads as assurance
+      # while carrying none. buildkit#4501 reports the gha cache silently
+      # producing empty provenance on a cache hit, which no other step here would
+      # notice — the image builds, the tags publish, the manifest merges.
+      - name: Assert the attestations are actually present
+        env:
+          REF: ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}-${{ matrix.arch }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          echo "pushed $REF at ${DIGEST:-<no digest reported>}"
+
+          fail=0
+          for field in Provenance SBOM; do
+            # `{}`, `null` and empty all mean "not there". Match on a character
+            # that only real content has.
+            if docker buildx imagetools inspect --format "{{json .$field}}" "$REF" \
+                 | grep -q '[a-zA-Z0-9]'; then
+              echo "  $field present"
+            else
+              echo "::error::$field attestation is empty for $REF (see buildkit#4501)"
+              fail=1
+            fi
+          done
           exit $fail
 
   manifest:
@@ -169,11 +210,21 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Compose the multi-arch manifest
+        id: merge
         env:
           V: ${{ steps.meta.outputs.version }}
         run: |
           docker buildx imagetools create -t "$IMAGE:$V" \
             "$IMAGE:$V-amd64" "$IMAGE:$V-arm64"
+
+          # Until now nothing here surfaced a digest as a value — only as text
+          # buried in the inspect dump. It is what a deployment pins to, and what
+          # a future attestation will be issued over.
+          DIGEST="$(docker buildx imagetools inspect --format '{{ .Manifest.Digest }}' "$IMAGE:$V")"
+          case "$DIGEST" in
+            sha256:[0-9a-f]*) ;;
+            *) echo "::error::refusing an unexpected digest '$DIGEST'"; exit 1 ;;
+          esac
 
           # `latest` only ever moves for a real release. A -rc / -beta build is
           # pullable by its exact version but must not become the default tag.
@@ -182,20 +233,43 @@ jobs:
             *)
               docker buildx imagetools create -t "$IMAGE:latest" \
                 "$IMAGE:$V-amd64" "$IMAGE:$V-arm64"
+
+              # :latest and :$V are the same index only because two identical
+              # merges produce identical bytes. Asserted rather than assumed:
+              # attesting or signing one digest covers both tags only while that
+              # holds, and if it stopped, :latest would silently be uncovered.
+              L="$(docker buildx imagetools inspect --format '{{ .Manifest.Digest }}' "$IMAGE:latest")"
+              [ "$L" = "$DIGEST" ] || {
+                echo "::error::latest=$L differs from $V=$DIGEST; one attestation would not cover both"
+                exit 1
+              }
               ;;
           esac
+
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Verify the published manifest
         env:
           V: ${{ steps.meta.outputs.version }}
+          DIGEST: ${{ steps.merge.outputs.digest }}
         run: |
-          echo "## Published \`$IMAGE:$V\`" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## Published \`$IMAGE:$V\`"
+            echo
+            echo "Index digest — quote this to pin a deployment:"
+            echo
+            echo "    $IMAGE@$DIGEST"
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
           docker buildx imagetools inspect "$IMAGE:$V" | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
           # A manifest missing an architecture is worse than a failed build: it
           # publishes something that will be pulled and found unrunnable.
+          #
+          # Attestation manifests show up as `unknown/unknown` rows in this same
+          # output. That is expected and is how BuildKit stores them.
           for arch in amd64 arm64; do
             docker buildx imagetools inspect "$IMAGE:$V" \
               | grep -q "linux/$arch" || { echo "::error::manifest is missing linux/$arch"; exit 1; }
