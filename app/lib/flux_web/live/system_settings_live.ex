@@ -36,6 +36,7 @@ defmodule FluxWeb.SystemSettingsLive do
        |> assign(:rbac_mode, rbac_mode)
        |> assign(:license, load_license())
        |> assign(:node_states, Flux.License.node_states())
+       |> assign(:node_capacity, Flux.License.node_capacity())
        |> assign(:activation_supported, Flux.License.activation_supported?())
        |> assign(:license_form, to_form(%{"token" => ""}, as: :license))
        |> assign(:teams, teams)
@@ -210,6 +211,7 @@ defmodule FluxWeb.SystemSettingsLive do
           activation_supported={@activation_supported}
           license_form={@license_form}
           node_states={@node_states}
+          node_capacity={@node_capacity}
           teams={@teams}
           members={@members}
           rbac_mode={@rbac_mode}
@@ -270,6 +272,7 @@ defmodule FluxWeb.SystemSettingsLive do
         activation_supported={@activation_supported}
         license_form={@license_form}
         node_states={@node_states}
+        node_capacity={@node_capacity}
       />
 
       <.usage_section enabled={@usage_metering_enabled} usage={@usage} />
@@ -572,6 +575,7 @@ defmodule FluxWeb.SystemSettingsLive do
   attr :activation_supported, :boolean, default: false
   attr :license_form, :any, default: nil
   attr :node_states, :list, default: []
+  attr :node_capacity, :any, default: nil
 
   defp license_section(assigns) do
     ~H"""
@@ -615,6 +619,7 @@ defmodule FluxWeb.SystemSettingsLive do
         <.cluster_license_state
           node_states={@node_states}
           node_count={Map.get(@license, :node_count)}
+          node_capacity={@node_capacity}
         />
 
         <.activate_license_form :if={@activation_supported} form={@license_form} />
@@ -633,10 +638,22 @@ defmodule FluxWeb.SystemSettingsLive do
   #
   # A single-node install with a single-node license still shows nothing: the badge
   # above already says everything, and a one-row table would be noise.
-  defp show_cluster_state?(node_states, node_count) do
+  defp show_cluster_state?(node_states, node_count, node_capacity) do
     length(node_states) > 1 or
-      (is_integer(node_count) and node_count > length(node_states))
+      (is_integer(node_count) and node_count > length(node_states)) or
+      over_capacity?(node_capacity)
   end
+
+  # Whether the deployment is over its licensed node count is the PROVIDER's
+  # verdict, not a comparison made here. Editions that do not cap nodes report
+  # nil, and so does an uncapped license, so both render as "nothing to say".
+  #
+  # Deliberately not `capacity.live > capacity.licensed`: what counts as a node
+  # is a licensing question, and a second comparison in the UI is a second
+  # definition — one that would eventually disagree with the one that writes the
+  # log line. Render the verdict; do not re-derive it.
+  defp over_capacity?(%{over?: true}), do: true
+  defp over_capacity?(_), do: false
 
   # `node_count` is nil for an unlimited license — the is_integer/1 guard keeps
   # that out of the comparison rather than treating it as zero.
@@ -648,12 +665,22 @@ defmodule FluxWeb.SystemSettingsLive do
 
   attr :node_states, :list, default: []
   attr :node_count, :any, default: nil
+  attr :node_capacity, :any, default: nil
 
   defp cluster_license_state(assigns) do
     ~H"""
-    <div :if={show_cluster_state?(@node_states, @node_count)} class="mt-4">
+    <div
+      :if={show_cluster_state?(@node_states, @node_count, @node_capacity)}
+      id="cluster-license-state"
+      class="mt-4"
+    >
       <div class="flex items-center justify-between">
-        <h3 class="text-sm font-semibold text-base-content/80">Nodes</h3>
+        <h3 class="text-sm font-semibold text-base-content/80">
+          Nodes
+          <span :if={@node_capacity} class="ml-1 font-normal text-base-content/60">
+            {@node_capacity.live} of {@node_capacity.licensed}
+          </span>
+        </h3>
         <span :if={divergent?(@node_states)} class="badge badge-warning badge-sm gap-1">
           <.icon name="hero-exclamation-triangle" class="w-3 h-3" /> Not yet consistent
         </span>
@@ -675,6 +702,20 @@ defmodule FluxWeb.SystemSettingsLive do
         Licensed for {elem(shortfall, 0)} nodes; {elem(shortfall, 1)} currently reachable.
         A node that has not restarted since the license was applied does not join the
         cluster and will not appear here.
+      </p>
+
+      <%!--
+      The mirror of the shortfall above: that one means we cannot see every node
+      we are licensed for, this one means we can see more than we are licensed
+      for. Warning-toned rather than an error banner on purpose — nothing is
+      broken, and Flux keeps running; this is a commercial state, not an outage.
+      --%>
+      <p :if={over_capacity?(@node_capacity)} class="mt-1 text-xs text-warning">
+        Running {@node_capacity.live} nodes on a license for {@node_capacity.licensed}.
+        Flux keeps running, but this is an unsupported configuration — reduce to {@node_capacity.licensed} nodes or <.link
+          href="https://fluxdata.tech/pricing"
+          class="link"
+        >extend your license</.link>.
       </p>
 
       <ul class="mt-2 divide-y divide-base-200 rounded-md border border-base-200">
@@ -1383,6 +1424,7 @@ defmodule FluxWeb.SystemSettingsLive do
          socket
          |> assign(:license, Map.put_new(license, :tier, Flux.License.tier()))
          |> assign(:node_states, Flux.License.node_states())
+         |> assign(:node_capacity, Flux.License.node_capacity())
          |> assign(:license_form, to_form(%{"token" => ""}, as: :license))
          |> put_flash(:info, activation_message(license))}
 

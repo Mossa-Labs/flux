@@ -22,6 +22,16 @@ defmodule Flux.License.Provider do
   downgrade on `:expired` is a separate concern.
   """
   @type status :: :active | :near_expiry | :grace | :expired
+  @typedoc """
+  How many nodes are running against how many the license covers.
+
+  `:live` and `:licensed` are counts; `:over?` is the provider's verdict, not a
+  comparison for the caller to redo. Reporting the verdict rather than letting
+  each reader compare the two counts is deliberate: what counts as a node, and
+  what to do about `nil`, are the provider's business, and a second comparison
+  elsewhere is a second definition waiting to disagree with the first.
+  """
+  @type capacity :: %{live: pos_integer(), licensed: pos_integer(), over?: boolean()}
   @type license :: %{
           optional(:tier) => tier(),
           optional(:features) => [feature()],
@@ -70,5 +80,20 @@ defmodule Flux.License.Provider do
   """
   @callback node_states() :: [map()]
 
-  @optional_callbacks entitled?: 1, apply_license: 1, node_states: 0
+  @doc """
+  Optional: how many nodes are running against how many the license covers, or
+  `nil` when this edition has no node cap to report.
+
+  Editions that are single-node by construction have nothing to say here and
+  omit the callback; `Flux.License.node_capacity/0` then reports `nil` and the
+  UI stays silent. A provider that *does* cap nodes also returns `nil` when a
+  particular license is uncapped, so "unlimited" and "not applicable" render
+  identically rather than needing a sentinel the UI has to know about.
+
+  Whether the deployment is over its cap is the provider's verdict — see
+  `t:capacity/0`. Callers render it; they do not recompute it.
+  """
+  @callback node_capacity() :: capacity() | nil
+
+  @optional_callbacks entitled?: 1, apply_license: 1, node_states: 0, node_capacity: 0
 end
