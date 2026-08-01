@@ -112,6 +112,27 @@ defmodule Flux.License do
     end
   end
 
+  @doc """
+  How many nodes are running against how many the license covers, or `nil` when
+  there is no cap to report.
+
+  `nil` is the answer for a build that is single-node by construction, and also
+  for an uncapped license — so "not applicable" and "unlimited" look the same to
+  a caller, which is what they want, because neither is something to warn about.
+
+  The provider decides what counts as a node and whether the deployment is over
+  its cap; this returns that verdict verbatim. Do not re-derive `over?` by
+  comparing the counts — see `t:Flux.License.Provider.capacity/0`.
+  """
+  @spec node_capacity() :: Flux.License.Provider.capacity() | nil
+  def node_capacity do
+    mod = provider()
+
+    if Code.ensure_loaded?(mod) and function_exported?(mod, :node_capacity, 0) do
+      mod.node_capacity()
+    end
+  end
+
   # `function_exported?/3` does not auto-load the module, so ensure it's loaded
   # before checking (the provider is referenced only as an atom in config).
   defp supports_apply?(mod),

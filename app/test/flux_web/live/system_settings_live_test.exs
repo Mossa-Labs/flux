@@ -430,7 +430,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/system/settings")
 
       refute html =~ "currently reachable"
-      refute html =~ ~s(<h3 class="text-sm font-semibold text-base-content/80">Nodes</h3>)
+      refute html =~ ~s(id="cluster-license-state")
     end
 
     test "an unlimited license never reports a shortfall", %{conn: conn} do
@@ -473,6 +473,88 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       assert html =~ "unreachable"
     end
 
+    # The counts and the over/under verdict come from the provider, never from a
+    # comparison made in the LiveView — so these tests set the VERDICT, not two
+    # numbers for the page to compare. A test that set `live: 3, licensed: 2` and
+    # expected the warning would be asserting the wrong thing: it would pass just
+    # as happily against a UI that had reinvented the threshold locally.
+    test "says so when more nodes are running than are licensed", %{conn: conn} do
+      use_activation_provider()
+
+      Application.put_env(:flux, :test_node_capacity, %{live: 3, licensed: 2, over?: true})
+
+      Application.put_env(:flux, :test_node_states, [
+        %{node: :"flux@10.0.0.1", tier: :enterprise, license_id: "abc", valid_until: nil},
+        %{node: :"flux@10.0.0.2", tier: :enterprise, license_id: "abc", valid_until: nil},
+        %{node: :"flux@10.0.0.3", tier: :enterprise, license_id: "abc", valid_until: nil}
+      ])
+
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+
+      assert html =~ "Running 3 nodes on a license for 2"
+      assert html =~ "3 of 2"
+    end
+
+    # The anti-false-alarm test. A cluster sitting exactly at its limit is the
+    # normal state of a correctly-licensed deployment, and it is also the state a
+    # rolling restart passes through — so a warning here would fire on precisely
+    # the deployments that are behaving correctly. This case must stay silent.
+    test "an at-limit cluster is not reported as over", %{conn: conn} do
+      use_activation_provider()
+
+      Application.put_env(:flux, :test_node_capacity, %{live: 2, licensed: 2, over?: false})
+
+      Application.put_env(:flux, :test_node_states, [
+        %{node: :"flux@10.0.0.1", tier: :enterprise, license_id: "abc", valid_until: nil},
+        %{node: :"flux@10.0.0.2", tier: :enterprise, license_id: "abc", valid_until: nil}
+      ])
+
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+
+      refute html =~ "unsupported configuration"
+      refute html =~ "Running 2 nodes on a license for"
+      # The counts are still shown — knowing you are at 2 of 2 is what tells an
+      # operator whether they may add another node.
+      assert html =~ "2 of 2"
+    end
+
+    test "reports nothing about capacity when the provider has no cap", %{conn: conn} do
+      use_activation_provider()
+
+      # `node_capacity/0` returning nil is both "this build does not cap nodes"
+      # and "this license is uncapped". Neither is worth a warning, and neither
+      # should print a count against an unknown denominator.
+      Application.put_env(:flux, :test_node_states, [
+        %{node: :"flux@10.0.0.1", tier: :enterprise, license_id: "abc", valid_until: nil},
+        %{node: :"flux@10.0.0.2", tier: :enterprise, license_id: "abc", valid_until: nil},
+        %{node: :"flux@10.0.0.3", tier: :enterprise, license_id: "abc", valid_until: nil}
+      ])
+
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+
+      refute html =~ "unsupported configuration"
+      refute html =~ "on a license for"
+      # The roster itself still renders — three nodes is worth seeing.
+      assert html =~ ~s(id="cluster-license-state")
+    end
+
+    test "an over-capacity single node still surfaces the notice", %{conn: conn} do
+      use_activation_provider()
+
+      # Guards against tying the notice to `length(node_states) > 1`. A one-node
+      # license breached by a second node that this node cannot yet reach still
+      # leaves the roster at one row.
+      Application.put_env(:flux, :test_node_capacity, %{live: 2, licensed: 1, over?: true})
+
+      Application.put_env(:flux, :test_node_states, [
+        %{node: :"flux@10.0.0.1", tier: :pro, license_id: "abc", valid_until: nil}
+      ])
+
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+
+      assert html =~ "Running 2 nodes on a license for 1"
+    end
+
     test "renders a near-expiry banner from the license status", %{conn: conn} do
       use_activation_provider()
       soon = DateTime.add(DateTime.utc_now(), 10 * 24 * 3600, :second)
@@ -502,6 +584,10 @@ defmodule FluxWeb.SystemSettingsLiveTest do
         else: Application.delete_env(:flux, Flux.License)
 
       Application.delete_env(:flux, :test_activation_license)
+      # These leak across tests otherwise: they are read by the provider on every
+      # mount, so one test's roster silently becomes the next test's fixture.
+      Application.delete_env(:flux, :test_node_states)
+      Application.delete_env(:flux, :test_node_capacity)
     end)
   end
 end
