@@ -2,11 +2,8 @@
   <%!-- Header matching dashboard navbar --%>
   <div class="navbar bg-base-100/80 backdrop-blur-md border-b border-base-200 flex-shrink-0 relative z-[100]">
     <div class="flex-none pl-4">
-      <.link navigate={~p"/pipelines"} class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold">
-          F
-        </div>
-        <span class="text-2xl font-black tracking-tighter text-base-content">FLUX</span>
+      <.link navigate={~p"/pipelines"}>
+        <Brand.brand_mark />
       </.link>
     </div>
     <div class="flex-1 px-4">

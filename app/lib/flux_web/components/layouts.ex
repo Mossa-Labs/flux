@@ -5,6 +5,8 @@ defmodule FluxWeb.Layouts do
   """
   use FluxWeb, :html
 
+  alias FluxWeb.Components.Brand
+
   # Embed all files in layouts/* within this module.
   # The default root.html.heex file contains the HTML
   # skeleton of your application, namely HTML headers
@@ -37,11 +39,8 @@ defmodule FluxWeb.Layouts do
     ~H"""
     <header class="navbar px-4 sm:px-6 lg:px-8">
       <div class="flex-1">
-        <a href="/" class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold">
-            F
-          </div>
-          <span class="text-2xl font-black tracking-tighter text-base-content">FLUX</span>
+        <a href="/">
+          <Brand.brand_mark />
         </a>
       </div>
       <div class="flex-none">
