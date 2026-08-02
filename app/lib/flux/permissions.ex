@@ -55,6 +55,8 @@ defmodule Flux.Permissions do
       {:view_system_settings, _} -> role == "owner"
       # Security settings — IP allowlist etc. (owner only)
       {:manage_security_settings, _} -> role == "owner"
+      # White-label branding (owner only) — Enterprise-gated at the LiveView layer
+      {:manage_branding, _} -> role == "owner"
       # Audit log (owner only) — Enterprise-gated at the LiveView/API layer
       {:view_audit_log, _} -> role == "owner"
       # Fallback: deny unknown actions

@@ -7,6 +7,27 @@ defmodule FluxWeb.Layouts do
 
   alias FluxWeb.Components.Brand
 
+  @doc """
+  The branding for the current render.
+
+  Three sources, in order, because the three layouts are reached three different
+  ways:
+
+    * an explicit `:branding` assign — set by `FluxWeb.Plugs.Branding` for the
+      root layout, and by `FluxWeb.UserAuth`'s on_mount for the live layouts;
+    * otherwise derived from `:current_scope`, which is what `app/1` has to do:
+      it is a function component and sees only its declared attrs, never the
+      LiveView's assigns;
+    * otherwise the deployment's branding, which covers signed-out pages.
+
+  Never raises. The root layout also serves error views and anything rendered
+  outside the `:browser` pipeline, where neither assign exists — a 500 page that
+  crashes on a missing assign is a bad 500 page.
+  """
+  def branding(assigns) do
+    assigns[:branding] || Flux.Branding.for_scope(assigns[:current_scope])
+  end
+
   # Embed all files in layouts/* within this module.
   # The default root.html.heex file contains the HTML
   # skeleton of your application, namely HTML headers
@@ -40,7 +61,7 @@ defmodule FluxWeb.Layouts do
     <header class="navbar px-4 sm:px-6 lg:px-8">
       <div class="flex-1">
         <a href="/">
-          <Brand.brand_mark />
+          <Brand.brand_mark branding={branding(assigns)} />
         </a>
       </div>
       <div class="flex-none">

@@ -9,35 +9,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
 
   describe "owner access" do
     setup :register_and_log_in_user
-
-    setup %{user: user} do
-      # The scope from register_and_log_in_user resolves via team_centric fallback
-      # which may pick the wrong org in async tests. We must create a team + membership
-      # so that Scope.for_user resolves the user's own org and gets "owner" role.
-      org =
-        Flux.Structure.Organization
-        |> where([o], o.user_id == ^user.id)
-        |> order_by([o], asc: o.inserted_at)
-        |> limit(1)
-        |> Flux.Repo.one!()
-
-      owner_scope = %Flux.Accounts.Scope{
-        user: user,
-        organization_id: org.id,
-        organization_role: "owner"
-      }
-
-      {:ok, team} = Flux.Structure.create_team(owner_scope, %{name: "Default Team"})
-
-      {:ok, own_membership} =
-        Flux.Structure.create_team_member(%{
-          user_id: user.id,
-          team_id: team.id,
-          role: "admin"
-        })
-
-      %{team: team, owner_scope: owner_scope, own_membership: own_membership}
-    end
+    setup :establish_owner_scope
 
     test "owner can access and sees 'System Settings' heading", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/system/settings")
@@ -574,6 +546,111 @@ defmodule FluxWeb.SystemSettingsLiveTest do
   end
 
   # Swap in the activation-capable provider for one test, restoring afterwards.
+  describe "branding" do
+    setup :register_and_log_in_user
+    setup :establish_owner_scope
+
+    setup do
+      # put_license_tier/1 does NOT restore itself — it hands back the prior state
+      # to pair with reset_license/1. Without this the tier leaks into every later
+      # test in the run, which is how the Community case below started seeing an
+      # Enterprise form.
+      prior_license =
+        {Application.get_env(:flux, Flux.License), Application.get_env(:flux, :test_license_tier)}
+
+      on_exit(fn ->
+        Flux.LicenseHelpers.reset_license(prior_license)
+        Flux.Branding.Registry.set_active(Flux.Branding.Providers.Community)
+        Application.delete_env(:flux, :test_branding_theme)
+      end)
+    end
+
+    defp use_branding_provider(theme) do
+      Application.put_env(:flux, :test_branding_theme, theme)
+      Flux.Branding.Registry.set_active(Flux.BrandingTestProvider)
+    end
+
+    test "Community sees an upgrade prompt, not a form", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+
+      assert html =~ "White-label branding"
+      refute html =~ ~s(id="branding-form")
+    end
+
+    test "an entitled deployment gets the form, seeded with current branding", %{conn: conn} do
+      Flux.LicenseHelpers.put_license_tier(:enterprise)
+      use_branding_provider(%Flux.Branding.Theme{brand_name: "Acme", primary_color: "#ff0000"})
+
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+
+      assert html =~ ~s(id="branding-form")
+      assert html =~ "Acme"
+      assert html =~ "#ff0000"
+    end
+
+    test "saving reports that colours need a reload", %{conn: conn} do
+      # The chrome re-reads branding only on a full page load, so a flash that
+      # implied it had already changed everywhere would be a small lie.
+      Flux.LicenseHelpers.put_license_tier(:enterprise)
+      use_branding_provider(%Flux.Branding.Theme{brand_name: "Acme"})
+
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      html =
+        lv
+        |> form("#branding-form", branding: %{brand_name: "Acme", primary_color: "#112233"})
+        |> render_submit()
+
+      assert html =~ "Reload"
+    end
+
+    test "a lapsed entitlement refuses the write even with the form posted", %{conn: conn} do
+      # The section is hidden on Community, but hiding a form is not an access
+      # control — the event can still be pushed over the socket.
+      Flux.LicenseHelpers.put_license_tier(:enterprise)
+      use_branding_provider(%Flux.Branding.Theme{brand_name: "Acme"})
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      Flux.LicenseHelpers.put_license_tier(:community)
+
+      html =
+        lv
+        |> with_target("#branding-form")
+        |> render_submit("save_branding", %{branding: %{brand_name: "Pirate"}})
+
+      assert html =~ "requires Flux Enterprise"
+    end
+  end
+
+  # The scope from register_and_log_in_user resolves via the team_centric fallback,
+  # which may pick the wrong org in async tests. Creating a team + membership makes
+  # Scope.for_user resolve the user's own org with the "owner" role.
+  defp establish_owner_scope(%{user: user}) do
+    org =
+      Flux.Structure.Organization
+      |> where([o], o.user_id == ^user.id)
+      |> order_by([o], asc: o.inserted_at)
+      |> limit(1)
+      |> Flux.Repo.one!()
+
+    owner_scope = %Flux.Accounts.Scope{
+      user: user,
+      organization_id: org.id,
+      organization_role: "owner"
+    }
+
+    {:ok, team} = Flux.Structure.create_team(owner_scope, %{name: "Default Team"})
+
+    {:ok, own_membership} =
+      Flux.Structure.create_team_member(%{
+        user_id: user.id,
+        team_id: team.id,
+        role: "admin"
+      })
+
+    %{team: team, owner_scope: owner_scope, own_membership: own_membership}
+  end
+
   defp use_activation_provider do
     prev = Application.get_env(:flux, Flux.License)
     Application.put_env(:flux, Flux.License, provider: Flux.LicenseActivationTestProvider)
