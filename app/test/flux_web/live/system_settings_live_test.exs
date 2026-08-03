@@ -604,6 +604,101 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       assert html =~ "Reload"
     end
 
+    test "uploads a logo through the real upload path", %{conn: conn} do
+      Flux.LicenseHelpers.put_license_tier(:enterprise)
+
+      use_branding_provider(%Flux.Branding.Theme{
+        brand_name: "Acme",
+        logo_digest: "newdigest00"
+      })
+
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      # A real 1x1 PNG as an inline binary — no fixture file to drift or go
+      # missing, and readable by anyone reviewing this.
+      png =
+        <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A>> <>
+          <<0, 0, 0, 13, "IHDR", 1::32, 1::32>> <>
+          <<0, 0, 0, 0, "IEND", 0xAE, 0x42, 0x60, 0x82>>
+
+      logo =
+        file_input(lv, "#branding-form", :logo, [
+          %{name: "acme.png", content: png, type: "image/png"}
+        ])
+
+      assert render_upload(logo, "acme.png") =~ "Acme"
+
+      html =
+        lv
+        |> form("#branding-form", branding: %{brand_name: "Acme", primary_color: "#112233"})
+        |> render_submit()
+
+      assert html =~ "Branding updated"
+    end
+
+    test "reports why a rejected image was rejected", %{conn: conn} do
+      # The provider decides; the form's job is to say what it said rather than
+      # a generic failure.
+      Flux.LicenseHelpers.put_license_tier(:enterprise)
+      use_branding_provider(%Flux.Branding.Theme{brand_name: "Acme"})
+
+      Application.put_env(
+        :flux,
+        :test_branding_put_asset_result,
+        {:error, [{:logo, "must be a PNG image"}]}
+      )
+
+      on_exit(fn -> Application.delete_env(:flux, :test_branding_put_asset_result) end)
+
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      png = <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A>> <> <<0::64>>
+
+      logo =
+        file_input(lv, "#branding-form", :logo, [
+          %{name: "bad.png", content: png, type: "image/png"}
+        ])
+
+      render_upload(logo, "bad.png")
+
+      html =
+        lv
+        |> form("#branding-form", branding: %{brand_name: "Acme"})
+        |> render_submit()
+
+      assert html =~ "must be a PNG image"
+    end
+
+    test "editing text alone never touches the logo", %{conn: conn} do
+      # No staged entry must mean "leave the logo alone", not "store nothing over
+      # it" — otherwise renaming the brand silently wipes the image.
+      #
+      # Asserting the digest survived would prove nothing here: the fake provider
+      # returns the same theme either way. So put_asset is rigged to fail, and
+      # the assertion is that the save SUCCEEDED — which is only possible if it
+      # was never called.
+      Flux.LicenseHelpers.put_license_tier(:enterprise)
+      use_branding_provider(%Flux.Branding.Theme{brand_name: "Acme", logo_digest: "keepme00"})
+
+      Application.put_env(
+        :flux,
+        :test_branding_put_asset_result,
+        {:error, [{:logo, "SHOULD NOT HAVE BEEN CALLED"}]}
+      )
+
+      on_exit(fn -> Application.delete_env(:flux, :test_branding_put_asset_result) end)
+
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      html =
+        lv
+        |> form("#branding-form", branding: %{brand_name: "Renamed"})
+        |> render_submit()
+
+      assert html =~ "Branding updated"
+      refute html =~ "SHOULD NOT HAVE BEEN CALLED"
+    end
+
     test "a lapsed entitlement refuses the write even with the form posted", %{conn: conn} do
       # The section is hidden on Community, but hiding a form is not an access
       # control — the event can still be pushed over the socket.

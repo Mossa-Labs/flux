@@ -16,6 +16,50 @@ defmodule FluxWeb.BrandingController do
   alias Flux.Branding.Theme
 
   @doc """
+  The custom logo.
+
+  Every header here is doing a job, and the first two are the ones that matter:
+
+    * **`content-type`** comes from the provider's verdict on the bytes, never
+      from anything an uploader declared. Serving attacker bytes under a
+      scriptable type is the whole risk this endpoint carries.
+    * **`x-content-type-options: nosniff`** stops a browser second-guessing that
+      type. Without it a PNG that is really HTML can still be executed. Set here
+      *and* by the pipeline's `put_secure_browser_headers` — deliberately
+      redundant, because this response must carry it even if a future change
+      trims that pipeline for being asset-only. Neither line is dead; removing
+      just one leaves the header in place, which is the point.
+    * **`content-disposition`** names the file ourselves. The uploaded name is
+      never stored, let alone echoed — CR/LF and quotes in that header are their
+      own injection class, and we have no use for the original name.
+    * **`content-security-policy: default-src 'none'; sandbox`** is belt and
+      braces: even if something got through and a browser were talked into
+      treating it as a document, it can do nothing.
+  """
+  def logo(conn, %{"digest" => requested}) do
+    case Flux.Branding.asset(deployment_org_id(), :logo) do
+      {:ok, bytes, content_type, digest} ->
+        conn
+        |> put_resp_content_type(content_type)
+        |> put_resp_header("x-content-type-options", "nosniff")
+        |> put_resp_header("content-disposition", ~s(inline; filename="logo.png"))
+        |> put_resp_header("content-security-policy", "default-src 'none'; sandbox")
+        |> put_resp_header("etag", ~s("#{digest}"))
+        |> put_cache_headers(requested == digest)
+        |> send_resp(200, bytes)
+
+      :none ->
+        # No logo, or entitlement lapsed since the page was rendered. A 404 is
+        # right here rather than a stock image: the markup only asks for this
+        # URL when a logo exists, so this is genuinely "gone", and a placeholder
+        # would be cached in its place.
+        conn
+        |> put_resp_header("cache-control", "no-store")
+        |> send_resp(404, "")
+    end
+  end
+
+  @doc """
   The accent-colour override.
 
   Rebuilt from the caller's current theme rather than from the digest — the
@@ -50,6 +94,11 @@ defmodule FluxWeb.BrandingController do
       |> send_resp(200, "")
     end
   end
+
+  # Same reasoning as the stylesheet: this route skips the :browser pipeline, so
+  # there is no session to resolve an organization from, and the deployment's is
+  # the answer consistent with the documented single-org assumption.
+  defp deployment_org_id, do: Flux.Branding.provider().deployment_org_id()
 
   # Re-validated here, at the point of output, and not only where it was written.
   # A hand-edited row, a bad migration or some future bulk-import path must not be
