@@ -85,6 +85,30 @@ defmodule Flux.Branding do
   def for_scope(_), do: for_deployment()
 
   @doc """
+  The display name outbound mail should come from, or `nil` to leave the
+  operator's configured name alone.
+
+  Only a *customised* name is returned. The stock brand name is the uppercase
+  wordmark (`FLUX`), which is right in the chrome and wrong in a `From:` header —
+  an unbranded deployment would start shouting at its own users. So this reports
+  nothing unless someone actually set a name.
+
+  The **address** is never branded: relays reject senders they are not
+  authorised for, so it has to stay whatever the operator configured. Only the
+  display name changes.
+
+  Resolved from the deployment's organization rather than the recipient's,
+  because a notifier knows who it is emailing but not on whose behalf — see the
+  module note on the single-organization assumption.
+  """
+  @spec mail_from_name() :: String.t() | nil
+  def mail_from_name do
+    name = for_deployment().brand_name
+
+    if name != Theme.default().brand_name, do: name
+  end
+
+  @doc """
   Stores branding for an organization.
 
   `{:error, [{field, message}]}` on rejection — a keyword list rather than a

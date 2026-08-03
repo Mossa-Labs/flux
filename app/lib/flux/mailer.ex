@@ -39,8 +39,18 @@ defmodule Flux.Mailer do
     config = Application.get_env(:flux, :mail_from, [])
 
     case presence(config[:address]) do
-      nil -> nil
-      address -> {presence(config[:name]) || @default_from_name, address}
+      nil ->
+        nil
+
+      address ->
+        # White-label branding overrides the display name when a deployment has
+        # set one. The address deliberately does not change: relays reject a
+        # sender they are not authorised for, so it stays what the operator
+        # configured, and only the name a recipient sees is branded.
+        name =
+          Flux.Branding.mail_from_name() || presence(config[:name]) || @default_from_name
+
+        {name, address}
     end
   end
 
