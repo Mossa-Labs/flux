@@ -376,6 +376,14 @@ defmodule FluxWeb.UserAuth do
         Scope.for_user(user)
       end)
 
+    # Every on_mount hook funnels through here, so this one line covers the live
+    # layouts. The root layout is served by the plug instead — conn assigns are
+    # not available to a connected LiveView.
+    socket =
+      Phoenix.Component.assign_new(socket, :branding, fn ->
+        Flux.Branding.for_scope(socket.assigns[:current_scope])
+      end)
+
     put_audit_context(socket)
     socket
   end

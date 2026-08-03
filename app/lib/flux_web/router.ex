@@ -12,6 +12,9 @@ defmodule FluxWeb.Router do
     plug(:protect_from_forgery)
     plug(:put_secure_browser_headers)
     plug(:fetch_current_scope_for_user)
+    # After the scope, so an authenticated request brands from its own org and a
+    # signed-out one falls back to the deployment's.
+    plug(FluxWeb.Plugs.Branding)
   end
 
   pipeline :api do
@@ -32,6 +35,22 @@ defmodule FluxWeb.Router do
     pipe_through(:browser)
 
     get("/", PageController, :home)
+  end
+
+  # Branding assets (MOS-483). Deliberately NOT :browser — that pipeline fetches a
+  # session and resolves the current user from a token, i.e. a database round-trip
+  # on an asset requested by every page load, including the sign-in page where
+  # there is no session to fetch. Content-addressed URLs, so responses cache
+  # immutably.
+  pipeline :branding_asset do
+    plug(:accepts, ["css", "png", "html"])
+    plug(:put_secure_browser_headers)
+  end
+
+  scope "/branding", FluxWeb do
+    pipe_through(:branding_asset)
+
+    get("/theme/:digest", BrandingController, :theme)
   end
 
   # Unauthenticated health probe (for load balancers).

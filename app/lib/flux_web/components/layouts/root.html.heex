@@ -4,9 +4,32 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
-    <.live_title default="Flux" suffix=" · Flux">
+    <.live_title
+      default={branding(assigns).brand_name}
+      suffix={" · " <> branding(assigns).brand_name}
+    >
       {assigns[:page_title]}
     </.live_title>
+    <%!--
+    Declared rather than left to the /favicon.ico convention: without a tag there
+    is nothing for a custom favicon to override, and the browser's implicit
+    request cannot be pointed elsewhere.
+    --%>
+    <link rel="icon" href={~p"/favicon.ico"} sizes="any" />
+    <%!--
+    The accent override, served rather than inlined. A <style> block would work
+    today (no CSP is configured) but breaks the day one arrives, and this is
+    content-addressed so it caches forever. Absent entirely for stock branding —
+    the compiled stylesheet is already correct, so a default install pays nothing.
+
+    Render-blocking by virtue of being in <head>, which is what avoids a flash of
+    the default colour.
+    --%>
+    <link
+      :if={Flux.Branding.Theme.custom_color?(branding(assigns))}
+      rel="stylesheet"
+      href={~p"/branding/theme/#{Flux.Branding.Theme.color_digest(branding(assigns))}"}
+    />
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>

@@ -11,6 +11,7 @@ defmodule FluxWeb.SystemSettingsLive do
   alias Flux.Security
   alias Flux.Structure
   alias Flux.Structure.{OrganizationMember, Team, TeamMember}
+  alias FluxWeb.Components.Brand
   alias FluxWeb.Components.UpgradePrompt
 
   @redirect_after_ms 20_000
@@ -50,6 +51,8 @@ defmodule FluxWeb.SystemSettingsLive do
        |> assign(:api_key_scopes_enabled, Flux.License.has_feature?(:api_key_scopes))
        |> assign(:password_policy_enabled, Flux.License.has_feature?(:password_policy))
        |> assign(:mfa_enforcement_enabled, Flux.License.has_feature?(:mfa_enforcement))
+       |> assign(:branding_enabled, Flux.Branding.entitled?())
+       |> assign_branding(org_id)
        |> assign(:usage_metering_enabled, usage_metering_enabled?())
        |> assign(:usage, load_usage(org_id))
        |> assign_security_settings(org_id)
@@ -154,6 +157,83 @@ defmodule FluxWeb.SystemSettingsLive do
     |> assign(:security_error, nil)
   end
 
+  attr :enabled, :boolean, required: true
+  attr :branding, :map, required: true
+  attr :form, :any, required: true
+
+  defp branding_section(assigns) do
+    ~H"""
+    <section class="card bg-base-100 shadow-sm border border-base-200">
+      <div class="card-body">
+        <h2 class="card-title text-base font-bold">
+          <.icon name="hero-paint-brush" class="w-5 h-5" /> Branding
+        </h2>
+        <p class="text-sm text-base-content/60">
+          Replace the Flux name and accent colour with your own.
+        </p>
+
+        <%= if @enabled do %>
+          <.form for={@form} id="branding-form" phx-submit="save_branding" class="mt-2 space-y-3">
+            <.input field={@form[:brand_name]} type="text" label="Brand name" maxlength="40" />
+            <.input
+              field={@form[:primary_color]}
+              type="color"
+              label="Accent colour"
+            />
+            <.input
+              field={@form[:login_message]}
+              type="textarea"
+              label="Sign-in message"
+              placeholder="Shown to everyone on the sign-in page"
+            />
+
+            <%!--
+            A preview rather than a live preview. The chrome only re-reads
+            branding on a full page load, so showing the saved result here is
+            honest; animating it as you type would imply the header updates too.
+            --%>
+            <div class="rounded-lg border border-base-200 p-3">
+              <p class="text-xs text-base-content/60 mb-2">Currently applied</p>
+              <Brand.brand_mark branding={@branding} />
+            </div>
+
+            <p class="text-xs text-base-content/60">
+              The accent colour and icon apply on the next full page load.
+            </p>
+
+            <.button class="btn btn-primary btn-sm">Save branding</.button>
+          </.form>
+        <% else %>
+          <UpgradePrompt.upgrade_prompt feature={:white_label} size={:compact} />
+        <% end %>
+      </div>
+    </section>
+    """
+  end
+
+  defp assign_branding(socket, org_id) do
+    theme = Flux.Branding.for_org(org_id)
+
+    socket
+    |> assign(:branding, theme)
+    |> assign(:branding_form, branding_form(theme))
+  end
+
+  # Built from plain params rather than a changeset: the branding schema lives
+  # behind the provider contract, so there is no struct here to cast against.
+  # Errors come back from the provider as a keyword list and are attached below.
+  defp branding_form(%Flux.Branding.Theme{} = theme, errors \\ []) do
+    to_form(
+      %{
+        "brand_name" => theme.brand_name,
+        "primary_color" => theme.primary_color || Flux.Branding.Theme.stock_primary(),
+        "login_message" => theme.login_message || ""
+      },
+      as: :branding,
+      errors: errors
+    )
+  end
+
   # Shared form for the security section: the allowlist renders one CIDR per
   # line, the current session-timeout selection, and the password policy.
   defp security_form(%Security.SecuritySettings{} = settings) do
@@ -212,6 +292,9 @@ defmodule FluxWeb.SystemSettingsLive do
           license_form={@license_form}
           node_states={@node_states}
           node_capacity={@node_capacity}
+          branding_enabled={@branding_enabled}
+          branding={@branding}
+          branding_form={@branding_form}
           teams={@teams}
           members={@members}
           rbac_mode={@rbac_mode}
@@ -276,6 +359,13 @@ defmodule FluxWeb.SystemSettingsLive do
       />
 
       <.usage_section enabled={@usage_metering_enabled} usage={@usage} />
+
+      <.branding_section
+        :if={@org_id}
+        enabled={@branding_enabled}
+        branding={@branding}
+        form={@branding_form}
+      />
 
       <%= if @org_id do %>
         <.teams_section
@@ -1527,6 +1617,41 @@ defmodule FluxWeb.SystemSettingsLive do
       end
     else
       {:noreply, put_flash(socket, :error, "You are not allowed to manage security settings.")}
+    end
+  end
+
+  def handle_event("save_branding", %{"branding" => params}, socket) do
+    scope = socket.assigns.current_scope
+
+    # Re-checked here rather than trusted from the render: a hidden form is not
+    # an access control, and entitlement can lapse between mount and submit.
+    cond do
+      not Permissions.can?(scope, :manage_branding) ->
+        {:noreply, put_flash(socket, :error, "You are not allowed to manage branding.")}
+
+      not Flux.Branding.entitled?() ->
+        {:noreply, put_flash(socket, :error, "White-label branding requires Flux Enterprise.")}
+
+      true ->
+        attrs = Map.take(params, ["brand_name", "primary_color", "login_message"])
+
+        case Flux.Branding.put(scope.organization_id, attrs) do
+          {:ok, theme} ->
+            {:noreply,
+             socket
+             |> assign(:branding, theme)
+             |> assign(:branding_form, branding_form(theme))
+             |> put_flash(:info, "Branding updated. Reload to see the new colours.")}
+
+          {:error, errors} ->
+            {:noreply,
+             socket
+             |> assign(
+               :branding_form,
+               to_form(params, as: :branding, errors: errors)
+             )
+             |> put_flash(:error, "Could not update branding.")}
+        end
     end
   end
 

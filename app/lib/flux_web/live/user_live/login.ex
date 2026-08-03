@@ -26,6 +26,19 @@ defmodule FluxWeb.UserLive.Login do
           </.header>
         </div>
 
+        <%!--
+        A white-label deployment's own words to its users. Rendered from the
+        deployment's branding rather than the scope: there is no session here, so
+        there is no organization to read it from. See Flux.Branding on the
+        single-organization assumption that makes this well-defined.
+        --%>
+        <p
+          :if={msg = Flux.Branding.for_deployment().login_message}
+          class="text-center text-sm text-base-content/70"
+        >
+          {msg}
+        </p>
+
         <div :if={local_mail_adapter?()} class="alert alert-info">
           <.icon name="hero-information-circle" class="size-6 shrink-0" />
           <div>
