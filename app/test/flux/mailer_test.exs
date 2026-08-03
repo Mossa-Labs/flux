@@ -13,7 +13,12 @@ defmodule Flux.MailerTest do
       Application.get_env(:flux, :warn_unconfigured_mailer)
     }
 
+    # put_license_tier/1 hands back prior state rather than restoring itself.
+    prior_license =
+      {Application.get_env(:flux, Flux.License), Application.get_env(:flux, :test_license_tier)}
+
     on_exit(fn ->
+      Flux.LicenseHelpers.reset_license(prior_license)
       {from, mailer, warn} = prior
       restore(:mail_from, from)
       restore(Flux.Mailer, mailer)
@@ -53,6 +58,59 @@ defmodule Flux.MailerTest do
     test "is nil when nothing is configured" do
       Application.delete_env(:flux, :mail_from)
       assert Mailer.from() == nil
+    end
+  end
+
+  describe "white-label branding of the sender" do
+    setup do
+      Application.put_env(:flux, :mail_from, name: "Operator Set", address: "no-reply@acme.test")
+
+      on_exit(fn ->
+        Flux.Branding.Registry.set_active(Flux.Branding.Providers.Community)
+        Application.delete_env(:flux, :test_branding_theme)
+      end)
+    end
+
+    defp brand_as(name) do
+      Flux.LicenseHelpers.put_license_tier(:enterprise)
+      Application.put_env(:flux, :test_branding_theme, %Flux.Branding.Theme{brand_name: name})
+      Flux.Branding.Registry.set_active(Flux.BrandingTestProvider)
+    end
+
+    test "a custom brand name replaces the display name" do
+      brand_as("Acme Data")
+
+      assert Mailer.from() == {"Acme Data", "no-reply@acme.test"}
+    end
+
+    test "the address is never branded" do
+      # Relays reject a sender they are not authorised for, so branding the
+      # address would get mail dropped at the relay rather than delivered.
+      brand_as("Acme Data")
+
+      assert {_name, "no-reply@acme.test"} = Mailer.from()
+    end
+
+    test "the stock wordmark does not leak into the From header" do
+      # Theme.default().brand_name is "FLUX" — right in the page chrome, wrong in
+      # a From: header. An unbranded deployment would otherwise start shouting at
+      # its own users, and it would be a regression rather than a new feature.
+      brand_as(Flux.Branding.Theme.default().brand_name)
+
+      assert Mailer.from() == {"Operator Set", "no-reply@acme.test"}
+      assert Flux.Branding.mail_from_name() == nil
+    end
+
+    test "an unentitled deployment keeps the operator's configured name" do
+      # The provider still reports Acme; the facade must stop believing it.
+      Application.put_env(:flux, :test_branding_theme, %Flux.Branding.Theme{
+        brand_name: "Acme Data"
+      })
+
+      Flux.Branding.Registry.set_active(Flux.BrandingTestProvider)
+      Flux.LicenseHelpers.put_license_tier(:community)
+
+      assert Mailer.from() == {"Operator Set", "no-reply@acme.test"}
     end
   end
 
