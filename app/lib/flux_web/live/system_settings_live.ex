@@ -61,6 +61,14 @@ defmodule FluxWeb.SystemSettingsLive do
          max_entries: 1,
          max_file_size: 256_000
        )
+       # PNG for the favicon too. ICO exists for Internet Explorer, retired in
+       # 2022; every browser that can run this app takes a PNG icon, and a second
+       # format would mean a second validator path for no living client.
+       |> allow_upload(:favicon,
+         accept: ~w(.png),
+         max_entries: 1,
+         max_file_size: 256_000
+       )
        |> assign(:usage_metering_enabled, usage_metering_enabled?())
        |> assign(:usage, load_usage(org_id))
        |> assign_security_settings(org_id)
@@ -223,6 +231,26 @@ defmodule FluxWeb.SystemSettingsLive do
               </p>
             </div>
 
+            <div>
+              <label class="text-sm font-medium">Favicon</label>
+              <p class="text-xs text-base-content/60 mb-1">
+                PNG, up to 256 KB. Shown in the browser tab.
+              </p>
+              <.live_file_input upload={@uploads.favicon} class="file-input file-input-sm w-full" />
+              <p :for={err <- upload_errors(@uploads.favicon)} class="mt-1 text-xs text-error">
+                {upload_error_message(err)}
+              </p>
+              <p
+                :for={entry <- @uploads.favicon.entries}
+                class="mt-1 text-xs text-base-content/60"
+              >
+                {entry.client_name}
+                <span :for={err <- upload_errors(@uploads.favicon, entry)} class="text-error">
+                  — {upload_error_message(err)}
+                </span>
+              </p>
+            </div>
+
             <%!--
             A preview rather than a live preview. The chrome only re-reads
             branding on a full page load, so showing the saved result here is
@@ -254,24 +282,34 @@ defmodule FluxWeb.SystemSettingsLive do
   # a rejection has to become a message rather than something retryable — and the
   # bytes are handed straight to the provider, which decides what they are. The
   # entry's client_type and client_name are never trusted or stored.
-  defp save_logo(socket, org_id, theme) do
-    case uploaded_entries(socket, :logo) do
+  defp save_assets(socket, org_id, theme) do
+    Enum.reduce_while([:logo, :favicon], {:ok, theme}, fn kind, {:ok, acc} ->
+      case save_asset(socket, org_id, kind, acc) do
+        {:ok, theme} -> {:cont, {:ok, theme}}
+        {:error, _} = err -> {:halt, err}
+      end
+    end)
+  end
+
+  defp save_asset(socket, org_id, kind, theme) do
+    case uploaded_entries(socket, kind) do
       {[], _} ->
         {:ok, theme}
 
       _ ->
         socket
-        |> consume_uploaded_entries(:logo, fn %{path: path}, _entry ->
-          {:ok, Flux.Branding.put_asset(org_id, :logo, File.read!(path))}
+        |> consume_uploaded_entries(kind, fn %{path: path}, _entry ->
+          {:ok, Flux.Branding.put_asset(org_id, kind, File.read!(path))}
         end)
         |> List.first()
     end
   end
 
   defp branding_error_message(errors) do
-    case Keyword.get(errors, :logo) do
-      nil -> "Could not update branding."
-      reason -> "Logo #{reason}."
+    cond do
+      reason = Keyword.get(errors, :logo) -> "Logo #{reason}."
+      reason = Keyword.get(errors, :favicon) -> "Favicon #{reason}."
+      true -> "Could not update branding."
     end
   end
 
@@ -1711,7 +1749,7 @@ defmodule FluxWeb.SystemSettingsLive do
         attrs = Map.take(params, ["brand_name", "primary_color", "login_message"])
 
         with {:ok, theme} <- Flux.Branding.put(scope.organization_id, attrs),
-             {:ok, theme} <- save_logo(socket, scope.organization_id, theme) do
+             {:ok, theme} <- save_assets(socket, scope.organization_id, theme) do
           {:noreply,
            socket
            |> assign(:branding, theme)

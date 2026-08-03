@@ -52,6 +52,7 @@ defmodule FluxWeb.Router do
 
     get("/theme/:digest", BrandingController, :theme)
     get("/logo/:digest", BrandingController, :logo)
+    get("/favicon/:digest", BrandingController, :favicon)
   end
 
   # Unauthenticated health probe (for load balancers).

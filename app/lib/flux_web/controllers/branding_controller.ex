@@ -36,13 +36,20 @@ defmodule FluxWeb.BrandingController do
       braces: even if something got through and a browser were talked into
       treating it as a document, it can do nothing.
   """
-  def logo(conn, %{"digest" => requested}) do
-    case Flux.Branding.asset(deployment_org_id(), :logo) do
+  def logo(conn, params), do: serve_asset(conn, :logo, params)
+
+  @doc """
+  The custom favicon. Identical handling to the logo — see above.
+  """
+  def favicon(conn, params), do: serve_asset(conn, :favicon, params)
+
+  defp serve_asset(conn, kind, %{"digest" => requested}) do
+    case Flux.Branding.asset(deployment_org_id(), kind) do
       {:ok, bytes, content_type, digest} ->
         conn
         |> put_resp_content_type(content_type)
         |> put_resp_header("x-content-type-options", "nosniff")
-        |> put_resp_header("content-disposition", ~s(inline; filename="logo.png"))
+        |> put_resp_header("content-disposition", ~s(inline; filename="#{kind}.png"))
         |> put_resp_header("content-security-policy", "default-src 'none'; sandbox")
         |> put_resp_header("etag", ~s("#{digest}"))
         |> put_cache_headers(requested == digest)

@@ -31,17 +31,22 @@ defmodule Flux.BrandingTestProvider do
   def deployment_org_id, do: Application.get_env(:flux, :test_branding_org_id)
 
   @doc """
-  `:test_branding_asset` drives this as `{bytes, content_type, digest}`.
+  `:test_branding_asset` drives this as `%{logo: {bytes, content_type, digest}}`,
+  keyed per kind.
 
-  Supplying the content type here rather than deriving it is the point: the
-  public side must serve whatever the provider concluded the bytes are, so a
-  test can hand it a mismatch — HTML bytes labelled `image/png` — and assert the
-  header still comes from the provider.
+  Keyed rather than a single tuple so a test can set one kind and not the other —
+  a deployment with a logo and no favicon must 404 the favicon rather than hand
+  back the logo, and a shared key would have hidden exactly that.
+
+  Supplying the content type here rather than deriving it is also the point: the
+  public side must serve whatever the provider concluded the bytes are, so a test
+  can hand it a mismatch — HTML bytes labelled `image/png` — and assert the header
+  still comes from the provider.
   """
   @impl Flux.Branding.Provider
   def asset(_org_id, kind) do
-    case Application.get_env(:flux, :test_branding_asset) do
-      {bytes, type, digest} when kind == :logo -> {:ok, bytes, type, digest}
+    case Application.get_env(:flux, :test_branding_asset, %{}) do
+      %{^kind => {bytes, type, digest}} -> {:ok, bytes, type, digest}
       _ -> :none
     end
   end
