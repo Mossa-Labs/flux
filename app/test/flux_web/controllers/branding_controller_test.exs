@@ -96,7 +96,7 @@ defmodule FluxWeb.BrandingControllerTest do
 
     defp serve_logo(bytes, type \\ "image/png", digest \\ "abc123") do
       brand(%Theme{logo_digest: digest})
-      Application.put_env(:flux, :test_branding_asset, {bytes, type, digest})
+      Application.put_env(:flux, :test_branding_asset, %{logo: {bytes, type, digest}})
       digest
     end
 
@@ -162,6 +162,46 @@ defmodule FluxWeb.BrandingControllerTest do
     test "a Community deployment has no logo to serve", %{conn: conn} do
       conn = get(conn, ~p"/branding/logo/anything")
       assert response(conn, 404) == ""
+    end
+  end
+
+  describe "the favicon endpoint" do
+    setup do
+      on_exit(fn -> Application.delete_env(:flux, :test_branding_asset) end)
+    end
+
+    test "serves the favicon with the same protections as the logo", %{conn: conn} do
+      brand(%Theme{favicon_digest: "fav123"})
+
+      Application.put_env(:flux, :test_branding_asset, %{
+        favicon: {"ICONBYTES", "image/png", "fav123"}
+      })
+
+      conn = get(conn, ~p"/branding/favicon/fav123")
+
+      assert response(conn, 200) == "ICONBYTES"
+      assert get_resp_header(conn, "content-type") == ["image/png; charset=utf-8"]
+      assert get_resp_header(conn, "x-content-type-options") == ["nosniff"]
+      assert get_resp_header(conn, "content-security-policy") == ["default-src 'none'; sandbox"]
+      assert get_resp_header(conn, "content-disposition") == [~s(inline; filename="favicon.png")]
+    end
+
+    test "404s when none is set", %{conn: conn} do
+      brand(%Theme{})
+      assert conn |> get(~p"/branding/favicon/anything") |> response(404) == ""
+    end
+
+    test "a logo is never served as the favicon", %{conn: conn} do
+      # The asset cache was originally keyed by organization alone, which would
+      # have answered a favicon miss with the logo. Keyed by {org, kind} now.
+      brand(%Theme{logo_digest: "logo123"})
+
+      Application.put_env(:flux, :test_branding_asset, %{
+        logo: {"LOGOBYTES", "image/png", "logo123"}
+      })
+
+      assert conn |> get(~p"/branding/logo/logo123") |> response(200) == "LOGOBYTES"
+      assert conn |> get(~p"/branding/favicon/logo123") |> response(404) == ""
     end
   end
 

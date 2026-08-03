@@ -15,7 +15,13 @@
     is nothing for a custom favicon to override, and the browser's implicit
     request cannot be pointed elsewhere.
     --%>
-    <link rel="icon" href={~p"/favicon.ico"} sizes="any" />
+    <link
+      :if={branding(assigns).favicon_digest}
+      rel="icon"
+      type="image/png"
+      href={~p"/branding/favicon/#{branding(assigns).favicon_digest}"}
+    />
+    <link :if={!branding(assigns).favicon_digest} rel="icon" href={~p"/favicon.ico"} sizes="any" />
     <%!--
     The accent override, served rather than inlined. A <style> block would work
     today (no CSP is configured) but breaks the day one arrives, and this is

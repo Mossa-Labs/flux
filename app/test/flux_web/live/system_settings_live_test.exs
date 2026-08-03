@@ -699,6 +699,24 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       refute html =~ "SHOULD NOT HAVE BEEN CALLED"
     end
 
+    test "points the icon link at a custom favicon, and at the stock one otherwise", %{conn: conn} do
+      # There was no <link rel="icon"> at all before this feature — the browser
+      # just guessed /favicon.ico — so this asserts both that the tag exists and
+      # that it moves.
+      Flux.LicenseHelpers.put_license_tier(:enterprise)
+      use_branding_provider(%Flux.Branding.Theme{favicon_digest: "fav99"})
+
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+      assert html =~ ~s(href="/branding/favicon/fav99")
+      refute html =~ ~s(href="/favicon.ico")
+
+      use_branding_provider(%Flux.Branding.Theme{})
+
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+      assert html =~ ~s(href="/favicon.ico")
+      refute html =~ "/branding/favicon/"
+    end
+
     test "a lapsed entitlement refuses the write even with the form posted", %{conn: conn} do
       # The section is hidden on Community, but hiding a form is not an access
       # control — the event can still be pushed over the socket.
