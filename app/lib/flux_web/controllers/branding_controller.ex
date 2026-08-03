@@ -77,8 +77,9 @@ defmodule FluxWeb.BrandingController do
   # is (0,1,1) and wins outright in either theme.
   #
   # Only the accent trio is overridden. The base surfaces are deliberately NOT
-  # customisable — handing those over is how an operator makes their own install
-  # unreadable, and we would own the support ticket.
+  # customisable: they carry the contrast the whole interface is built on, so a
+  # single unlucky value there makes text unreadable everywhere at once, with no
+  # obvious way back. An accent colour can only ever be locally wrong.
   defp css(%Theme{} = theme) do
     color = theme.primary_color
     content = theme.primary_content
