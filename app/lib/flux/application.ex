@@ -73,6 +73,7 @@ defmodule Flux.Application do
     opts = [strategy: :one_for_one, name: Flux.Supervisor]
     result = Supervisor.start_link(children, opts)
     warn_if_clustered()
+    Flux.Mailer.warn_if_unconfigured()
     result
   end
 

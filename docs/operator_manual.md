@@ -169,6 +169,43 @@ config :flux, Flux.Queue, adapter: Flux.Queue.Adapters.Memory
 
 The memory adapter provides fast, in-process queuing with no external dependencies and is suitable for single-node deployments.
 
+### Email
+
+Flux sends account confirmations, magic-link sign-in links and email-change
+confirmations. Configure a mail transport or **none of them are delivered**.
+
+Without `FLUX_SMTP_HOST` the mailer keeps the development adapter, which stores
+mail in memory and sends nothing. In development that is what you want — the
+`/dev/mailbox` preview shows it — but in production that route is not mounted,
+so mail simply vanishes. A production node in that state logs a warning at boot.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `FLUX_SMTP_HOST` | — | Set this to enable delivery. Everything else is optional. |
+| `FLUX_SMTP_PORT` | `587` | 587 is submission with STARTTLS. |
+| `FLUX_SMTP_USERNAME` | — | Omit for a relay that does not authenticate. |
+| `FLUX_SMTP_PASSWORD` | — | |
+| `FLUX_SMTP_TLS` | `always` | `always` requires STARTTLS and fails if the server will not. Use `never` only for a relay you control that genuinely has none — `if_available` will send credentials in the clear against a server that does not offer TLS. |
+| `FLUX_MAIL_FROM_ADDRESS` | — | Required. Most relays reject a sender they are not authorised for, so this usually has to be a domain the relay accepts. |
+| `FLUX_MAIL_FROM_NAME` | `Flux` | Display name. |
+
+```bash
+FLUX_SMTP_HOST=smtp.example.com
+FLUX_SMTP_PORT=587
+FLUX_SMTP_USERNAME=flux@example.com
+FLUX_SMTP_PASSWORD=…
+FLUX_MAIL_FROM_ADDRESS=flux@example.com
+FLUX_MAIL_FROM_NAME="Example Data Platform"
+```
+
+Certificates are verified against the operating system trust store. A relay with
+a self-signed certificate will be rejected; add its CA to the host trust store
+rather than disabling verification.
+
+To use an API-based provider (Mailgun, SES, Postmark) instead of SMTP, set the
+adapter in `config/runtime.exs`; the HTTP client Swoosh needs is already
+configured.
+
 ### RBAC Mode
 
 Flux uses team-centric RBAC, configured at compile time:

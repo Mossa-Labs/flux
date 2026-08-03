@@ -89,6 +89,11 @@ config :flux, FluxWeb.Endpoint,
 # at the `config/runtime.exs`.
 config :flux, Flux.Mailer, adapter: Swoosh.Adapters.Local
 
+# Only a production node is expected to deliver mail: dev uses the /dev/mailbox
+# preview and test uses the Test adapter, both deliberately. Warning there would
+# be noise on every boot, and noise is how a real warning gets ignored.
+config :flux, :warn_unconfigured_mailer, config_env() == :prod
+
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",
