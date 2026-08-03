@@ -23,6 +23,36 @@ defmodule FluxWeb.Components.BrandTest do
     refute html =~ "text-white"
   end
 
+  describe "with a custom logo" do
+    test "renders the image instead of the letter tile" do
+      html =
+        render_component(&Brand.brand_mark/1,
+          branding: %Flux.Branding.Theme{brand_name: "Acme", logo_digest: "deadbeef"}
+        )
+
+      assert html =~ ~s(src="/branding/logo/deadbeef")
+      # The tile and the image are alternatives, not a stack.
+      refute html =~ "bg-primary"
+    end
+
+    test "uses the brand name as alt text" do
+      # A screen reader hears the same thing whether or not a logo is set.
+      html =
+        render_component(&Brand.brand_mark/1,
+          branding: %Flux.Branding.Theme{brand_name: "Acme", logo_digest: "deadbeef"}
+        )
+
+      assert html =~ ~s(alt="Acme")
+    end
+
+    test "falls back to the tile when no logo is set" do
+      html = render_component(&Brand.brand_mark/1, branding: %Flux.Branding.Theme{})
+
+      assert html =~ "bg-primary"
+      refute html =~ "/branding/logo/"
+    end
+  end
+
   test "accepts extra wrapper classes" do
     html = render_component(&Brand.brand_mark/1, class: "px-2")
     assert html =~ "px-2"

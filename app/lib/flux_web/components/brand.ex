@@ -10,6 +10,7 @@ defmodule FluxWeb.Components.Brand do
   they genuinely differ — only the mark itself is shared.
   """
   use Phoenix.Component
+  use FluxWeb, :verified_routes
 
   alias Flux.Branding.Theme
 
@@ -28,11 +29,28 @@ defmodule FluxWeb.Components.Brand do
     ~H"""
     <div class={["flex items-center gap-3", @class]}>
       <%!--
+      A custom logo replaces the tile rather than sitting beside it. The alt text
+      is the brand name, so a screen reader hears the same thing either way, and
+      the wordmark stays: a logo is usually a mark, not a full lockup.
+
+      Content-addressed URL, so this is cached immutably and a new upload is a
+      new URL rather than a stale image nobody can flush.
+      --%>
+      <img
+        :if={@theme.logo_digest}
+        src={~p"/branding/logo/#{@theme.logo_digest}"}
+        alt={@theme.brand_name}
+        class="w-8 h-8 rounded-lg object-contain"
+      />
+      <%!--
       text-primary-content, not text-white: it is the daisyUI token for "readable
       on primary", and the colour override ships a matching value, so a pale
       brand colour gets dark text instead of white-on-white.
       --%>
-      <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-content font-bold overflow-hidden">
+      <div
+        :if={!@theme.logo_digest}
+        class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-content font-bold overflow-hidden"
+      >
         {initial(@theme.brand_name)}
       </div>
       <span class="text-2xl font-black tracking-tighter text-base-content">

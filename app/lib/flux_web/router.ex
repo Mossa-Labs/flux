@@ -51,6 +51,7 @@ defmodule FluxWeb.Router do
     pipe_through(:branding_asset)
 
     get("/theme/:digest", BrandingController, :theme)
+    get("/logo/:digest", BrandingController, :logo)
   end
 
   # Unauthenticated health probe (for load balancers).

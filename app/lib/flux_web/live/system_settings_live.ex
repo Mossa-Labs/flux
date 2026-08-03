@@ -53,6 +53,14 @@ defmodule FluxWeb.SystemSettingsLive do
        |> assign(:mfa_enforcement_enabled, Flux.License.has_feature?(:mfa_enforcement))
        |> assign(:branding_enabled, Flux.Branding.entitled?())
        |> assign_branding(org_id)
+       # accept: is a client-side hint only — the real check is the provider's
+       # signature validation. max_file_size IS enforced server-side, and matches
+       # the cap the stored bytes are budgeted against.
+       |> allow_upload(:logo,
+         accept: ~w(.png),
+         max_entries: 1,
+         max_file_size: 256_000
+       )
        |> assign(:usage_metering_enabled, usage_metering_enabled?())
        |> assign(:usage, load_usage(org_id))
        |> assign_security_settings(org_id)
@@ -160,6 +168,7 @@ defmodule FluxWeb.SystemSettingsLive do
   attr :enabled, :boolean, required: true
   attr :branding, :map, required: true
   attr :form, :any, required: true
+  attr :uploads, :any, required: true
 
   defp branding_section(assigns) do
     ~H"""
@@ -173,7 +182,14 @@ defmodule FluxWeb.SystemSettingsLive do
         </p>
 
         <%= if @enabled do %>
-          <.form for={@form} id="branding-form" phx-submit="save_branding" class="mt-2 space-y-3">
+          <%!-- phx-change is required for live_file_input to stage entries. --%>
+          <.form
+            for={@form}
+            id="branding-form"
+            phx-change="validate_branding"
+            phx-submit="save_branding"
+            class="mt-2 space-y-3"
+          >
             <.input field={@form[:brand_name]} type="text" label="Brand name" maxlength="40" />
             <.input
               field={@form[:primary_color]}
@@ -186,6 +202,26 @@ defmodule FluxWeb.SystemSettingsLive do
               label="Sign-in message"
               placeholder="Shown to everyone on the sign-in page"
             />
+
+            <div>
+              <label class="text-sm font-medium">Logo</label>
+              <p class="text-xs text-base-content/60 mb-1">
+                PNG, up to 256 KB and 4096×4096. Replaces the tile in the header.
+              </p>
+              <.live_file_input upload={@uploads.logo} class="file-input file-input-sm w-full" />
+              <p :for={err <- upload_errors(@uploads.logo)} class="mt-1 text-xs text-error">
+                {upload_error_message(err)}
+              </p>
+              <p
+                :for={entry <- @uploads.logo.entries}
+                class="mt-1 text-xs text-base-content/60"
+              >
+                {entry.client_name}
+                <span :for={err <- upload_errors(@uploads.logo, entry)} class="text-error">
+                  — {upload_error_message(err)}
+                </span>
+              </p>
+            </div>
 
             <%!--
             A preview rather than a live preview. The chrome only re-reads
@@ -210,6 +246,39 @@ defmodule FluxWeb.SystemSettingsLive do
     </section>
     """
   end
+
+  # Consumes a staged logo, if one was chosen. No entry means the operator was
+  # editing text only, which must not clear an existing logo.
+  #
+  # consume_uploaded_entries deletes the temp file once the callback returns, so
+  # a rejection has to become a message rather than something retryable — and the
+  # bytes are handed straight to the provider, which decides what they are. The
+  # entry's client_type and client_name are never trusted or stored.
+  defp save_logo(socket, org_id, theme) do
+    case uploaded_entries(socket, :logo) do
+      {[], _} ->
+        {:ok, theme}
+
+      _ ->
+        socket
+        |> consume_uploaded_entries(:logo, fn %{path: path}, _entry ->
+          {:ok, Flux.Branding.put_asset(org_id, :logo, File.read!(path))}
+        end)
+        |> List.first()
+    end
+  end
+
+  defp branding_error_message(errors) do
+    case Keyword.get(errors, :logo) do
+      nil -> "Could not update branding."
+      reason -> "Logo #{reason}."
+    end
+  end
+
+  defp upload_error_message(:too_large), do: "is larger than 256 KB"
+  defp upload_error_message(:not_accepted), do: "must be a PNG"
+  defp upload_error_message(:too_many_files), do: "— only one logo"
+  defp upload_error_message(err), do: "could not be uploaded (#{inspect(err)})"
 
   defp assign_branding(socket, org_id) do
     theme = Flux.Branding.for_org(org_id)
@@ -295,6 +364,7 @@ defmodule FluxWeb.SystemSettingsLive do
           branding_enabled={@branding_enabled}
           branding={@branding}
           branding_form={@branding_form}
+          uploads={@uploads}
           teams={@teams}
           members={@members}
           rbac_mode={@rbac_mode}
@@ -365,6 +435,7 @@ defmodule FluxWeb.SystemSettingsLive do
         enabled={@branding_enabled}
         branding={@branding}
         form={@branding_form}
+        uploads={@uploads}
       />
 
       <%= if @org_id do %>
@@ -1620,6 +1691,10 @@ defmodule FluxWeb.SystemSettingsLive do
     end
   end
 
+  # Only needed so live_file_input can stage an entry; the text fields are
+  # validated by the provider on submit.
+  def handle_event("validate_branding", _params, socket), do: {:noreply, socket}
+
   def handle_event("save_branding", %{"branding" => params}, socket) do
     scope = socket.assigns.current_scope
 
@@ -1635,22 +1710,19 @@ defmodule FluxWeb.SystemSettingsLive do
       true ->
         attrs = Map.take(params, ["brand_name", "primary_color", "login_message"])
 
-        case Flux.Branding.put(scope.organization_id, attrs) do
-          {:ok, theme} ->
-            {:noreply,
-             socket
-             |> assign(:branding, theme)
-             |> assign(:branding_form, branding_form(theme))
-             |> put_flash(:info, "Branding updated. Reload to see the new colours.")}
-
+        with {:ok, theme} <- Flux.Branding.put(scope.organization_id, attrs),
+             {:ok, theme} <- save_logo(socket, scope.organization_id, theme) do
+          {:noreply,
+           socket
+           |> assign(:branding, theme)
+           |> assign(:branding_form, branding_form(theme))
+           |> put_flash(:info, "Branding updated. Reload to see the new colours.")}
+        else
           {:error, errors} ->
             {:noreply,
              socket
-             |> assign(
-               :branding_form,
-               to_form(params, as: :branding, errors: errors)
-             )
-             |> put_flash(:error, "Could not update branding.")}
+             |> assign(:branding_form, to_form(params, as: :branding, errors: errors))
+             |> put_flash(:error, branding_error_message(errors))}
         end
     end
   end

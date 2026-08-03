@@ -30,9 +30,23 @@ defmodule Flux.BrandingTestProvider do
   @impl Flux.Branding.Provider
   def deployment_org_id, do: Application.get_env(:flux, :test_branding_org_id)
 
+  @doc """
+  `:test_branding_asset` drives this as `{bytes, content_type, digest}`.
+
+  Supplying the content type here rather than deriving it is the point: the
+  public side must serve whatever the provider concluded the bytes are, so a
+  test can hand it a mismatch — HTML bytes labelled `image/png` — and assert the
+  header still comes from the provider.
+  """
   @impl Flux.Branding.Provider
-  def asset(_org_id, _kind), do: :none
+  def asset(_org_id, kind) do
+    case Application.get_env(:flux, :test_branding_asset) do
+      {bytes, type, digest} when kind == :logo -> {:ok, bytes, type, digest}
+      _ -> :none
+    end
+  end
 
   @impl Flux.Branding.Provider
-  def put_asset(_org_id, _kind, _bytes), do: {:ok, theme(nil)}
+  def put_asset(_org_id, _kind, _bytes),
+    do: Application.get_env(:flux, :test_branding_put_asset_result, {:ok, theme(nil)})
 end

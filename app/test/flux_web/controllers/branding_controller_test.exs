@@ -89,6 +89,82 @@ defmodule FluxWeb.BrandingControllerTest do
     end
   end
 
+  describe "the logo endpoint" do
+    setup do
+      on_exit(fn -> Application.delete_env(:flux, :test_branding_asset) end)
+    end
+
+    defp serve_logo(bytes, type \\ "image/png", digest \\ "abc123") do
+      brand(%Theme{logo_digest: digest})
+      Application.put_env(:flux, :test_branding_asset, {bytes, type, digest})
+      digest
+    end
+
+    test "serves the bytes with the provider's content type", %{conn: conn} do
+      digest = serve_logo("PNGBYTES")
+
+      conn = get(conn, ~p"/branding/logo/#{digest}")
+
+      assert response(conn, 200) == "PNGBYTES"
+      assert get_resp_header(conn, "content-type") == ["image/png; charset=utf-8"]
+    end
+
+    test "the content type comes from the provider, never from the stored bytes", %{conn: conn} do
+      # The whole risk this endpoint carries is serving attacker bytes under a
+      # scriptable type. Even if something HTML-shaped reached storage, the type
+      # is the provider's verdict and nosniff stops the browser second-guessing.
+      digest = serve_logo("<html><script>alert(1)</script></html>")
+
+      conn = get(conn, ~p"/branding/logo/#{digest}")
+
+      assert get_resp_header(conn, "content-type") == ["image/png; charset=utf-8"]
+      assert get_resp_header(conn, "x-content-type-options") == ["nosniff"]
+      assert get_resp_header(conn, "content-security-policy") == ["default-src 'none'; sandbox"]
+    end
+
+    test "names the file itself rather than echoing an upload", %{conn: conn} do
+      # The uploaded filename is never stored. Echoing one into this header is
+      # its own injection class (CR/LF, quotes) and buys nothing.
+      digest = serve_logo("PNGBYTES")
+
+      conn = get(conn, ~p"/branding/logo/#{digest}")
+
+      assert get_resp_header(conn, "content-disposition") == [~s(inline; filename="logo.png")]
+    end
+
+    test "a current digest caches immutably and carries an ETag", %{conn: conn} do
+      digest = serve_logo("PNGBYTES")
+
+      conn = get(conn, ~p"/branding/logo/#{digest}")
+
+      assert get_resp_header(conn, "cache-control") == ["public, max-age=31536000, immutable"]
+      assert get_resp_header(conn, "etag") == [~s("#{digest}")]
+    end
+
+    test "a stale digest serves current bytes but is not cached", %{conn: conn} do
+      serve_logo("PNGBYTES")
+
+      conn = get(conn, ~p"/branding/logo/oldstaledigest")
+
+      assert response(conn, 200) == "PNGBYTES"
+      assert get_resp_header(conn, "cache-control") == ["no-store"]
+    end
+
+    test "404s when there is no logo, without caching the absence", %{conn: conn} do
+      brand(%Theme{})
+
+      conn = get(conn, ~p"/branding/logo/anything")
+
+      assert response(conn, 404) == ""
+      assert get_resp_header(conn, "cache-control") == ["no-store"]
+    end
+
+    test "a Community deployment has no logo to serve", %{conn: conn} do
+      conn = get(conn, ~p"/branding/logo/anything")
+      assert response(conn, 404) == ""
+    end
+  end
+
   describe "CSS injection" do
     # Deliberately bypasses the write path. The provider validating on save is one
     # control; this proves the controller does not depend on it having worked.
