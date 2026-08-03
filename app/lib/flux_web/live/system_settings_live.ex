@@ -201,7 +201,7 @@ defmodule FluxWeb.SystemSettingsLive do
               The accent colour and icon apply on the next full page load.
             </p>
 
-            <.button phx-disable-with="Saving…" class="btn-primary">Save branding</.button>
+            <.button class="btn btn-primary btn-sm">Save branding</.button>
           </.form>
         <% else %>
           <UpgradePrompt.upgrade_prompt feature={:white_label} size={:compact} />
