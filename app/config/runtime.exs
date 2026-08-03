@@ -111,23 +111,57 @@ if config_env() == :prod do
   #
   # Check `Plug.SSL` for all available options in `force_ssl`.
 
-  # ## Configuring the mailer
+  # ## Mailer
   #
-  # In production you need to configure the mailer to use a different adapter.
-  # Here is an example configuration for Mailgun:
+  # Configured entirely from the environment, so the same build serves an
+  # operator running Flux on their own hardware with their own SMTP server and a
+  # hosted deployment where we supply one. Nothing here branches on which.
   #
-  #     config :flux, Flux.Mailer,
-  #       adapter: Swoosh.Adapters.Mailgun,
-  #       api_key: System.get_env("MAILGUN_API_KEY"),
-  #       domain: System.get_env("MAILGUN_DOMAIN")
+  # Set FLUX_SMTP_HOST to send mail. Without it the base config's
+  # `Swoosh.Adapters.Local` stays in place — which stores mail in memory and
+  # delivers nothing. That is the right default for dev, where the /dev/mailbox
+  # preview shows it, and a trap in production, where that route is not even
+  # mounted. So an unconfigured production node says so at boot rather than
+  # swallowing sign-in emails in silence; see `Flux.Mailer.warn_if_unconfigured/0`.
+  if smtp_host = System.get_env("FLUX_SMTP_HOST") do
+    config :flux, Flux.Mailer,
+      adapter: Swoosh.Adapters.SMTP,
+      relay: smtp_host,
+      port: String.to_integer(System.get_env("FLUX_SMTP_PORT") || "587"),
+      username: System.get_env("FLUX_SMTP_USERNAME"),
+      password: System.get_env("FLUX_SMTP_PASSWORD"),
+      # `:always` upgrades the connection with STARTTLS and fails if the server
+      # will not — the default (`:if_available`) silently sends credentials in
+      # the clear against a server that does not offer it. Overridable because
+      # some internal relays genuinely have no TLS, but that has to be chosen.
+      tls: String.to_atom(System.get_env("FLUX_SMTP_TLS") || "always"),
+      auth: if(System.get_env("FLUX_SMTP_USERNAME"), do: :always, else: :never),
+      # Certificate verification comes from the OS trust store rather than being
+      # disabled, which is the usual shortcut here.
+      tls_options: [
+        verify: :verify_peer,
+        cacerts: :public_key.cacerts_get(),
+        server_name_indication: String.to_charlist(smtp_host),
+        depth: 3
+      ],
+      retries: 2,
+      no_mx_lookups: false
+  end
+
+  # Only needed by API-based adapters (Mailgun, SES, Postmark…). Harmless for
+  # SMTP, and set here so swapping in such an adapter does not also require
+  # discovering that this line is missing.
+  config :swoosh, :api_client, Swoosh.ApiClient.Req
+
+  # Who mail comes from. Most SMTP relays reject or spam-file a sender they are
+  # not authorised for, so this generally has to match the configured relay's
+  # domain — which is exactly why it cannot be a compiled-in constant.
   #
-  # Most non-SMTP adapters require an API client. Swoosh supports Req, Hackney,
-  # and Finch out-of-the-box. This configuration is typically done at
-  # compile-time in your config/prod.exs:
-  #
-  #     config :swoosh, :api_client, Swoosh.ApiClient.Req
-  #
-  # See https://hexdocs.pm/swoosh/Swoosh.html#module-installation for details.
+  # Deliberately NOT under `Flux.Mailer`: Swoosh hands that entire keyword list
+  # to the adapter, so extra keys would reach gen_smtp as unrecognised options.
+  config :flux, :mail_from,
+    name: System.get_env("FLUX_MAIL_FROM_NAME"),
+    address: System.get_env("FLUX_MAIL_FROM_ADDRESS")
 
   # Queue adapter for production. Community defaults to the in-memory queue; the
   # "rabbitmq" type resolves to an upgrade-prompt stub unless the commercial

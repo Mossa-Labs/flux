@@ -5,17 +5,38 @@ defmodule Flux.Accounts.UserNotifier do
   alias Flux.Mailer
   alias Flux.Accounts.User
 
-  # Delivers the email using the application mailer.
-  defp deliver(recipient, subject, body) do
-    email =
-      new()
-      |> to(recipient)
-      |> from({"Flux", "contact@example.com"})
-      |> subject(subject)
-      |> text_body(body)
+  require Logger
 
-    with {:ok, _metadata} <- Mailer.deliver(email) do
-      {:ok, email}
+  # Delivers the email using the application mailer.
+  #
+  # The sender comes from configuration rather than a constant: most relays
+  # reject a sender they are not authorised for, so it has to match whatever
+  # relay the operator configured. It was previously hardcoded to a literal
+  # `contact@example.com`.
+  defp deliver(recipient, subject, body) do
+    case Mailer.from() do
+      nil ->
+        # Distinguished from a delivery failure on purpose. Returning :ok here
+        # would make an unconfigured install look like it had sent the mail,
+        # which is the failure mode this is fixing.
+        Logger.warning(
+          "[Mailer] Not sending #{inspect(subject)} — no sender configured " <>
+            "(set FLUX_MAIL_FROM_ADDRESS)."
+        )
+
+        {:error, :mailer_not_configured}
+
+      sender ->
+        email =
+          new()
+          |> to(recipient)
+          |> from(sender)
+          |> subject(subject)
+          |> text_body(body)
+
+        with {:ok, _metadata} <- Mailer.deliver(email) do
+          {:ok, email}
+        end
     end
   end
 

@@ -118,6 +118,9 @@ defmodule Flux.MixProject do
        compile: false,
        depth: 1},
       {:swoosh, "~> 1.16"},
+      # Required by Swoosh.Adapters.SMTP — the transport an on-prem operator
+      # configures via FLUX_SMTP_*. Without it that adapter cannot be used at all.
+      {:gen_smtp, "~> 1.2"},
       {:req, "~> 0.5"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},

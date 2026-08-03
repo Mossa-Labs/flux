@@ -101,3 +101,7 @@ config :flux, Flux.AI, provider: Flux.AI.Providers.Basic
 
 # API authentication for development
 config :flux, FluxWeb.Plugs.ApiAuth, api_key: "dev-api-key"
+
+# Mail is captured by the /dev/mailbox preview rather than sent, but an email
+# still needs a sender to be built at all.
+config :flux, :mail_from, name: "Flux", address: "flux@localhost"

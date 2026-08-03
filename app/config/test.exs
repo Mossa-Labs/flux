@@ -57,3 +57,6 @@ config :flux, Oban, testing: :manual
 
 # API authentication for tests
 config :flux, FluxWeb.Plugs.ApiAuth, api_key: "test-api-key"
+
+# The Test adapter captures rather than sends; the sender just has to exist.
+config :flux, :mail_from, name: "Flux", address: "flux@test.local"
