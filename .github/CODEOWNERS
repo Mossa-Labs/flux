@@ -1,0 +1,13 @@
+# Code owners for the Flux Community edition.
+#
+# GitHub reads this file from the default branch only — a change here does
+# nothing until it lands on `main`.
+#
+# Ownership is routing, not a gate. Owner review is deliberately NOT required
+# in branch protection: with a single owner, GitHub would refuse to let that
+# owner approve their own pull request, and every PR would deadlock with no
+# second person able to clear it. So this file auto-requests review and marks
+# responsibility; the merge gate lives in branch protection settings.
+
+# Everything, unless claimed more specifically below.
+* @edlau
