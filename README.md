@@ -15,7 +15,7 @@ links out to further reading.
 > **This is the Community edition (Apache 2.0).** Pro and Enterprise features
 > ship as a **separate licensed distribution** maintained by the Flux team — not
 > in this repository. See [open-core model](#open-core) below and the
-> [pricing page](https://mossa.io/flux/pricing) for what each tier includes.
+> [pricing page](https://fluxdata.tech/pricing.html) for what each tier includes.
 
 ---
 
@@ -63,7 +63,7 @@ Everything you need to run real pipelines in production, free and open source:
 Pro and Enterprise add advanced capabilities — including clustered, highly
 available execution (Horde-based distribution with cluster-wide metrics) — plus
 commercial support, shipped as a separate licensed edition. See the
-[pricing page](https://mossa.io/flux/pricing). None of that source lives here —
+[pricing page](https://fluxdata.tech/pricing.html). None of that source lives here —
 see the [open-core model](#open-core).
 
 ## Quick start

@@ -811,7 +811,7 @@ defmodule FluxWeb.SystemSettingsLive do
 
         <p :if={@license.tier == :community} class="text-sm text-base-content/60 mt-2">
           Running the Community tier.
-          <.link href="https://fluxdata.tech/pricing" class="link link-primary">Upgrade</.link>
+          <.link href={Flux.Marketing.pricing_url()} class="link link-primary">Upgrade</.link>
           to unlock Pro and Enterprise features.
         </p>
 
@@ -912,7 +912,7 @@ defmodule FluxWeb.SystemSettingsLive do
       <p :if={over_capacity?(@node_capacity)} class="mt-1 text-xs text-warning">
         Running {@node_capacity.live} nodes on a license for {@node_capacity.licensed}.
         Flux keeps running, but this is an unsupported configuration — reduce to {@node_capacity.licensed} nodes or <.link
-          href="https://fluxdata.tech/pricing"
+          href={Flux.Marketing.pricing_url()}
           class="link"
         >extend your license</.link>.
       </p>

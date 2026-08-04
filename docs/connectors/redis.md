@@ -9,7 +9,7 @@ push onto a stream for other consumers.
 > **Pro feature.** On the Community edition the Redis sink is gated: the type
 > appears in the UI marked *Pro* and any saved config is rejected with an upgrade
 > prompt. The real adapter ships in the Flux Pro / Enterprise edition. Activate a
-> license to enable it. See [pricing](https://fluxdata.tech/pricing).
+> license to enable it. See [pricing](https://fluxdata.tech/pricing.html).
 
 Redis is **not** a Flux core queue backend — the internal/durable queue stays
 RabbitMQ. A Redis *sink* egresses processed records **out** of a pipeline to an

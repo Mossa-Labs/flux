@@ -10,7 +10,7 @@ sink*.
 > **Pro feature.** On the Community edition the SFTP source is gated: the type
 > appears in the UI marked *Pro* and any saved config is rejected with an upgrade
 > prompt. The real adapter ships in the Flux Pro / Enterprise edition. Activate a
-> license to enable it. See [pricing](https://fluxdata.tech/pricing).
+> license to enable it. See [pricing](https://fluxdata.tech/pricing.html).
 
 SFTP is a **pull** source: Flux dials out to your server, lists the configured
 directory on each poll, and ingests files that have not been processed before.

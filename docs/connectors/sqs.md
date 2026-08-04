@@ -8,7 +8,7 @@ transform / detect → sink*.
 > **Pro feature.** On the Community edition the SQS source is gated: the type
 > appears in the UI marked *Pro* and any saved config is rejected with an upgrade
 > prompt. The real adapter ships in the Flux Pro / Enterprise edition. Activate a
-> license to enable it. See [pricing](https://fluxdata.tech/pricing).
+> license to enable it. See [pricing](https://fluxdata.tech/pricing.html).
 
 SQS is **not** a Flux core queue backend — the internal/durable queue stays
 RabbitMQ. An SQS *source* ingests external queue messages **onto** that internal

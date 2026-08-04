@@ -19,7 +19,7 @@ defmodule Flux.Sink.Adapters.Stub do
   @impl Flux.Sink.Adapter
   def validate_config(config) do
     type = Map.get(config, "type", "unknown")
-    {:error, ["#{type} sink requires Flux Pro — see https://fluxdata.tech/pricing"]}
+    {:error, ["#{type} sink requires Flux Pro — see #{Flux.Marketing.pricing_url()}"]}
   end
 
   @impl Flux.Sink.Adapter
