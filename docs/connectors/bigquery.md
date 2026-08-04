@@ -6,7 +6,7 @@ table.
 > **Pro feature.** On the Community edition the BigQuery sink is gated: the type
 > appears in the UI marked *Pro* and any saved config is rejected with an upgrade
 > prompt. The real adapter ships in the Flux Pro / Enterprise edition. Activate a
-> license to enable it. See [pricing](https://fluxdata.tech/pricing).
+> license to enable it. See [pricing](https://fluxdata.tech/pricing.html).
 
 Flux writes rows to BigQuery's streaming API over **HTTPS**, so — like the
 [external-database connectors](external-databases.md) — it is an **outbound**

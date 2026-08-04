@@ -8,7 +8,7 @@ detector fires and drops a message into `#alerts`".
 > **Pro feature.** On the Community edition the Slack sink is gated: the type
 > appears in the UI marked *Pro* and any saved config is rejected with an upgrade
 > prompt. The real adapter ships in the Flux Pro / Enterprise edition. Activate a
-> license to enable it. See [pricing](https://fluxdata.tech/pricing).
+> license to enable it. See [pricing](https://fluxdata.tech/pricing.html).
 
 A Slack *sink* egresses processed records **out** of a pipeline to Slack over
 HTTPS. It is not a queue backend or a source.
