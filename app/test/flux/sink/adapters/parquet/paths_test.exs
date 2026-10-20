@@ -103,34 +103,55 @@ defmodule Flux.Sink.Adapters.Parquet.PathsTest do
     end
   end
 
-  test "render_file/2 caps directory names but never the file name" do
-    dir = String.duplicate("d", 300)
-    name = String.duplicate("f", 300) <> ".parquet"
-    vars = %{pipeline_id: 1, partition: "", now: @now, seq: 1, uid: "u"}
+  test "render_file/2 never shortens a name, so its {uid} survives" do
+    template = String.duplicate("x", 255) <> "{uid}/fixed.parquet"
+    vars = %{pipeline_id: 1, partition: "", now: @now, seq: 1, uid: "u1"}
 
-    assert Paths.render_file("#{dir}/#{name}", vars) == String.duplicate("d", 255) <> "/" <> name
+    assert Paths.render_file(template, vars) =~ ~r/x{255}u1\/fixed\.parquet$/
   end
 
-  describe "validate_file_name/2" do
+  describe "validate_name_lengths/2" do
     test "accepts the default and typical templates" do
-      assert :ok = Paths.validate_file_name(Settings.default_path_template(), "")
-      assert :ok = Paths.validate_file_name("{pipeline_id}-{timestamp}-{seq}-{uid}.parquet", "")
+      assert :ok = Paths.validate_name_lengths(Settings.default_path_template(), "")
+
+      assert :ok =
+               Paths.validate_name_lengths(
+                 "{pipeline_id}/{date}/{partition}{pipeline_id}-{timestamp}-{seq}-{uid}.parquet",
+                 "region={region}/year={yyyy}/"
+               )
     end
 
     test "rejects a file name that can render past 255 bytes" do
       prefix = String.duplicate("p", 200)
 
-      assert {:error, msg} = Paths.validate_file_name("#{prefix}-{uid}-{timestamp}.parquet", "")
+      assert {:error, msg} =
+               Paths.validate_name_lengths("#{prefix}-{uid}-{timestamp}.parquet", "")
+
       assert msg =~ "limit is 255"
+    end
+
+    test "rejects a folder name that can render past 255 bytes" do
+      # Shortening this folder would cut its {uid} and make every file collide.
+      template = String.duplicate("x", 255) <> "{uid}/fixed.parquet"
+
+      assert {:error, msg} = Paths.validate_name_lengths(template, "")
+      assert msg =~ "folder name"
+    end
+
+    test "counts template text joined to a partition folder at its widest" do
+      prefix = String.duplicate("p", 120)
+      template = "#{prefix}{partition}{uid}.parquet"
+
+      # "r=" plus a 128-byte value fits after the prefix; two values don't.
+      assert :ok = Paths.validate_name_lengths(template, "r={region}/")
+      assert {:error, _} = Paths.validate_name_lengths(template, "r={region}-{tier}/")
     end
 
     test "counts text on both sides of an empty partition as one name" do
       half = String.duplicate("p", 120)
-      template = "#{half}{partition}#{half}-{uid}.parquet"
 
-      assert {:error, _} = Paths.validate_file_name(template, "")
-      # A partition ends the name before it, so only the second half counts.
-      assert :ok = Paths.validate_file_name(template, "r={region}/")
+      assert {:error, _} =
+               Paths.validate_name_lengths("#{half}{partition}#{half}-{uid}.parquet", "")
     end
   end
 

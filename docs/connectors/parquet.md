@@ -63,10 +63,12 @@ each file gets a distinct name. Flux never replaces an existing file. If a name 
 somehow already taken, Flux picks a fresh one and tries again, without re-encoding
 the file. If you set `partition_template`, it must also include `{partition}`.
 
-Filesystems limit each file or folder name to 255 bytes. Flux checks the file name
-when you save the sink: a `path_template` whose file name could render longer than
-that (counting `{pipeline_id}` at its 128-byte maximum) is rejected. Folder names
-are never rejected; any that would be too long are shortened to 255 bytes.
+Filesystems limit each file or folder name to 255 bytes. Flux checks this when you
+save the sink: a `path_template` that could render a file or folder name longer than
+that is rejected. The check counts `{pipeline_id}` and record fields at their 128-byte
+maximum. Flux never shortens a name the template builds, because that could cut off
+its `{uid}` or `{timestamp}` and make files collide. The exception is partition
+folders built from record values: these are shortened to 255 bytes if needed.
 
 ### Partition template placeholders
 

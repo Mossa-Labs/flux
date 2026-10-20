@@ -103,7 +103,7 @@ defmodule Flux.Sink.Adapters.Parquet do
               {:error, "path_template must include {partition} when partition_template is set"}
 
             true ->
-              Paths.validate_file_name(template, partition_template(config))
+              Paths.validate_name_lengths(template, partition_template(config))
           end
         end
 
