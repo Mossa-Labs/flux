@@ -103,14 +103,36 @@ defmodule FluxWeb.SystemSettingsLiveTest do
     test "hides the scope picker without the Pro entitlement", %{conn: conn} do
       {:ok, lv, html} = live(conn, ~p"/system/settings?tab=api-keys")
 
-      refute has_element?(lv, "#api-key-form select[multiple]")
+      refute has_element?(lv, "#api-key-scopes")
       assert html =~ "Fine-grained API key scopes"
     end
 
     test "shows the scope picker with the Pro entitlement", %{conn: conn} do
       Flux.LicenseHelpers.with_license_tier(:pro, fn ->
         {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=api-keys")
-        assert has_element?(lv, "#api-key-form select[multiple]")
+
+        # One labelled checkbox per scope, all checked by default.
+        for scope <- Flux.Accounts.ApiKey.scopes() do
+          assert has_element?(
+                   lv,
+                   ~s(#api-key-scopes input[type="checkbox"][name="api_key[scopes][]"][value="#{scope}"][checked])
+                 )
+        end
+      end)
+    end
+
+    test "creates a key narrowed to the checked scopes", %{conn: conn, owner_scope: scope} do
+      Flux.LicenseHelpers.with_license_tier(:pro, fn ->
+        {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=api-keys")
+
+        lv
+        |> form("#api-key-form",
+          api_key: %{name: "read-only", role: "admin", scopes: ["read:pipelines", "read:sinks"]}
+        )
+        |> render_submit()
+
+        [key] = Flux.Accounts.list_api_keys(scope.organization_id)
+        assert Enum.sort(key.scopes) == ["read:pipelines", "read:sinks"]
       end)
     end
 
