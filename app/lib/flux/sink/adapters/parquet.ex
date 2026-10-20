@@ -103,12 +103,19 @@ defmodule Flux.Sink.Adapters.Parquet do
               {:error, "path_template must include {partition} when partition_template is set"}
 
             true ->
-              :ok
+              Paths.validate_file_name(template, partition_template(config))
           end
         end
 
       _ ->
         {:error, "path_template must be a string"}
+    end
+  end
+
+  defp partition_template(config) do
+    case config["partition_template"] do
+      template when is_binary(template) -> template
+      _ -> ""
     end
   end
 
@@ -183,7 +190,7 @@ defmodule Flux.Sink.Adapters.Parquet do
 
   @impl Flux.Sink.Adapter
   def test_connection(config) do
-    probe = ".flux-probe-#{Paths.uid()}"
+    probe = Paths.scratch_name(".probe")
 
     with :ok <- Paths.validate_directory(Map.get(config, "directory")),
          {:ok, root} <- Paths.root(config),

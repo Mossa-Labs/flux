@@ -19,21 +19,48 @@ defmodule Flux.Sink.Adapters.Parquet.Writer do
 
   @doc """
   Writes `columns` (`%{name => values}`, values in row order) with `schema` to
-  `path`. Returns the number of bytes written.
-  """
-  @spec write(String.t(), Schema.t(), %{String.t() => list()}, term()) ::
-          {:ok, non_neg_integer()} | {:error, term()}
-  def write(path, schema, columns, compression) do
-    # A short temporary name in the same directory (so the final move stays on one
-    # filesystem), independent of the final name: deriving it from the final name
-    # would push long-but-valid filenames past the 255-byte limit.
-    tmp = Path.join(Path.dirname(path), ".flux-#{Paths.uid()}.tmp")
+  a new file and returns its path and size in bytes.
 
-    with :ok <- File.mkdir_p(Path.dirname(path)),
+  `target` is the destination path, or a function returning `{:ok, path}` that
+  is called again for a fresh name each time the previous one is taken, up to
+  `attempts` names in total. The file is encoded once; only the final move is
+  retried.
+  """
+  @spec write(target, Schema.t(), %{String.t() => list()}, term(), pos_integer()) ::
+          {:ok, String.t(), non_neg_integer()} | {:error, term()}
+        when target: String.t() | (-> {:ok, String.t()} | {:error, term()})
+  def write(target, schema, columns, compression, attempts \\ 1) do
+    with {:ok, path} <- next_path(target),
+         # A short temporary name in the same directory (so the final move stays
+         # on one filesystem), independent of the final name: deriving it from
+         # the final name would push long-but-valid filenames past the limit.
+         tmp = Path.join(Path.dirname(path), Paths.scratch_name(".tmp")),
+         {:ok, size} <- encode(tmp, schema, columns, compression) do
+      case publish_new(tmp, path, target, attempts) do
+        {:ok, path} ->
+          {:ok, path, size}
+
+        {:error, reason} ->
+          _ = File.rm(tmp)
+          {:error, reason}
+      end
+    end
+  end
+
+  defp next_path(target) do
+    with {:ok, path} <- if(is_function(target, 0), do: target.(), else: {:ok, target}) do
+      # Fail before encoding anything: the file could never be created.
+      if Paths.file_name_fits?(path), do: {:ok, path}, else: {:error, :enametoolong}
+    end
+  end
+
+  # The size is read from the temporary file, before the move: once the file
+  # is published, a failure to stat it must not report its rows as lost.
+  defp encode(tmp, schema, columns, compression) do
+    with :ok <- File.mkdir_p(Path.dirname(tmp)),
          {:ok, df} <- build(schema, columns),
          :ok <- DataFrame.to_parquet(df, tmp, compression: compression),
-         :ok <- publish(tmp, path),
-         {:ok, %File.Stat{size: size}} <- File.stat(path) do
+         {:ok, %File.Stat{size: size}} <- File.stat(tmp) do
       {:ok, size}
     else
       {:error, reason} ->
@@ -42,21 +69,48 @@ defmodule Flux.Sink.Adapters.Parquet.Writer do
     end
   end
 
+  # A fresh name may land in another directory (e.g. a `{uid}` directory);
+  # linking or renaming across directories works within one filesystem.
+  defp publish_new(tmp, path, target, attempts) do
+    case publish(tmp, path) do
+      {:error, :eexist} when attempts > 1 ->
+        with {:ok, path} <- next_path(target),
+             :ok <- File.mkdir_p(Path.dirname(path)) do
+          publish_new(tmp, path, target, attempts - 1)
+        end
+
+      :ok ->
+        {:ok, path}
+
+      error ->
+        error
+    end
+  end
+
+  # Errors from `link(2)` that mean the filesystem cannot hard-link at all, as
+  # opposed to this particular link failing (`:emlink`, `:enospc`, `:eacces`…),
+  # which must not fall back to the non-atomic path.
+  @no_hard_links [:enotsup, :eopnotsupp, :eperm, :enosys, :exdev]
+
+  @doc false
   # Moves `tmp` to `path` without ever replacing an existing file. A hard link
   # is an atomic create-if-absent; filesystems without hard links (most FUSE
   # bucket mounts) fall back to check-then-rename, which is safe here because
   # names are unique per file and each buffer writes its files one at a time.
-  defp publish(tmp, path) do
-    case File.ln(tmp, path) do
+  # `link` is injectable so tests can exercise the fallback on any filesystem.
+  @spec publish(String.t(), String.t(), (String.t(), String.t() -> :ok | {:error, atom()})) ::
+          :ok | {:error, term()}
+  def publish(tmp, path, link \\ &File.ln/2) do
+    case link.(tmp, path) do
       :ok ->
         _ = File.rm(tmp)
         :ok
 
-      {:error, :eexist} ->
-        {:error, :eexist}
-
-      {:error, _no_hard_links} ->
+      {:error, reason} when reason in @no_hard_links ->
         if File.exists?(path), do: {:error, :eexist}, else: File.rename(tmp, path)
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

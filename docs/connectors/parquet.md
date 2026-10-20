@@ -60,8 +60,13 @@ the Flux process.
 
 The template must end in `.parquet`. It must include `{uid}` or `{timestamp}` so
 each file gets a distinct name. Flux never replaces an existing file. If a name is
-somehow already taken, Flux picks a fresh one and tries again. If you set `partition_template`, it must also
-include `{partition}`.
+somehow already taken, Flux picks a fresh one and tries again, without re-encoding
+the file. If you set `partition_template`, it must also include `{partition}`.
+
+Filesystems limit each file or folder name to 255 bytes. Flux checks the file name
+when you save the sink: a `path_template` whose file name could render longer than
+that (counting `{pipeline_id}` at its 128-byte maximum) is rejected. Folder names
+are never rejected; any that would be too long are shortened to 255 bytes.
 
 ### Partition template placeholders
 
@@ -75,7 +80,8 @@ Each distinct partition gets its own file:
   or `{customer.tier}`
 
 Field values are sanitized into a single folder name: path separators, `..` and
-control characters become `_`, and values are capped at 128 characters. A missing
+control characters become `_`, and values are capped at 128 bytes (fewer characters
+for non-ASCII text, never splitting a character). A missing
 field, or one holding an object or a list, renders as `unknown`.
 
 Example: daily partitions per region.
@@ -167,6 +173,14 @@ A file is written when **any** of these happens:
 Each file is written to a hidden temporary file (`.flux-<id>.tmp`) and then
 renamed into place. Readers that list the directory never see a half-written
 file, so ignore dotfiles when you scan it.
+
+If a write is interrupted (a crash or `SIGKILL` mid-write), its temporary file is
+left behind. When a sink's buffer starts, Flux removes `.flux-*.tmp` files older
+than one hour anywhere under that sink's `directory`. This happens in the
+background, once per sink directory each time Flux starts. To change the age, set
+`config :flux, Flux.Sink.Adapters.Parquet, temp_file_grace_ms: <ms>`. Keep it
+longer than your slowest write, because the sweep can't tell another node's
+in-progress write from an abandoned one.
 
 > **Durability.** Rows waiting in the buffer are held **in memory**. On a normal
 > shutdown or restart they are written out, and shutdown waits for that to finish.
