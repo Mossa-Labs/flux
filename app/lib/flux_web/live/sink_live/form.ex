@@ -6,7 +6,6 @@ defmodule FluxWeb.SinkLive.Form do
 
   alias Flux.Sinks
   alias Flux.Sinks.Sink
-  alias FluxWeb.Components.UpgradePrompt
 
   # Sink types gated behind a Pro/EE license, mapped to their entitlement feature.
   @pro_sink_features %{
@@ -19,6 +18,37 @@ defmodule FluxWeb.SinkLive.Form do
     "slack" => :slack_sink
   }
 
+  # Picker tiles in display order: Community destinations, then the Pro/EE ones.
+  @sink_type_options [
+    %{type: "http", icon: "hero-globe-alt", label: "HTTP", sublabel: "Webhook / REST"},
+    %{
+      type: "postgres",
+      icon: "hero-circle-stack",
+      label: "Postgres",
+      sublabel: "Flux DB or external"
+    },
+    %{type: "mysql", icon: "hero-server-stack", label: "MySQL", sublabel: "External database"},
+    %{
+      type: "parquet",
+      icon: "hero-document-chart-bar",
+      label: "Parquet",
+      sublabel: "Data-lake files"
+    },
+    %{type: "email", icon: "hero-envelope", label: "Email", sublabel: "Notifications"},
+    %{type: "s3", icon: "hero-cloud-arrow-up", label: "S3", sublabel: "Object storage"},
+    %{type: "bigquery", icon: "hero-table-cells", label: "BigQuery", sublabel: "Warehouse"},
+    %{type: "snowflake", icon: "hero-cube", label: "Snowflake", sublabel: "Warehouse"},
+    %{type: "kafka", icon: "hero-queue-list", label: "Kafka", sublabel: "Event streaming"},
+    %{type: "redis", icon: "hero-bolt", label: "Redis", sublabel: "Key-value store"},
+    %{type: "mongodb", icon: "hero-document-text", label: "MongoDB", sublabel: "Document store"},
+    %{
+      type: "slack",
+      icon: "hero-chat-bubble-left-right",
+      label: "Slack",
+      sublabel: "Messaging"
+    }
+  ]
+
   @impl true
   def mount(params, _session, socket) do
     {sink, action, title} =
@@ -28,7 +58,7 @@ defmodule FluxWeb.SinkLive.Form do
           {sink || %Sink{}, :edit, "Edit Sink"}
 
         _ ->
-          {%Sink{type: "http", config: %{}}, :new, "New Sink"}
+          {%Sink{config: %{}}, :new, "New Sink"}
       end
 
     changeset = Sinks.change_sink(sink, config_form_params(sink))
@@ -40,7 +70,11 @@ defmodule FluxWeb.SinkLive.Form do
      |> assign(:action, action)
      |> assign(:sink, sink)
      |> assign(:form, to_form(changeset))
-     |> assign(:selected_type, sink.type || "http")
+     |> assign(:selected_type, sink.type)
+     # A new sink opens on the destination picker; an existing one shows its
+     # type collapsed to a summary row with a Change button.
+     |> assign(:picking_type?, is_nil(sink.type))
+     |> assign(:show_description?, sink.description not in [nil, ""])
      # The error summary only appears once a save has been attempted.
      |> assign(:show_errors?, false)}
   end
@@ -48,159 +82,110 @@ defmodule FluxWeb.SinkLive.Form do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="space-y-6">
-      <div class="flex items-center gap-4">
-        <.link navigate={~p"/sinks"} class="btn btn-ghost btn-sm">
-          <.icon name="hero-arrow-left" class="w-4 h-4" />
-        </.link>
-        <h1 class="text-2xl font-bold tracking-tight text-base-content">
-          {@page_title}
-        </h1>
-      </div>
+    <div class="mx-auto max-w-4xl">
+      <nav aria-label="Breadcrumb" class="flex items-center gap-1.5 text-sm text-ink-subtle">
+        <.link navigate={~p"/sinks"} class="transition-colors hover:text-base-content">Sinks</.link>
+        <.icon name="hero-chevron-right" class="size-3.5" />
+        <span class="text-base-content/80">{@page_title}</span>
+      </nav>
+      <h1 class="mt-2 text-2xl font-semibold tracking-tight text-base-content">{@page_title}</h1>
+      <p class="mt-1 text-sm text-ink-subtle">
+        A sink is where a pipeline delivers its output. Pick a destination, connect it, then name it.
+      </p>
 
-      <.form for={@form} phx-change="validate" phx-submit="save" class="space-y-6">
+      <.form
+        for={@form}
+        id="sink-form"
+        phx-change="validate"
+        phx-submit="save"
+        class="mt-6 space-y-4"
+      >
         <.error_summary :if={@show_errors?} errors={error_items(@form)} />
-        <div class="card bg-base-100 shadow-sm border border-base-200">
-          <div class="card-body">
-            <h2 class="card-title text-base mb-4">Basic Information</h2>
 
-            <div class="form-control">
-              <.input field={@form[:name]} type="text" label="Name" placeholder="My Webhook Sink" />
-            </div>
+        <%!-- On phones the open picker drops its card so two tiles fit side by side. --%>
+        <section
+          id="sink-destination"
+          class={[
+            "rounded-xl",
+            if(@picking_type?,
+              do: "sm:border sm:border-hairline sm:bg-surface-1",
+              else: "border border-hairline bg-surface-1"
+            )
+          ]}
+        >
+          <.type_picker :if={@picking_type?} selected_type={@selected_type} />
+          <.type_summary :if={!@picking_type?} type={@selected_type} />
+        </section>
 
-            <div class="form-control mt-4">
-              <.input
-                field={@form[:description]}
-                type="textarea"
-                label="Description"
-                placeholder="Optional description..."
-              />
-            </div>
+        <%= cond do %>
+          <% is_nil(@selected_type) -> %>
+            <.pending_section step={2} title="Connection" hint="Choose a destination first" />
+            <.pending_section step={3} title="Details" hint="Name and description" />
+          <% pro_locked?(@selected_type) -> %>
+            <.pro_required type={@selected_type} />
+          <% true -> %>
+            <section
+              id="sink-connection"
+              class="rounded-xl border border-hairline bg-surface-1 p-5 sm:p-6"
+            >
+              <.section_heading step={2} title="Connection" />
+              <.type_config_fields type={@selected_type} form={@form} />
+            </section>
 
-            <div class="form-control mt-4">
-              <label class="label">
-                <span class="label-text font-medium">Sink Type</span>
-              </label>
-              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <.sink_type_option
-                  field={@form[:type]}
-                  selected_type={@selected_type}
-                  type="http"
-                  icon="hero-globe-alt"
-                  label="HTTP"
-                  sublabel="Webhook"
+            <section
+              id="sink-details"
+              class="rounded-xl border border-hairline bg-surface-1 p-5 sm:p-6"
+            >
+              <.section_heading step={3} title="Details" />
+              <div class="max-w-lg">
+                <.input
+                  field={@form[:name]}
+                  type="text"
+                  label="Name"
+                  placeholder="e.g. Analytics events"
+                  required
                 />
-                <.sink_type_option
-                  field={@form[:type]}
-                  selected_type={@selected_type}
-                  type="s3"
-                  icon="hero-cloud-arrow-up"
-                  label="S3"
-                  sublabel="Object Storage"
-                />
-                <.sink_type_option
-                  field={@form[:type]}
-                  selected_type={@selected_type}
-                  type="postgres"
-                  icon="hero-circle-stack"
-                  label="Postgres"
-                  sublabel="Database"
-                />
-                <.sink_type_option
-                  field={@form[:type]}
-                  selected_type={@selected_type}
-                  type="mysql"
-                  icon="hero-circle-stack"
-                  label="MySQL"
-                  sublabel="Database"
-                />
-                <.sink_type_option
-                  field={@form[:type]}
-                  selected_type={@selected_type}
-                  type="parquet"
-                  icon="hero-document-chart-bar"
-                  label="Parquet"
-                  sublabel="Data Lake Files"
-                />
-                <.sink_type_option
-                  field={@form[:type]}
-                  selected_type={@selected_type}
-                  type="email"
-                  icon="hero-envelope"
-                  label="Email"
-                  sublabel="Notifications"
-                />
-                <.sink_type_option
-                  field={@form[:type]}
-                  selected_type={@selected_type}
-                  type="bigquery"
-                  icon="hero-table-cells"
-                  label="BigQuery"
-                  sublabel="Warehouse"
-                />
-                <.sink_type_option
-                  field={@form[:type]}
-                  selected_type={@selected_type}
-                  type="kafka"
-                  icon="hero-queue-list"
-                  label="Kafka"
-                  sublabel="Event Streaming"
-                />
-                <.sink_type_option
-                  field={@form[:type]}
-                  selected_type={@selected_type}
-                  type="snowflake"
-                  icon="hero-cube"
-                  label="Snowflake"
-                  sublabel="Warehouse"
-                />
-                <.sink_type_option
-                  field={@form[:type]}
-                  selected_type={@selected_type}
-                  type="redis"
-                  icon="hero-bolt"
-                  label="Redis"
-                  sublabel="Key-Value Store"
-                />
-                <.sink_type_option
-                  field={@form[:type]}
-                  selected_type={@selected_type}
-                  type="mongodb"
-                  icon="hero-document-text"
-                  label="MongoDB"
-                  sublabel="Document Store"
-                />
-                <.sink_type_option
-                  field={@form[:type]}
-                  selected_type={@selected_type}
-                  type="slack"
-                  icon="hero-chat-bubble-left-right"
-                  label="Slack"
-                  sublabel="Messaging"
+                <.input
+                  :if={@show_description?}
+                  field={@form[:description]}
+                  type="textarea"
+                  label="Description (optional)"
+                  rows="2"
                 />
               </div>
-            </div>
-          </div>
-        </div>
+              <button
+                :if={!@show_description?}
+                type="button"
+                id="sink-add-description"
+                phx-click="show_description"
+                class="btn btn-ghost btn-sm -ml-3 mt-1 text-base-content/80"
+              >
+                <.icon name="hero-plus" class="size-4" /> Add a description
+              </button>
+            </section>
+        <% end %>
 
-        <div class="card bg-base-100 shadow-sm border border-base-200">
-          <div class="card-body">
-            <h2 class="card-title text-base mb-4">Configuration</h2>
-            <div :if={pro_locked?(@selected_type)}>
-              <UpgradePrompt.upgrade_prompt feature={pro_feature(@selected_type)} />
-            </div>
-            <.type_config_fields
-              :if={!pro_locked?(@selected_type)}
-              type={@selected_type}
-              form={@form}
-            />
-          </div>
-        </div>
-
-        <div class="flex justify-end gap-3">
-          <.link navigate={~p"/sinks"} class="btn btn-ghost">Cancel</.link>
-          <button type="submit" class="btn btn-primary">
-            <.icon name="hero-check" class="w-5 h-5" />
+        <div
+          id="sink-form-actions"
+          class="sticky bottom-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-hairline bg-base-100/95 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur"
+        >
+          <p
+            :if={submit_hint(@selected_type)}
+            id="sink-submit-hint"
+            class="w-full text-xs text-ink-subtle sm:w-auto sm:flex-1 sm:text-sm"
+          >
+            {submit_hint(@selected_type)}
+          </p>
+          <span :if={!submit_hint(@selected_type)} class="hidden sm:block sm:flex-1"></span>
+          <.link navigate={~p"/sinks"} class="btn btn-ghost flex-1 sm:flex-none">Cancel</.link>
+          <button
+            type="submit"
+            id="sink-submit"
+            class="btn btn-primary flex-[2] sm:flex-none"
+            disabled={submit_hint(@selected_type) != nil}
+            aria-describedby={submit_hint(@selected_type) && "sink-submit-hint"}
+          >
+            <.icon name="hero-check" class="size-4" />
             {if @action == :new, do: "Create Sink", else: "Update Sink"}
           </button>
         </div>
@@ -209,35 +194,254 @@ defmodule FluxWeb.SinkLive.Form do
     """
   end
 
-  attr :field, Phoenix.HTML.FormField, required: true
-  attr :selected_type, :string, required: true
-  attr :type, :string, required: true
-  attr :icon, :string, required: true
-  attr :label, :string, required: true
-  attr :sublabel, :string, required: true
+  attr :step, :integer, required: true
+  attr :title, :string, required: true
+  attr :hint, :string, default: nil
+  attr :done, :boolean, default: false
 
-  # One selectable tile in the sink-type picker. The hidden radio keeps the
-  # selection in the form while `select_type` drives the highlighted state.
+  defp section_heading(assigns) do
+    ~H"""
+    <div class="mb-5 flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span class={[
+        "inline-flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+        @done && "border border-hairline-strong bg-surface-3 text-lavender-hover",
+        !@done && "bg-primary text-primary-content"
+      ]}>
+        <.icon :if={@done} name="hero-check" class="size-3.5" />
+        <span :if={!@done}>{@step}</span>
+      </span>
+      <h2 class="text-base font-semibold text-base-content">{@title}</h2>
+      <span :if={@hint} class="text-sm text-ink-subtle">{@hint}</span>
+    </div>
+    """
+  end
+
+  attr :step, :integer, required: true
+  attr :title, :string, required: true
+  attr :hint, :string, required: true
+
+  # A later step that can't start until a destination is chosen.
+  defp pending_section(assigns) do
+    ~H"""
+    <section class="flex items-center gap-3 rounded-xl border border-hairline bg-surface-1 px-5 py-4 sm:px-6">
+      <span class="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-hairline-strong text-xs font-semibold text-ink-subtle">
+        {@step}
+      </span>
+      <h2 class="text-base font-semibold text-base-content/80">{@title}</h2>
+      <span class="hidden text-sm text-ink-subtle sm:inline">{@hint}</span>
+    </section>
+    """
+  end
+
+  attr :selected_type, :string, default: nil
+
+  defp type_picker(assigns) do
+    pro = Enum.filter(@sink_type_options, &Map.has_key?(@pro_sink_features, &1.type))
+
+    assigns =
+      assign(assigns,
+        community: @sink_type_options -- pro,
+        pro: pro,
+        any_locked?: Enum.any?(pro, &pro_locked?(&1.type))
+      )
+
+    ~H"""
+    <div class="sm:p-6">
+      <.section_heading step={1} title="Destination" hint="Where should the data go?" />
+
+      <div role="group" aria-labelledby="sink-types-community">
+        <h3 id="sink-types-community" class="mb-2.5 text-sm font-semibold text-base-content/90">
+          Community <span class="font-normal text-ink-subtle">· included</span>
+        </h3>
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] sm:gap-3">
+          <.sink_type_option
+            :for={option <- @community}
+            option={option}
+            selected={@selected_type == option.type}
+            locked={false}
+          />
+        </div>
+      </div>
+
+      <div role="group" aria-labelledby="sink-types-pro" class="mt-6">
+        <h3
+          id="sink-types-pro"
+          class="mb-2.5 flex items-center gap-2 text-sm font-semibold text-base-content/90"
+        >
+          <.icon :if={@any_locked?} name="hero-lock-closed" class="size-3.5" /> Flux Pro
+          <span class="hidden font-normal text-ink-subtle sm:inline">
+            {if @any_locked?, do: "· requires a Flux Pro license", else: "· included in your license"}
+          </span>
+          <.link
+            :if={@any_locked?}
+            href={Flux.Marketing.pricing_url()}
+            class="ml-auto font-medium text-lavender-hover hover:underline"
+          >
+            Compare plans
+          </.link>
+        </h3>
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] sm:gap-3">
+          <.sink_type_option
+            :for={option <- @pro}
+            option={option}
+            selected={@selected_type == option.type}
+            locked={pro_locked?(option.type)}
+          />
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  attr :option, :map, required: true
+  attr :selected, :boolean, required: true
+  attr :locked, :boolean, required: true
+
+  # One destination tile. On phones the icon sits inline with the name and the
+  # sublabel wraps underneath; from `sm` up the icon gets its own column.
   defp sink_type_option(assigns) do
     ~H"""
-    <label class={[
-      "cursor-pointer border-2 rounded-lg p-4 text-center transition-all",
-      @selected_type == @type && "border-primary bg-primary/5",
-      @selected_type != @type && "border-base-300 hover:border-primary/50"
-    ]}>
-      <input
-        type="radio"
-        name={@field.name}
-        value={@type}
-        checked={@selected_type == @type}
-        class="hidden"
-        phx-click="select_type"
-        phx-value-type={@type}
-      />
-      <.icon name={@icon} class="w-8 h-8 mx-auto text-primary" />
-      <p class="font-medium mt-2">{@label}</p>
-      <p class="text-xs text-base-content/60">{@sublabel}</p>
-    </label>
+    <button
+      type="button"
+      id={"sink-type-#{@option.type}"}
+      phx-click="select_type"
+      phx-value-type={@option.type}
+      aria-pressed={to_string(@selected)}
+      class={[
+        "grid grid-cols-[auto_minmax(0,1fr)_auto] content-center items-center gap-x-2 gap-y-0.5 rounded-lg border px-3 py-2.5 text-left transition-colors sm:gap-x-3 sm:p-3.5",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lavender-hover",
+        @selected && "border-primary bg-primary/10 ring-1 ring-inset ring-primary",
+        !@selected && "border-hairline bg-surface-2 hover:border-hairline-strong hover:bg-surface-3"
+      ]}
+    >
+      <span class="flex items-center justify-center sm:row-span-2 sm:size-9 sm:rounded-lg sm:bg-surface-3">
+        <.icon
+          name={@option.icon}
+          class={["size-4 sm:size-5", if(@locked, do: "text-ink-subtle", else: "text-lavender-hover")]}
+        />
+      </span>
+      <span class="truncate text-sm font-medium text-base-content">{@option.label}</span>
+      <span
+        :if={@locked}
+        class="col-start-3 row-start-1 inline-flex items-center gap-1 text-ink-subtle sm:row-span-2 sm:rounded-full sm:border sm:border-hairline-strong sm:px-2 sm:py-0.5 sm:text-[11px] sm:font-semibold sm:tracking-wide sm:text-base-content/80"
+      >
+        <.icon name="hero-lock-closed" class="size-3.5 sm:size-3" />
+        <span class="hidden sm:inline" aria-hidden="true">PRO</span>
+        <span class="sr-only">Requires Flux Pro</span>
+      </span>
+      <%!-- Pinned to row 2, under the name. On phones it may run under the lock
+           too. Start/end, not col-span, which would reset the start column. --%>
+      <span class="col-start-2 col-end-4 row-start-2 text-xs text-ink-subtle sm:col-end-3">
+        {@option.sublabel}
+      </span>
+    </button>
+    """
+  end
+
+  attr :type, :string, required: true
+
+  # The chosen destination, collapsed so the connection settings start near the top.
+  defp type_summary(assigns) do
+    assigns =
+      assign(assigns,
+        option: type_option(assigns.type),
+        tier:
+          if(Map.has_key?(@pro_sink_features, assigns.type), do: "Flux Pro", else: "Community")
+      )
+
+    ~H"""
+    <div class="flex items-center gap-3 px-4 py-3.5 sm:px-6">
+      <span class="hidden size-6 shrink-0 items-center justify-center rounded-full border border-hairline-strong bg-surface-3 text-lavender-hover sm:inline-flex">
+        <.icon name="hero-check" class="size-3.5" />
+      </span>
+      <span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-surface-3">
+        <.icon name={@option.icon} class="size-5 text-lavender-hover" />
+      </span>
+      <div class="min-w-0">
+        <p class="text-sm font-medium text-base-content">{@option.label}</p>
+        <p class="text-xs text-ink-subtle">
+          Destination · {@tier}
+        </p>
+      </div>
+      <button
+        type="button"
+        id="sink-type-change"
+        phx-click="change_type"
+        class="btn btn-ghost btn-sm ml-auto border-hairline-strong"
+      >
+        Change
+      </button>
+    </div>
+    """
+  end
+
+  attr :type, :string, required: true
+
+  # Replaces the connection settings when the chosen type isn't licensed.
+  defp pro_required(assigns) do
+    community = Enum.reject(@sink_type_options, &Map.has_key?(@pro_sink_features, &1.type))
+
+    assigns =
+      assign(assigns,
+        community_labels: community |> Enum.map(& &1.label) |> to_sentence(),
+        activation_supported?: Flux.License.activation_supported?()
+      )
+
+    ~H"""
+    <section
+      id="sink-pro-required"
+      class="rounded-xl border border-primary/50 bg-surface-2 p-5 sm:p-7"
+    >
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-5">
+        <span class="flex size-11 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-lavender-hover">
+          <.icon name="hero-lock-closed" class="size-5" />
+        </span>
+        <div class="min-w-0 flex-1">
+          <h2 class="text-lg font-semibold tracking-tight text-base-content">
+            {pro_label(@type)} are part of Flux Pro
+          </h2>
+          <p class="mt-2 max-w-prose text-sm leading-relaxed text-base-content/80">
+            Community destinations — {@community_labels} — are always included. Upgrade to send pipeline output here too.
+          </p>
+          <div class="mt-5 flex flex-wrap items-center gap-3">
+            <.link href={Flux.Marketing.pricing_url()} class="btn btn-primary btn-sm">
+              View pricing <.icon name="hero-arrow-right" class="size-4" />
+            </.link>
+            <button
+              type="button"
+              phx-click="change_type"
+              class="btn btn-ghost btn-sm border-hairline-strong"
+            >
+              Choose another destination
+            </button>
+            <.link
+              :if={@activation_supported?}
+              navigate="/system/settings"
+              class="text-sm font-medium text-lavender-hover hover:underline"
+            >
+              Already have a license? Activate it
+            </.link>
+          </div>
+          <p
+            :if={@type == "s3"}
+            class="mt-5 flex gap-2 border-t border-hairline pt-4 text-sm text-ink-subtle"
+          >
+            <.icon name="hero-information-circle" class="mt-0.5 size-4 shrink-0" />
+            <span>
+              Need files in a bucket today? A Parquet sink writes to a directory you can mount from S3, GCS or Azure.
+              <button
+                type="button"
+                phx-click="select_type"
+                phx-value-type="parquet"
+                class="font-medium text-lavender-hover hover:underline"
+              >
+                Use Parquet
+              </button>
+            </span>
+          </p>
+        </div>
+      </div>
+    </section>
     """
   end
 
@@ -1230,7 +1434,15 @@ defmodule FluxWeb.SinkLive.Form do
     {:noreply,
      socket
      |> clear_flash()
-     |> assign(selected_type: type, show_errors?: false)}
+     |> assign(selected_type: type, picking_type?: false, show_errors?: false)}
+  end
+
+  def handle_event("change_type", _params, socket) do
+    {:noreply, assign(socket, :picking_type?, true)}
+  end
+
+  def handle_event("show_description", _params, socket) do
+    {:noreply, assign(socket, :show_description?, true)}
   end
 
   def handle_event("validate", %{"sink" => params}, socket) do
@@ -1250,13 +1462,9 @@ defmodule FluxWeb.SinkLive.Form do
     permission = if socket.assigns.action == :new, do: :create_sink, else: :edit_sink
 
     authorize(socket, permission, fn ->
+      # The submit button is disabled for a locked type; this guards a forged event.
       if pro_locked?(socket.assigns.selected_type) do
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "#{pro_label(socket.assigns.selected_type)} requires Flux Pro."
-         )}
+        {:noreply, socket}
       else
         params = merge_config_params(params, socket.assigns.selected_type, socket.assigns.sink)
         params = Map.put(params, "organization_id", socket.assigns.current_scope.organization_id)
@@ -1891,7 +2099,22 @@ defmodule FluxWeb.SinkLive.Form do
     end
   end
 
-  defp pro_feature(type), do: Map.get(@pro_sink_features, type, :pro_sink)
+  defp type_option(type), do: Enum.find(@sink_type_options, &(&1.type == type))
+
+  # Why the submit button is disabled, or nil when the form can be submitted.
+  defp submit_hint(nil), do: "Choose a destination to continue"
+
+  defp submit_hint(type) do
+    if pro_locked?(type),
+      do: "#{pro_label(type)} need Flux Pro, so this sink can't be created yet"
+  end
+
+  defp to_sentence([only]), do: only
+
+  defp to_sentence(items) do
+    {init, [last]} = Enum.split(items, -1)
+    Enum.join(init, ", ") <> " and " <> last
+  end
 
   defp pro_label("s3"), do: "S3 sinks"
   defp pro_label("bigquery"), do: "BigQuery sinks"

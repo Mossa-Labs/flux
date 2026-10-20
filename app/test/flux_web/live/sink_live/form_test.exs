@@ -72,17 +72,6 @@ defmodule FluxWeb.SinkLive.FormTest do
       assert html =~ "Explicit Schema"
     end
 
-    test "Postgres asks for a database URL only in external mode", %{conn: conn} do
-      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
-      render_click(lv, "select_type", %{"type" => "postgres"})
-
-      refute has_element?(lv, "#sink_config_database_url")
-
-      lv |> form("form", %{"sink" => %{"config_mode" => "external"}}) |> render_change()
-
-      assert has_element?(lv, "#sink_config_database_url")
-    end
-
     test "creates a Parquet sink", %{conn: conn, scope: scope} do
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
       render_click(lv, "select_type", %{"type" => "parquet"})
@@ -142,6 +131,7 @@ defmodule FluxWeb.SinkLive.FormTest do
 
     test "save with valid params creates sink and redirects", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "http"})
 
       result =
         lv
@@ -194,9 +184,90 @@ defmodule FluxWeb.SinkLive.FormTest do
       lv |> form("form", %{"sink" => %{"name" => ""}}) |> render_submit()
       assert has_element?(lv, "#sink-form-errors")
 
+      render_click(lv, "change_type", %{})
       render_click(lv, "select_type", %{"type" => "postgres"})
 
       refute has_element?(lv, "#sink-form-errors")
+    end
+  end
+
+  describe "destination picker" do
+    test "starts with no destination chosen and submit disabled", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      refute has_element?(lv, "#sink-destination button[aria-pressed='true']")
+      refute has_element?(lv, "#sink-connection")
+      assert has_element?(lv, "#sink-submit[disabled]")
+      assert has_element?(lv, "#sink-submit-hint", "Choose a destination to continue")
+    end
+
+    test "groups Community and Pro destinations and marks the locked ones", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      assert has_element?(lv, "#sink-types-community + div #sink-type-http")
+      assert has_element?(lv, "#sink-types-pro + div #sink-type-s3")
+      # Community isn't entitled to Pro types, so each says so before it's clicked.
+      assert has_element?(lv, "#sink-type-s3", "Requires Flux Pro")
+      refute has_element?(lv, "#sink-type-http", "Requires Flux Pro")
+    end
+
+    test "every tile puts its sublabel on the row under its name", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      # Community tiles have no lock column; without an explicit row the
+      # sublabel would auto-place beside the name instead of under it.
+      for type <- ~w(http s3) do
+        assert has_element?(lv, "#sink-type-#{type} span.row-start-2")
+      end
+    end
+
+    test "choosing a type collapses the picker to a summary that can be reopened",
+         %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      render_click(lv, "select_type", %{"type" => "postgres"})
+
+      refute has_element?(lv, "#sink-type-http")
+      assert has_element?(lv, "#sink-destination", "Postgres")
+      assert has_element?(lv, "#sink-connection")
+      refute has_element?(lv, "#sink-submit[disabled]")
+
+      lv |> element("#sink-type-change") |> render_click()
+
+      assert has_element?(lv, "#sink-type-postgres[aria-pressed='true']")
+    end
+
+    test "a locked Pro type disables submit and explains why", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      render_click(lv, "select_type", %{"type" => "s3"})
+
+      assert has_element?(lv, "#sink-pro-required", "S3 sinks are part of Flux Pro")
+      assert has_element?(lv, "#sink-submit[disabled]")
+      assert has_element?(lv, "#sink-submit-hint", "S3 sinks need Flux Pro")
+      refute has_element?(lv, "#sink-details")
+    end
+
+    test "Postgres asks for a database URL only in external mode", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "postgres"})
+
+      refute has_element?(lv, "#sink_config_database_url")
+
+      lv |> form("form", %{"sink" => %{"config_mode" => "external"}}) |> render_change()
+
+      assert has_element?(lv, "#sink_config_database_url")
+    end
+
+    test "description stays behind a link until asked for", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "http"})
+
+      refute has_element?(lv, "#sink_description")
+
+      lv |> element("#sink-add-description") |> render_click()
+
+      assert has_element?(lv, "#sink_description")
     end
   end
 
@@ -215,6 +286,17 @@ defmodule FluxWeb.SinkLive.FormTest do
       {:ok, _lv, html} = live(conn, ~p"/sinks/#{sink.id}/edit")
 
       assert html =~ "Existing Sink"
+    end
+
+    test "opens with the type collapsed and an existing description shown",
+         %{conn: conn, scope: scope} do
+      sink = sink_fixture(scope.organization_id, %{description: "Order webhooks"})
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      refute has_element?(lv, "#sink-type-postgres")
+      assert has_element?(lv, "#sink-destination", "HTTP")
+      assert has_element?(lv, "#sink_description", "Order webhooks")
     end
 
     test "hydrates non-secret config fields but leaves the secret blank on edit",
