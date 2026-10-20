@@ -22,7 +22,7 @@ defmodule Flux.Sink.Adapters.Parquet.Buffer do
   result does not affect the message ack.
   """
 
-  use GenServer, restart: :transient, shutdown: 30_000
+  use GenServer, restart: :transient
 
   require Logger
 
@@ -31,6 +31,7 @@ defmodule Flux.Sink.Adapters.Parquet.Buffer do
   @registry Flux.Sink.Adapters.Parquet.BufferRegistry
   @default_idle_timeout_ms 300_000
   @default_max_open_partitions 500
+  @write_attempts 3
 
   defstruct [
     :key,
@@ -44,6 +45,17 @@ defmodule Flux.Sink.Adapters.Parquet.Buffer do
   ]
 
   # ── Client ──────────────────────────────────────────────────────────────
+
+  # terminate/2 writes every open partition, which can legitimately take a
+  # while (up to max_open_partitions files on slow storage). A fixed stop limit
+  # would let the supervisor kill the buffer mid-flush and drop rows it already
+  # accepted, so by default shutdown waits for the flush to finish. Operators
+  # can bound it with `config :flux, Flux.Sink.Adapters.Parquet, shutdown_timeout:`.
+  def child_spec(opts) do
+    opts
+    |> super()
+    |> Map.put(:shutdown, env(:shutdown_timeout, :infinity))
+  end
 
   def start_link(opts) do
     key = Keyword.fetch!(opts, :key)
@@ -187,7 +199,10 @@ defmodule Flux.Sink.Adapters.Parquet.Buffer do
       Map.new(schema, fn {name, _} -> {name, [Map.get(row, name) | part.columns[name]]} end)
 
     part = %{part | columns: columns, rows: part.rows + 1} |> Map.put(:schema, schema)
-    state = %{state | schema: schema, partitions: Map.put(state.partitions, partition, part)}
+    # Merge rather than replace: a row landing in an older, narrower partition
+    # must not drop columns another partition has already widened the seed with.
+    seed = Schema.merge(state.schema || %{}, schema)
+    state = %{state | schema: seed, partitions: Map.put(state.partitions, partition, part)}
 
     if part.rows >= state.settings.max_rows,
       do: flush_partition(state, partition),
@@ -231,8 +246,16 @@ defmodule Flux.Sink.Adapters.Parquet.Buffer do
 
   defp write_part(state, partition, part, seq) do
     started = System.monotonic_time()
-    settings = state.settings
     columns = Map.new(part.columns, fn {name, values} -> {name, Enum.reverse(values)} end)
+
+    result = write_new_file(state, partition, part.schema, columns, seq, @write_attempts)
+    emit_flush(state, partition, part.rows, started, result)
+  end
+
+  # Renders a fresh name (new {uid} and {timestamp}) for each attempt, so a
+  # name collision costs a retry instead of the rows.
+  defp write_new_file(state, partition, schema, columns, seq, attempts) do
+    settings = state.settings
 
     relative =
       Paths.render_file(settings.path_template, %{
@@ -243,14 +266,17 @@ defmodule Flux.Sink.Adapters.Parquet.Buffer do
         uid: Paths.uid()
       })
 
-    result =
-      with {:ok, root} <- Paths.root(%{"directory" => settings.directory}),
-           {:ok, path} <- Paths.resolve(root, relative),
-           {:ok, bytes} <- Writer.write(path, part.schema, columns, settings.compression) do
-        {:ok, path, bytes}
-      end
+    with {:ok, root} <- Paths.root(%{"directory" => settings.directory}),
+         {:ok, path} <- Paths.resolve(root, relative),
+         {:ok, bytes} <- Writer.write(path, schema, columns, settings.compression) do
+      {:ok, path, bytes}
+    else
+      {:error, :eexist} when attempts > 1 ->
+        write_new_file(state, partition, schema, columns, seq, attempts - 1)
 
-    emit_flush(state, partition, part.rows, started, result)
+      error ->
+        error
+    end
   end
 
   defp emit_flush(state, partition, rows, started, result) do
