@@ -248,6 +248,16 @@ defmodule FluxWeb.SinkLive.FormTest do
       refute has_element?(lv, "#sink-details")
     end
 
+    test "pricing links open in a new tab so the form isn't lost", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      assert has_element?(lv, "#sink-compare-plans[target='_blank'][rel~='noopener']")
+
+      render_click(lv, "select_type", %{"type" => "s3"})
+
+      assert has_element?(lv, "#sink-view-pricing[target='_blank'][rel~='noopener']")
+    end
+
     test "Postgres asks for a database URL only in external mode", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
       render_click(lv, "select_type", %{"type" => "postgres"})

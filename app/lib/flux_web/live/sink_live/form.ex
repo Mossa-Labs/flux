@@ -272,12 +272,17 @@ defmodule FluxWeb.SinkLive.Form do
           <span class="hidden font-normal text-ink-subtle sm:inline">
             {if @any_locked?, do: "· requires a Flux Pro license", else: "· included in your license"}
           </span>
+          <%!-- New tab, so a half-filled form isn't lost. --%>
           <.link
             :if={@any_locked?}
+            id="sink-compare-plans"
             href={Flux.Marketing.pricing_url()}
-            class="ml-auto font-medium text-lavender-hover hover:underline"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="ml-auto inline-flex items-center gap-1 font-medium text-lavender-hover hover:underline"
           >
-            Compare plans
+            Compare plans <.icon name="hero-arrow-top-right-on-square" class="size-3.5" />
+            <span class="sr-only">(opens in a new tab)</span>
           </.link>
         </h3>
         <div class="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] sm:gap-3">
@@ -404,8 +409,15 @@ defmodule FluxWeb.SinkLive.Form do
             Community destinations — {@community_labels} — are always included. Upgrade to send pipeline output here too.
           </p>
           <div class="mt-5 flex flex-wrap items-center gap-3">
-            <.link href={Flux.Marketing.pricing_url()} class="btn btn-primary btn-sm">
-              View pricing <.icon name="hero-arrow-right" class="size-4" />
+            <.link
+              id="sink-view-pricing"
+              href={Flux.Marketing.pricing_url()}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="btn btn-primary btn-sm"
+            >
+              View pricing <.icon name="hero-arrow-top-right-on-square" class="size-4" />
+              <span class="sr-only">(opens in a new tab)</span>
             </.link>
             <button
               type="button"
