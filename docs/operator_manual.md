@@ -265,7 +265,7 @@ MIX_ENV=prod mix release
 ### IP Allowlist
 
 Each organization can restrict **API** access to a set of allowed CIDR ranges
-(configured in System Settings → IP Allowlist, owner only). Requests from IPs
+(configured in System Settings → Security → IP allowlist, owner only). Requests from IPs
 outside the allowlist receive `403 Forbidden`. An empty allowlist (the default)
 allows all IPs.
 

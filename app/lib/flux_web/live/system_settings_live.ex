@@ -563,11 +563,11 @@ defmodule FluxWeb.SystemSettingsLive do
            |> put_flash(:info, "IP allowlist updated.")}
 
         {:error, changeset} ->
-          timeout = socket.assigns.security_settings.session_timeout_minutes
-
+          # Keep every other field of the shared form. Rebuilding it from the
+          # allowlist alone blanked the password-policy and MFA forms, and saving
+          # either of those next would then write the blanks over real settings.
           form =
-            to_form(
-              %{"ip_allowlist" => text, "session_timeout_minutes" => to_string(timeout)},
+            to_form(Map.merge(socket.assigns.security_form.params, %{"ip_allowlist" => text}),
               as: :security
             )
 

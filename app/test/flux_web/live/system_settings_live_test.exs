@@ -128,9 +128,9 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       assert html =~ "viewer"
     end
 
-    test "shows the IP Allowlist section", %{conn: conn} do
+    test "shows the IP allowlist section", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/system/settings?tab=security")
-      assert html =~ "IP Allowlist"
+      assert html =~ "IP allowlist"
     end
 
     test "saves a valid allowlist and persists it", %{conn: conn, owner_scope: scope} do
@@ -162,6 +162,40 @@ defmodule FluxWeb.SystemSettingsLiveTest do
 
       assert html =~ "invalid CIDR"
       assert Flux.Security.get_settings(scope.organization_id).ip_allowlist == []
+    end
+
+    # The four Security forms share one form struct. A rejected allowlist used to
+    # rebuild it from the allowlist alone, which blanked the password-policy form
+    # on screen — and saving that form next wrote the blanks over the real policy.
+    test "a rejected allowlist leaves the other security forms intact", %{
+      conn: conn,
+      owner_scope: scope
+    } do
+      Flux.LicenseHelpers.with_license_tier(:enterprise, fn ->
+        {:ok, _} =
+          Flux.Security.update_settings(scope.organization_id, %{
+            password_min_length: 20,
+            password_require_upper: true
+          })
+
+        {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=security")
+
+        lv
+        |> form("#ip-allowlist-form", security: %{ip_allowlist: "not-a-cidr"})
+        |> render_submit()
+
+        assert has_element?(lv, "#ip-allowlist-error")
+
+        assert has_element?(
+                 lv,
+                 ~s(#password-policy-form input[name="security[password_min_length]"][value="20"])
+               )
+
+        assert has_element?(
+                 lv,
+                 ~s(#password-policy-form input[name="security[password_require_upper]"][checked])
+               )
+      end)
     end
 
     test "saves the session timeout", %{conn: conn, owner_scope: scope} do
@@ -240,7 +274,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
     } do
       {:ok, lv, html} = live(conn, ~p"/system/settings?tab=security")
 
-      assert html =~ "Require two-factor authentication"
+      assert html =~ "Two-factor authentication"
       # Community build: locked — prompt shown, editable form absent.
       assert html =~ "Require MFA for all members"
       refute has_element?(lv, "#mfa-enforcement-form")
