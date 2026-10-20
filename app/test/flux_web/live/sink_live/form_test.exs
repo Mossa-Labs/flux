@@ -62,6 +62,71 @@ defmodule FluxWeb.SinkLive.FormTest do
       refute html =~ "Collection"
     end
 
+    test "selecting Parquet shows its config fields (Community, no upgrade prompt)", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "parquet"})
+
+      refute html =~ "Flux Pro"
+      assert html =~ "Partition Template"
+      assert html =~ "Explicit Schema"
+    end
+
+    test "creates a Parquet sink", %{conn: conn, scope: scope} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "parquet"})
+
+      result =
+        lv
+        |> form("form", %{
+          "sink" => %{
+            "name" => "Lake",
+            "config_directory" => "events",
+            "config_partition_template" => "year={yyyy}/",
+            "config_compression" => "zstd",
+            "config_compression_level" => "5",
+            "config_max_rows" => "5000",
+            "config_schema" => ~s({"id": "integer"}),
+            "config_schema_mode" => "strict"
+          }
+        })
+        |> render_submit()
+
+      assert {:error, {:live_redirect, %{to: "/sinks"}}} = result
+
+      sink = scope.organization_id |> Flux.Sinks.list_sinks() |> Enum.find(&(&1.name == "Lake"))
+      assert sink.type == "parquet"
+
+      assert %{
+               "directory" => "events",
+               "partition_template" => "year={yyyy}/",
+               "compression" => "zstd",
+               "compression_level" => 5,
+               "max_rows" => 5000,
+               "schema" => %{"id" => "integer"},
+               "schema_mode" => "strict"
+             } = sink.config
+    end
+
+    test "rejects an unsafe Parquet directory and invalid schema JSON", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "parquet"})
+
+      html =
+        lv
+        |> form("form", %{
+          "sink" => %{
+            "name" => "Bad Lake",
+            "config_directory" => "../escape",
+            "config_schema" => "{not json"
+          }
+        })
+        |> render_submit()
+
+      assert html =~ "directory must not contain"
+      assert html =~ "schema must be a non-empty JSON object"
+    end
+
     test "save with valid params creates sink and redirects", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
 
@@ -184,6 +249,32 @@ defmodule FluxWeb.SinkLive.FormTest do
       assert updated.config["database_url"] == "mysql://root:s3cr3t@db.internal:3306/prod"
       assert updated.config["columns"] == %{"event_type" => "type"}
       assert updated.config["ssl"] == true
+    end
+
+    test "editing a Parquet sink hydrates its fields and can clear the schema",
+         %{conn: conn, scope: scope} do
+      sink =
+        sink_fixture(scope.organization_id, %{
+          type: "parquet",
+          config: %{
+            "directory" => "lake",
+            "partition_template" => "region={region}/",
+            "schema" => %{"id" => "integer"}
+          }
+        })
+
+      {:ok, lv, html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+      assert html =~ "region={region}/"
+      assert html =~ "&quot;id&quot;:&quot;integer&quot;"
+
+      lv
+      |> form("form", %{"sink" => %{"config_schema" => "", "config_partition_template" => ""}})
+      |> render_submit()
+
+      updated = Flux.Sinks.get_sink(sink.id, scope.organization_id)
+      assert updated.config["directory"] == "lake"
+      assert updated.config["schema"] == nil
+      assert updated.config["partition_template"] == ""
     end
   end
 

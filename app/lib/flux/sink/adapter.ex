@@ -8,7 +8,8 @@ defmodule Flux.Sink.Adapter do
   and are looked up at dispatch time by `Flux.Sink.deliver/3`.
 
   Adapters shipped with Community: `Flux.Sink.Adapters.HTTP`,
-  `Flux.Sink.Adapters.Postgres`. Pro/EE adapters (e.g. S3, Snowflake,
+  `Flux.Sink.Adapters.Postgres`, `Flux.Sink.Adapters.MySQL`,
+  `Flux.Sink.Adapters.Parquet`. Pro/EE adapters (e.g. S3, Snowflake,
   BigQuery, Kafka) ship in the commercial edition and register themselves at
   boot; in Community builds the type identifier is backed by
   `Flux.Sink.Adapters.Stub`, which returns `{:error, {:pro_required, _}}`.

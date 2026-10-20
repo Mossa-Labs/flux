@@ -257,6 +257,22 @@ networking.
 | On Duplicate Key | Strategy for duplicate keys: `raise`, `ignore`, or `update` (upsert) |
 | TLS/SSL | Connect to the database over TLS |
 
+#### Parquet Sink
+Write records as columnar Parquet files for analytics and data-lake use. Files land
+under the server's Parquet base directory (`FLUX_PARQUET_BASE_DIR`); mount a bucket
+there to land them in S3, GCS or Azure. See [Parquet File Sink](connectors/parquet.md)
+for the full reference.
+
+| Field | Description |
+|-------|-------------|
+| Directory | Folder inside the Parquet base directory |
+| Partition Template | Optional Hive-style folders, e.g. `year={yyyy}/month={MM}/` or `region={region}/` |
+| File Path Template | File naming; defaults to `{pipeline_id}/{partition}part-{timestamp}-{seq}-{uid}.parquet` |
+| Compression | `snappy` (default), `zstd`, `gzip`, or `none`, with an optional level |
+| Rotate After Rows / Seconds | Start a new file after this many rows (default 100,000) or seconds (default 600) |
+| Explicit Schema | Optional JSON column → type map; blank infers the schema from records |
+| On Schema Change | `rotate` to a new file with the widened schema, or `strict` to reject mismatches |
+
 ---
 
 ## System Settings

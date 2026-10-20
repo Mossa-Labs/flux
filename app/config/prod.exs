@@ -26,5 +26,9 @@ config :swoosh, local: false
 # Do not print debug messages in production
 config :logger, level: :info
 
+# Parquet sink output root (the release image creates and owns it). Override at
+# runtime with FLUX_PARQUET_BASE_DIR, e.g. to point at a mounted bucket.
+config :flux, Flux.Sink.Adapters.Parquet, base_dir: "/app/data/parquet"
+
 # Runtime production configuration, including reading
 # of environment variables, is done on config/runtime.exs.

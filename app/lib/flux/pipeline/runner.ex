@@ -301,7 +301,7 @@ defmodule Flux.Pipeline.Runner do
     for sink <- sinks do
       Task.start(fn ->
         config = Map.put(sink.config, "type", sink.type)
-        opts = [pipeline_id: pipeline_id, message_id: Ecto.UUID.generate()]
+        opts = [pipeline_id: pipeline_id, sink_id: sink.id, message_id: Ecto.UUID.generate()]
 
         case Flux.Sink.deliver(data, config, opts) do
           :ok ->

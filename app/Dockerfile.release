@@ -108,6 +108,9 @@ ENV LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8
 
 WORKDIR /app
 RUN chown nobody /app
+# Parquet sink output root (config/prod.exs). Mount a volume or a bucket here, or
+# point FLUX_PARQUET_BASE_DIR elsewhere, to keep files beyond the container.
+RUN mkdir -p /app/data/parquet && chown -R nobody /app/data
 ENV MIX_ENV=prod
 # config/runtime.exs only starts the endpoint when PHX_SERVER is set, and this
 # release has no generated `bin/server` script — without this the container boots
