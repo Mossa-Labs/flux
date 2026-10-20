@@ -477,7 +477,15 @@ defmodule FluxWeb.SinkLive.Form do
   end
 
   defp type_config_fields(%{type: "email"} = assigns) do
-    assigns = assign(assigns, :provider, cfg(assigns.form, "config_provider") || "smtp")
+    provider = cfg(assigns.form, "config_provider") || "smtp"
+
+    # A saved secret is only kept while the provider stays the same (see
+    # carried_config/3), so a new sink or a provider switch needs fresh ones.
+    keeps_secrets? =
+      not is_nil(assigns.form.data.id) and
+        (assigns.form.data.config || %{})["provider"] == provider
+
+    assigns = assign(assigns, provider: provider, keeps_secrets?: keeps_secrets?)
 
     ~H"""
     <div class="space-y-6">
@@ -525,7 +533,7 @@ defmodule FluxWeb.SinkLive.Form do
               field={@form[:config_password]}
               type="password"
               label="Password"
-              placeholder={if @form.data.id, do: "Leave blank to keep current", else: ""}
+              placeholder={if @keeps_secrets?, do: "Leave blank to keep current", else: ""}
             />
           </div>
           <.input
@@ -553,8 +561,8 @@ defmodule FluxWeb.SinkLive.Form do
             field={@form[:config_api_key]}
             type="password"
             label="API Key"
-            placeholder={if @form.data.id, do: "Leave blank to keep current", else: ""}
-            required={is_nil(@form.data.id)}
+            placeholder={if @keeps_secrets?, do: "Leave blank to keep current", else: ""}
+            required={!@keeps_secrets?}
           />
           <div :if={@provider == "mailgun"} class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <.input
@@ -587,8 +595,8 @@ defmodule FluxWeb.SinkLive.Form do
               field={@form[:config_secret_access_key]}
               type="password"
               label="Secret Access Key"
-              placeholder={if @form.data.id, do: "Leave blank to keep current", else: ""}
-              required={is_nil(@form.data.id)}
+              placeholder={if @keeps_secrets?, do: "Leave blank to keep current", else: ""}
+              required={!@keeps_secrets?}
             />
           </div>
         </div>
@@ -1250,7 +1258,7 @@ defmodule FluxWeb.SinkLive.Form do
   # changes we start from an empty base so stale keys aren't carried over.
   defp merge_config_params(params, type, sink) do
     built = build_config(params, type)
-    base = if type == sink.type, do: sink.config || %{}, else: %{}
+    base = if type == sink.type, do: carried_config(type, sink.config || %{}, built), else: %{}
 
     config =
       base
@@ -1261,6 +1269,21 @@ defmodule FluxWeb.SinkLive.Form do
     |> Map.put("type", type)
     |> Map.put("config", config)
   end
+
+  # An email sink's secrets belong to its provider. SendGrid, Postmark and
+  # Mailgun all store their key as "api_key", so carrying a blank secret over a
+  # provider switch would save the old provider's key under the new one and
+  # every send would then fail to authenticate. On a switch the stored secrets
+  # are dropped, and validation asks for the new provider's credentials.
+  @email_secret_keys ~w(password api_key secret_access_key)
+
+  defp carried_config("email", config, built) do
+    if config["provider"] == built["provider"],
+      do: config,
+      else: Map.drop(config, @email_secret_keys)
+  end
+
+  defp carried_config(_type, config, _built), do: config
 
   # Reverse of build_config/2: hydrate the virtual config_* form fields from a
   # sink's stored config on edit so non-secret values render pre-filled. Secret
