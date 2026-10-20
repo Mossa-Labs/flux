@@ -174,6 +174,13 @@ defmodule Flux.Sink.Adapters.Parquet.Schema do
     end)
   end
 
+  @doc """
+  Merges two schemas into one both fit: the union of their columns, with
+  conflicting types widened the same way as `widen/2`.
+  """
+  @spec merge(t(), t()) :: t()
+  def merge(a, b), do: Map.merge(a, b, fn _name, ta, tb -> widen_type(ta, tb) end)
+
   defp widen_type(type, type), do: type
   defp widen_type(:null, type), do: type
   defp widen_type(type, :null), do: type

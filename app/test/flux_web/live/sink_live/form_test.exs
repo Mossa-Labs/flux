@@ -278,6 +278,28 @@ defmodule FluxWeb.SinkLive.FormTest do
     end
   end
 
+  describe "edit Parquet sink" do
+    test "clearing the path template restores the default", %{conn: conn, scope: scope} do
+      sink =
+        sink_fixture(scope.organization_id, %{
+          type: "parquet",
+          config: %{"directory" => "lake", "path_template" => "custom/{uid}.parquet"}
+        })
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      lv
+      |> form("form", %{"sink" => %{"config_path_template" => ""}})
+      |> render_submit()
+
+      updated = Flux.Sinks.get_sink(sink.id, scope.organization_id)
+      assert updated.config["path_template"] == nil
+
+      assert Flux.Sink.Adapters.Parquet.Settings.from_config(updated.config).path_template ==
+               Flux.Sink.Adapters.Parquet.Settings.default_path_template()
+    end
+  end
+
   defp postgres_sink_fixture(scope) do
     sink_fixture(scope.organization_id, %{
       name: "pg-#{System.unique_integer([:positive])}",

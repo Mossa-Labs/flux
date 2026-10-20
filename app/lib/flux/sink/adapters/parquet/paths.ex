@@ -14,8 +14,8 @@ defmodule Flux.Sink.Adapters.Parquet.Paths do
 
   `path_template` (one value per written file):
   `{pipeline_id}`, `{partition}`, `{timestamp}` (`20261019T120000.123456Z`),
-  `{date}`, `{seq}` (zero-padded per-buffer file counter), `{uid}` (random,
-  unique per file).
+  `{date}`, `{seq}` (zero-padded per-buffer file counter), `{uid}` (random
+  128-bit id, unique per file).
 
   `partition_template` (one value per record, at arrival time, UTC):
   `{yyyy}`, `{MM}`, `{dd}`, `{HH}`, `{date}`, `{pipeline_id}`, and any other
@@ -155,9 +155,12 @@ defmodule Flux.Sink.Adapters.Parquet.Paths do
     end)
   end
 
-  @doc "A random 8-hex-character id, unique enough per file."
+  @doc """
+  A random 128-bit id (26 lowercase base32 characters). Large enough that a
+  `{uid}`-only template never realistically repeats, even across nodes.
+  """
   @spec uid() :: String.t()
-  def uid, do: 4 |> :crypto.strong_rand_bytes() |> Base.encode16(case: :lower)
+  def uid, do: 16 |> :crypto.strong_rand_bytes() |> Base.encode32(case: :lower, padding: false)
 
   defp get_path(data, path) do
     Enum.reduce_while(String.split(path, "."), data, fn key, acc ->

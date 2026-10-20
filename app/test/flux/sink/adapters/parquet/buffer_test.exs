@@ -147,6 +147,39 @@ defmodule Flux.Sink.Adapters.Parquet.BufferTest do
     end
   end
 
+  test "shutdown waits for the final flush by default" do
+    assert Buffer.child_spec(key: {"s", "p"}, config: %{}).shutdown == :infinity
+  end
+
+  test "rows in a narrower partition don't shrink the seed schema",
+       %{directory: directory, root: root} do
+    {pid, config} =
+      start_buffer(%{
+        "directory" => directory,
+        "partition_template" => "region={region}/",
+        "max_rows" => 2
+      })
+
+    append = fn row -> :ok = Buffer.append(pid, row, config) end
+
+    append.(%{"region" => "eu", "a" => 1})
+    # us widens the seed with "b"...
+    append.(%{"region" => "us", "a" => 1, "b" => "x"})
+    # ...and a row in the older, narrower eu partition must not drop it.
+    append.(%{"region" => "eu", "a" => 2})
+    assert Map.has_key?(:sys.get_state(pid).schema, "b")
+
+    # Fills and flushes the first us file; the next us file reopens from the
+    # seed, so a later wider row fits without another rotation.
+    append.(%{"region" => "us", "a" => 2})
+    append.(%{"region" => "us", "a" => 3})
+    append.(%{"region" => "us", "a" => 4, "b" => "y"})
+    :ok = Buffer.flush(pid)
+
+    us_files = root |> Path.join("**/region=us/*.parquet") |> Path.wildcard()
+    assert length(us_files) == 2
+  end
+
   test "writes one file per partition", %{directory: directory, root: root} do
     {pid, config} =
       start_buffer(%{"directory" => directory, "partition_template" => "region={region}/"})

@@ -2,12 +2,14 @@ defmodule Flux.Sink.Adapters.Parquet.Writer do
   @moduledoc """
   Turns a buffered, column-oriented batch into a Parquet file on disk.
 
-  Files are written to a hidden temporary sibling and then renamed into place,
-  so a reader listing the directory never sees a partially written file.
+  Files are written to a hidden temporary sibling and then moved into place,
+  so a reader listing the directory never sees a partially written file. An
+  existing file is never replaced: if the target name is taken the write fails
+  with `{:error, :eexist}` and the caller picks a new name.
   """
 
   alias Explorer.DataFrame
-  alias Flux.Sink.Adapters.Parquet.Schema
+  alias Flux.Sink.Adapters.Parquet.{Paths, Schema}
 
   @compressions ~w(snappy gzip zstd none)
 
@@ -22,18 +24,36 @@ defmodule Flux.Sink.Adapters.Parquet.Writer do
   @spec write(String.t(), Schema.t(), %{String.t() => list()}, term()) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def write(path, schema, columns, compression) do
-    tmp = Path.join(Path.dirname(path), ".#{Path.basename(path)}.tmp")
+    tmp = Path.join(Path.dirname(path), ".#{Path.basename(path)}.#{Paths.uid()}.tmp")
 
     with :ok <- File.mkdir_p(Path.dirname(path)),
          {:ok, df} <- build(schema, columns),
          :ok <- DataFrame.to_parquet(df, tmp, compression: compression),
-         :ok <- File.rename(tmp, path),
+         :ok <- publish(tmp, path),
          {:ok, %File.Stat{size: size}} <- File.stat(path) do
       {:ok, size}
     else
       {:error, reason} ->
         _ = File.rm(tmp)
         {:error, reason}
+    end
+  end
+
+  # Moves `tmp` to `path` without ever replacing an existing file. A hard link
+  # is an atomic create-if-absent; filesystems without hard links (most FUSE
+  # bucket mounts) fall back to check-then-rename, which is safe here because
+  # names are unique per file and each buffer writes its files one at a time.
+  defp publish(tmp, path) do
+    case File.ln(tmp, path) do
+      :ok ->
+        _ = File.rm(tmp)
+        :ok
+
+      {:error, :eexist} ->
+        {:error, :eexist}
+
+      {:error, _no_hard_links} ->
+        if File.exists?(path), do: {:error, :eexist}, else: File.rename(tmp, path)
     end
   end
 

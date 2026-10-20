@@ -56,10 +56,11 @@ the Flux process.
 - `{timestamp}`: when the file is written, in UTC (`20261019T120000.123456Z`)
 - `{date}`: when the file is written (`2026-10-19`)
 - `{seq}`: a zero-padded counter of files written by this buffer (`000001`)
-- `{uid}`: a random 8-character id, unique per file
+- `{uid}`: a random 128-bit id (26 characters), unique per file
 
 The template must end in `.parquet`. It must include `{uid}` or `{timestamp}` so
-files never overwrite each other. If you set `partition_template`, it must also
+each file gets a distinct name. Flux never replaces an existing file. If a name is
+somehow already taken, Flux picks a fresh one and tries again. If you set `partition_template`, it must also
 include `{partition}`.
 
 ### Partition template placeholders
@@ -163,12 +164,15 @@ A file is written when **any** of these happens:
   first);
 - Flux shuts down normally.
 
-Each file is written to a hidden temporary file (`.name.parquet.tmp`) and then
+Each file is written to a hidden temporary file (`.name.parquet.<id>.tmp`) and then
 renamed into place. Readers that list the directory never see a half-written
 file, so ignore dotfiles when you scan it.
 
 > **Durability.** Rows waiting in the buffer are held **in memory**. On a normal
-> shutdown or restart they are written out, but a hard kill (`SIGKILL`, OOM, power
+> shutdown or restart they are written out, and shutdown waits for that to finish.
+> Give your orchestrator enough grace time for it (e.g. Kubernetes
+> `terminationGracePeriodSeconds`). To cap the wait instead, set
+> `config :flux, Flux.Sink.Adapters.Parquet, shutdown_timeout: <ms>`. A hard kill (`SIGKILL`, OOM, power
 > loss) loses up to one buffer's worth of rows for each sink and pipeline. This
 > matches the other sinks, where a sink failure does not cause the source message
 > to be retried. If you can't afford that window, lower `max_rows` and

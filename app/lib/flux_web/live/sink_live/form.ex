@@ -1248,9 +1248,9 @@ defmodule FluxWeb.SinkLive.Form do
 
     %{}
     |> maybe_put("directory", params["config_directory"])
-    |> maybe_put("path_template", params["config_path_template"])
     |> maybe_put("compression", params["config_compression"])
     |> maybe_put("schema_mode", params["config_schema_mode"])
+    |> Map.put("path_template", blank_to_nil(params["config_path_template"]))
     |> Map.put("partition_template", params["config_partition_template"] || "")
     |> Map.put("compression_level", parse_int(params["config_compression_level"]))
     |> Map.put("max_rows", parse_int(params["config_max_rows"]))
@@ -1341,6 +1341,9 @@ defmodule FluxWeb.SinkLive.Form do
   end
 
   defp build_config(_params, _type), do: %{}
+
+  defp blank_to_nil(value) when value in [nil, ""], do: nil
+  defp blank_to_nil(value), do: value
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, _key, ""), do: map
