@@ -21,7 +21,7 @@ defmodule FluxWeb.SystemSettingsLive.GeneralTab do
   def general_tab(assigns) do
     ~H"""
     <div class="space-y-6">
-      <LicenseCard.license_section
+      <LicenseCard.license_card
         license={@license}
         activation_supported={@activation_supported}
         license_form={@license_form}

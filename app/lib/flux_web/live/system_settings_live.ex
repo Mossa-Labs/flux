@@ -66,10 +66,7 @@ defmodule FluxWeb.SystemSettingsLive do
        |> assign(:api_keys, if(org_id, do: Accounts.list_api_keys(org_id), else: []))
        |> assign(:api_key_form, new_api_key_form())
        |> assign(:revealed_key, nil)
-       |> assign(:api_key_scopes_enabled, Flux.License.has_feature?(:api_key_scopes))
-       |> assign(:password_policy_enabled, Flux.License.has_feature?(:password_policy))
-       |> assign(:mfa_enforcement_enabled, Flux.License.has_feature?(:mfa_enforcement))
-       |> assign(:branding_enabled, Flux.Branding.entitled?())
+       |> assign_entitlements()
        |> assign_branding(org_id)
        # accept: is a client-side hint only — the real check is the provider's
        # signature validation. max_file_size IS enforced server-side, and matches
@@ -87,7 +84,6 @@ defmodule FluxWeb.SystemSettingsLive do
          max_entries: 1,
          max_file_size: 256_000
        )
-       |> assign(:usage_metering_enabled, usage_metering_enabled?())
        |> assign(:usage, load_usage(org_id))
        |> assign_security_settings(org_id)
        |> stream(:teams_stream, teams)}
@@ -212,6 +208,18 @@ defmodule FluxWeb.SystemSettingsLive do
   defp license_error(:invalid_signature), do: "the signature is invalid"
   defp license_error(:not_writable), do: "the license file location is not writable"
   defp license_error(reason), do: inspect(reason)
+
+  # Which gated sections render their form rather than an upgrade prompt. Read
+  # again after an activation: with tabs, the prompts on other tabs would
+  # otherwise keep advertising features the new license has just unlocked.
+  defp assign_entitlements(socket) do
+    socket
+    |> assign(:api_key_scopes_enabled, Flux.License.has_feature?(:api_key_scopes))
+    |> assign(:password_policy_enabled, Flux.License.has_feature?(:password_policy))
+    |> assign(:mfa_enforcement_enabled, Flux.License.has_feature?(:mfa_enforcement))
+    |> assign(:branding_enabled, Flux.Branding.entitled?())
+    |> assign(:usage_metering_enabled, usage_metering_enabled?())
+  end
 
   defp usage_metering_enabled?, do: Flux.License.has_feature?(:usage_metering)
 
@@ -491,6 +499,8 @@ defmodule FluxWeb.SystemSettingsLive do
          |> assign(:node_states, Flux.License.node_states())
          |> assign(:node_capacity, Flux.License.node_capacity())
          |> assign(:license_form, to_form(%{"token" => ""}, as: :license))
+         |> assign_entitlements()
+         |> assign(:usage, load_usage(socket.assigns.org_id))
          |> put_flash(:info, activation_message(license))}
 
       {:error, reason} ->
