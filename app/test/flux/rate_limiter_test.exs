@@ -35,6 +35,26 @@ defmodule Flux.RateLimiterTest do
     assert RateLimiter.allow?(key, 1, 20)
   end
 
+  test "acquire/2 hands out at most `max` concurrent slots until released" do
+    key = {:t, System.unique_integer()}
+
+    assert RateLimiter.acquire(key, 2)
+    assert RateLimiter.acquire(key, 2)
+    refute RateLimiter.acquire(key, 2)
+
+    RateLimiter.release(key)
+    assert RateLimiter.acquire(key, 2)
+    refute RateLimiter.acquire(key, 2)
+  end
+
+  test "a gauge and a window counter can share a key without interfering" do
+    key = {:t, System.unique_integer()}
+
+    assert RateLimiter.acquire(key, 1)
+    assert RateLimiter.allow?(key, 1, 60_000)
+    refute RateLimiter.acquire(key, 1)
+  end
+
   test "reset/0 clears all counters" do
     assert RateLimiter.allow?(:c, 1, 60_000)
     refute RateLimiter.allow?(:c, 1, 60_000)

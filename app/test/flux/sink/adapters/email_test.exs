@@ -345,6 +345,46 @@ defmodule Flux.Sink.Adapters.EmailTest do
       assert :ok = Email.deliver(@record, config, opts)
     end
 
+    test "only one window's worth of records wait; the rest are dropped at once" do
+      # max_per_minute 1 allows one waiting record. Occupy that slot as a
+      # waiting task would, then confirm the next over-limit record is dropped
+      # immediately rather than parking for max_wait_ms.
+      config =
+        config(%{
+          "rate_limit" => %{"max_per_minute" => 1, "max_wait_ms" => 30_000, "window_ms" => 60_000}
+        })
+
+      opts = opts()
+      key = {:email_sink, opts[:sink_id]}
+
+      assert :ok = Email.deliver(@record, config, opts)
+      assert Flux.RateLimiter.acquire(key, 1)
+
+      {micros, result} = :timer.tc(fn -> Email.deliver(@record, config, opts) end)
+
+      assert result == {:error, :rate_limited}
+      assert micros < 1_000_000
+
+      Flux.RateLimiter.release(key)
+    end
+
+    test "a waiting record frees its slot when it finishes" do
+      config =
+        config(%{
+          "rate_limit" => %{"max_per_minute" => 1, "max_wait_ms" => 5_000, "window_ms" => 100}
+        })
+
+      opts = opts()
+      key = {:email_sink, opts[:sink_id]}
+
+      assert :ok = Email.deliver(@record, config, opts)
+      assert :ok = Email.deliver(@record, config, opts)
+
+      # The waiter released its slot, so the gauge is free again.
+      assert Flux.RateLimiter.acquire(key, 1)
+      Flux.RateLimiter.release(key)
+    end
+
     test "sinks have independent rate-limit budgets" do
       config = config(%{"rate_limit" => %{"max_per_minute" => 1, "max_wait_ms" => 0}})
 

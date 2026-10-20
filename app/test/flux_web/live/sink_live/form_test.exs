@@ -392,6 +392,100 @@ defmodule FluxWeb.SinkLive.FormTest do
       assert html =~ "at least two labels"
     end
 
+    test "clearing saved bodies and optional fields removes them", %{conn: conn, scope: scope} do
+      sink =
+        email_sink_fixture(scope.organization_id, %{
+          config: %{
+            "provider" => "smtp",
+            "host" => "smtp.example.com",
+            "port" => 2525,
+            "username" => "mailer",
+            "password" => "smtp-s3cr3t",
+            "from" => "alerts@example.com",
+            "from_name" => "Alerts",
+            "reply_to" => "help@example.com",
+            "to" => ["ops@example.com"],
+            "subject" => "hi",
+            "html_body" => "<p>old html</p>",
+            "text_body" => "old text",
+            "rate_limit" => %{"max_per_minute" => 5}
+          }
+        })
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      lv
+      |> form("form", %{
+        "sink" => %{
+          "config_html_body" => "",
+          "config_text_body" => "",
+          "config_reply_to" => "",
+          "config_from_name" => "",
+          "config_port" => "",
+          "config_max_per_minute" => ""
+        }
+      })
+      |> render_submit()
+
+      config = Flux.Sinks.get_sink(sink.id, scope.organization_id).config
+
+      for key <- ~w(html_body text_body reply_to from_name port rate_limit) do
+        refute Map.has_key?(config, key), "expected #{key} to be cleared, got #{inspect(config)}"
+      end
+
+      # The secret, left blank, is still kept.
+      assert config["password"] == "smtp-s3cr3t"
+      assert config["subject"] == "hi"
+    end
+
+    test "clearing a required field is a validation error, not a silent revert",
+         %{conn: conn, scope: scope} do
+      sink = email_sink_fixture(scope.organization_id)
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_subject" => ""}})
+        |> render_submit()
+
+      assert html =~ "subject is required"
+
+      assert Flux.Sinks.get_sink(sink.id, scope.organization_id).config["subject"] ==
+               sink.config["subject"]
+    end
+
+    test "recipients saved as a comma-separated string survive editing",
+         %{conn: conn, scope: scope} do
+      sink =
+        email_sink_fixture(scope.organization_id, %{
+          config: %{
+            "provider" => "smtp",
+            "host" => "smtp.example.com",
+            "from" => "alerts@example.com",
+            "to" => "ops@example.com, oncall@example.com",
+            "cc" => "lead@example.com",
+            "subject" => "hi"
+          }
+        })
+
+      {:ok, lv, html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      assert html =~ "ops@example.com, oncall@example.com"
+      assert html =~ "lead@example.com"
+
+      result =
+        lv
+        |> form("form", %{"sink" => %{"config_subject" => "updated"}})
+        |> render_submit()
+
+      assert {:error, {:live_redirect, %{to: "/sinks"}}} = result
+
+      config = Flux.Sinks.get_sink(sink.id, scope.organization_id).config
+      assert config["to"] == ["ops@example.com", "oncall@example.com"]
+      assert config["cc"] == ["lead@example.com"]
+    end
+
     test "editing without re-entering the password keeps it and hydrates recipients",
          %{conn: conn, scope: scope} do
       sink =

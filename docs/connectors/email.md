@@ -120,8 +120,11 @@ retried later.
 To keep a busy pipeline from getting your sender flagged as spam, each sink sends
 at most `max_per_minute` emails per minute. A record over the limit waits up to
 `max_wait_ms` for the next minute and is then **dropped** with a
-`rate_limited` warning in the log. The limit is counted on each Flux node
-separately, so a cluster of N nodes can send up to N × `max_per_minute`.
+`rate_limited` warning in the log. Only as many records wait as one minute can
+send (`max_per_minute`). Beyond that, records are dropped immediately, so a
+burst doesn't pile up thousands of waiting deliveries. The limit is counted on
+each Flux node separately, so a cluster of N nodes can send up to
+N × `max_per_minute`.
 
 If a pipeline produces bursts, filter or aggregate upstream so the sink sees the
 records worth an email.
