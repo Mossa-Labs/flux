@@ -652,6 +652,29 @@ defmodule FluxWeb.SinkLive.FormTest do
       assert config["api_key"] == "SG.old-sendgrid-key"
     end
 
+    test "the error summary follows the form's field order", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "email"})
+      lv |> form("form", %{"sink" => %{"config_provider" => "sendgrid"}}) |> render_change()
+
+      lv
+      |> form("form", %{"sink" => %{"name" => "", "config_provider" => "sendgrid"}})
+      |> render_submit()
+
+      banner = lv |> element("#sink-form-errors") |> render()
+
+      # API Key comes first on the page (under Send With), then the sender,
+      # recipients and message, then Details. The adapter reports them in a
+      # different order.
+      positions =
+        Enum.map(["API key", "From address", "To must", "Subject", "Name can"], fn text ->
+          {index, _} = :binary.match(banner, text)
+          index
+        end)
+
+      assert positions == Enum.sort(positions)
+    end
+
     test "switching provider saves the new provider's key", %{conn: conn, scope: scope} do
       sink = sendgrid_sink_fixture(scope)
 
