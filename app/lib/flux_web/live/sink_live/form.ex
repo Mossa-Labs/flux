@@ -98,6 +98,7 @@ defmodule FluxWeb.SinkLive.Form do
         id="sink-form"
         phx-change="validate"
         phx-submit="save"
+        phx-hook=".FocusOnEvent"
         class="mt-6 space-y-4"
       >
         <.error_summary :if={@show_errors?} errors={error_items(@form)} />
@@ -190,6 +191,17 @@ defmodule FluxWeb.SinkLive.Form do
           </button>
         </div>
       </.form>
+      <script :type={Phoenix.LiveView.ColocatedHook} name=".FocusOnEvent">
+        // Picking or changing a destination swaps out the focused tile; the
+        // server says where focus belongs once the new content is rendered.
+        export default {
+          mounted() {
+            this.handleEvent("sink-form:focus", ({to}) => {
+              this.el.querySelector(to)?.focus()
+            })
+          }
+        }
+      </script>
     </div>
     """
   end
@@ -402,7 +414,11 @@ defmodule FluxWeb.SinkLive.Form do
           <.icon name="hero-lock-closed" class="size-5" />
         </span>
         <div class="min-w-0 flex-1">
-          <h2 class="text-lg font-semibold tracking-tight text-base-content">
+          <h2
+            id="sink-pro-required-title"
+            tabindex="-1"
+            class="text-lg font-semibold tracking-tight text-base-content focus:outline-none"
+          >
             {pro_label(@type)} are part of Flux Pro
           </h2>
           <p class="mt-2 max-w-prose text-sm leading-relaxed text-base-content/80">
@@ -1446,11 +1462,15 @@ defmodule FluxWeb.SinkLive.Form do
     {:noreply,
      socket
      |> clear_flash()
-     |> assign(selected_type: type, picking_type?: false, show_errors?: false)}
+     |> assign(selected_type: type, picking_type?: false, show_errors?: false)
+     |> focus(destination_focus(type))}
   end
 
   def handle_event("change_type", _params, socket) do
-    {:noreply, assign(socket, :picking_type?, true)}
+    {:noreply,
+     socket
+     |> assign(:picking_type?, true)
+     |> focus("#sink-type-#{socket.assigns.selected_type}")}
   end
 
   def handle_event("show_description", _params, socket) do
@@ -1571,6 +1591,18 @@ defmodule FluxWeb.SinkLive.Form do
           ArgumentError -> :error
         end
     end
+  end
+
+  # Moves keyboard focus once the patch lands (see the .FocusOnEvent hook):
+  # choosing a destination removes the tile that had focus.
+  defp focus(socket, selector), do: push_event(socket, "sink-form:focus", %{to: selector})
+
+  # A licensed type continues at its first setting; a locked one at the
+  # upgrade panel that replaces the settings.
+  defp destination_focus(type) do
+    if pro_locked?(type),
+      do: "#sink-pro-required-title",
+      else: "#sink-connection :is(input, select, textarea):not([type=hidden])"
   end
 
   # The banner's lines, as {text, anchor-id-or-nil}: "URL is required" links to
