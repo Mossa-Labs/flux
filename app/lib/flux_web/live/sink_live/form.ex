@@ -40,7 +40,9 @@ defmodule FluxWeb.SinkLive.Form do
      |> assign(:action, action)
      |> assign(:sink, sink)
      |> assign(:form, to_form(changeset))
-     |> assign(:selected_type, sink.type || "http")}
+     |> assign(:selected_type, sink.type || "http")
+     # The error summary only appears once a save has been attempted.
+     |> assign(:show_errors?, false)}
   end
 
   @impl true
@@ -57,6 +59,7 @@ defmodule FluxWeb.SinkLive.Form do
       </div>
 
       <.form for={@form} phx-change="validate" phx-submit="save" class="space-y-6">
+        <.error_summary :if={@show_errors?} errors={error_items(@form)} />
         <div class="card bg-base-100 shadow-sm border border-base-200">
           <div class="card-body">
             <h2 class="card-title text-base mb-4">Basic Information</h2>
@@ -235,6 +238,38 @@ defmodule FluxWeb.SinkLive.Form do
       <p class="font-medium mt-2">{@label}</p>
       <p class="text-xs text-base-content/60">{@sublabel}</p>
     </label>
+    """
+  end
+
+  attr :errors, :list, required: true
+
+  # Lists every problem from the last save attempt, each linking to its field.
+  defp error_summary(%{errors: []} = assigns), do: ~H""
+
+  defp error_summary(assigns) do
+    ~H"""
+    <div
+      id="sink-form-errors"
+      role="alert"
+      class="flex gap-3 rounded-xl border border-error/50 bg-error/10 p-4"
+    >
+      <.icon name="hero-exclamation-circle" class="size-5 shrink-0 text-error" />
+      <div class="min-w-0">
+        <p class="text-sm font-semibold text-base-content">
+          {if length(@errors) == 1,
+            do: "Fix 1 issue to save this sink",
+            else: "Fix #{length(@errors)} issues to save this sink"}
+        </p>
+        <ul class="mt-1.5 space-y-1 text-sm text-base-content/80">
+          <li :for={{text, anchor} <- @errors}>
+            <a :if={anchor} href={"#" <> anchor} class="underline-offset-2 hover:underline">
+              {text}
+            </a>
+            <span :if={!anchor}>{text}</span>
+          </li>
+        </ul>
+      </div>
+    </div>
     """
   end
 
@@ -1191,15 +1226,21 @@ defmodule FluxWeb.SinkLive.Form do
 
   @impl true
   def handle_event("select_type", %{"type" => type}, socket) do
-    {:noreply, assign(socket, :selected_type, type)}
+    # A new destination starts clean: the last save's problems were about the old one.
+    {:noreply,
+     socket
+     |> clear_flash()
+     |> assign(selected_type: type, show_errors?: false)}
   end
 
   def handle_event("validate", %{"sink" => params}, socket) do
-    params = merge_config_params(params, socket.assigns.selected_type, socket.assigns.sink)
+    type = socket.assigns.selected_type
+    params = merge_config_params(params, type, socket.assigns.sink)
 
     changeset =
       socket.assigns.sink
       |> Sinks.change_sink(params)
+      |> place_config_errors(type)
       |> Map.put(:action, :validate)
 
     {:noreply, assign(socket, :form, to_form(changeset))}
@@ -1237,10 +1278,7 @@ defmodule FluxWeb.SinkLive.Form do
          |> push_navigate(to: ~p"/sinks")}
 
       {:error, changeset} ->
-        {:noreply,
-         socket
-         |> assign(:form, to_form(changeset))
-         |> put_flash(:error, changeset_error_message(changeset))}
+        {:noreply, show_save_errors(socket, changeset)}
     end
   end
 
@@ -1253,32 +1291,111 @@ defmodule FluxWeb.SinkLive.Form do
          |> push_navigate(to: ~p"/sinks")}
 
       {:error, changeset} ->
-        {:noreply,
-         socket
-         |> assign(:form, to_form(changeset))
-         |> put_flash(:error, changeset_error_message(changeset))}
+        {:noreply, show_save_errors(socket, changeset)}
     end
   end
 
-  # Summarizes changeset errors into a single toast line (e.g. missing required
-  # fields), so a failed save is visible and not just an inline field error.
-  defp changeset_error_message(changeset) do
-    summary =
-      changeset
-      |> Ecto.Changeset.traverse_errors(fn {msg, opts} ->
-        Regex.replace(~r"%{(\w+)}", msg, fn _, key ->
-          opts |> Keyword.get(String.to_existing_atom(key), key) |> to_string()
-        end)
-      end)
-      |> Enum.map_join("; ", fn {field, msgs} ->
-        "#{Phoenix.Naming.humanize(field)} #{Enum.join(msgs, ", ")}"
+  # A failed save shows each problem under its field plus a summary banner at
+  # the top of the form, rather than a toast that outlives the attempt.
+  defp show_save_errors(socket, changeset) do
+    changeset = place_config_errors(changeset, socket.assigns.selected_type)
+    assign(socket, form: to_form(changeset), show_errors?: true)
+  end
+
+  # Adapters report config problems as ":config" errors whose text starts with
+  # the config key ("url is required", "rate_limit.max_wait_ms must be ...").
+  # Each is moved onto the `config_*` form field it's about so it renders under
+  # that input; a message that names no field stays on :config for the banner.
+  defp place_config_errors(changeset, type) do
+    errors =
+      Enum.map(changeset.errors, fn
+        {:config, {msg, opts}} -> place_config_error(type, msg, opts)
+        error -> error
       end)
 
-    case summary do
-      "" -> "Please fix the highlighted fields before saving."
-      msg -> "Couldn't save sink: #{msg}"
+    %{changeset | errors: errors}
+  end
+
+  defp place_config_error(type, msg, opts) do
+    with [_, key, sep, rest] <- Regex.run(~r/^([a-z_]+(?:\.[a-z_]+)?)(:?) (.+)$/s, msg),
+         {:ok, field} <- config_error_field(type, key),
+         # Recipient fields already list per-address problems live as you type
+         # (recipient_errors/2), so their "to: ..." summary would repeat them.
+         false <- sep == ":" and field in [:config_to, :config_cc, :config_bcc] do
+      {field, {rest, opts}}
+    else
+      _ -> {:config, {msg, opts}}
     end
   end
+
+  # Config keys whose form field isn't simply "config_<key>".
+  @config_error_fields %{
+    {"http", "timeout_ms"} => :config_timeout,
+    {"s3", "access_key_id"} => :config_access_key,
+    {"s3", "secret_access_key"} => :config_secret_key,
+    {"email", "rate_limit.max_per_minute"} => :config_max_per_minute,
+    {"email", "rate_limit.max_wait_ms"} => :config_max_wait_ms,
+    {"email", "tls_verify"} => :config_tls_skip_verify
+  }
+
+  defp config_error_field(type, key) do
+    case Map.fetch(@config_error_fields, {type, key}) do
+      {:ok, field} ->
+        {:ok, field}
+
+      :error ->
+        # Only atoms the form already uses can match, so this never mints new ones.
+        try do
+          {:ok, String.to_existing_atom("config_" <> key)}
+        rescue
+          ArgumentError -> :error
+        end
+    end
+  end
+
+  # The banner's lines, as {text, anchor-id-or-nil}: "URL is required" links to
+  # the URL input; a message that names no field is shown as-is.
+  # Ordered as on the page: changeset errors are newest-first, and the
+  # connection settings come before the Details section.
+  defp error_items(form) do
+    errors =
+      form.errors
+      |> Enum.reverse()
+      |> Enum.sort_by(fn {field, _} -> field in [:name, :description] end)
+
+    for {field, error} <- errors do
+      message = translate_error(error)
+
+      case field do
+        :config -> {upcase_first(message), nil}
+        field -> {"#{error_field_name(field)} #{message}", form[field].id}
+      end
+    end
+  end
+
+  @label_words %{
+    "url" => "URL",
+    "uri" => "URI",
+    "id" => "ID",
+    "api" => "API",
+    "tls" => "TLS",
+    "ssl" => "SSL",
+    "ttl" => "TTL",
+    "db" => "DB",
+    "ms" => "(ms)"
+  }
+
+  defp error_field_name(field) do
+    field
+    |> Atom.to_string()
+    |> String.replace_prefix("config_", "")
+    |> String.split("_")
+    |> Enum.map_join(" ", &Map.get(@label_words, &1, &1))
+    |> upcase_first()
+  end
+
+  defp upcase_first(<<first::utf8, rest::binary>>), do: String.upcase(<<first::utf8>>) <> rest
+  defp upcase_first(string), do: string
 
   # Merge freshly built config over the sink's stored config so that any field
   # the user left blank (dropped by `maybe_put/3` — notably secrets) falls back

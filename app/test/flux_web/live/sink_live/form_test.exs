@@ -134,8 +134,10 @@ defmodule FluxWeb.SinkLive.FormTest do
         })
         |> render_submit()
 
-      assert html =~ "directory must not contain"
-      assert html =~ "schema must be a non-empty JSON object"
+      assert html =~ "Directory must not contain"
+      assert html =~ "Schema must be a non-empty JSON object"
+      assert has_element?(lv, "#sink_config_directory.input-error")
+      assert has_element?(lv, "#sink_config_schema.textarea-error")
     end
 
     test "save with valid params creates sink and redirects", %{conn: conn} do
@@ -157,22 +159,44 @@ defmodule FluxWeb.SinkLive.FormTest do
 
     test "save with empty name shows validation error", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "http"})
 
-      html =
-        lv
-        |> form("form", %{
-          "sink" => %{
-            "name" => "",
-            "config_url" => "https://example.com/webhook"
-          }
-        })
-        |> render_submit()
+      lv
+      |> form("form", %{
+        "sink" => %{
+          "name" => "",
+          "config_url" => "https://example.com/webhook"
+        }
+      })
+      |> render_submit()
 
-      assert html =~ "can&#39;t be blank" or html =~ "can&apos;t be blank" or
-               html =~ "can't be blank"
+      assert has_element?(lv, "#sink_name.input-error")
+      # The summary banner names the field and links to it, instead of a toast.
+      assert has_element?(lv, "#sink-form-errors a[href='#sink_name']", "Name can")
+      refute render(lv) =~ "Couldn"
+    end
 
-      # The failure is also surfaced as an error toast, not just an inline error.
-      assert html =~ "Couldn&#39;t save sink" or html =~ "Couldn't save sink"
+    test "a config error shows under its own field", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "http"})
+
+      lv
+      |> form("form", %{"sink" => %{"name" => "Hook", "config_url" => ""}})
+      |> render_submit()
+
+      assert has_element?(lv, "#sink_config_url.input-error")
+      assert has_element?(lv, "#sink-form-errors a[href='#sink_config_url']", "URL is required")
+    end
+
+    test "picking another destination clears the error summary", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "http"})
+      lv |> form("form", %{"sink" => %{"name" => ""}}) |> render_submit()
+      assert has_element?(lv, "#sink-form-errors")
+
+      render_click(lv, "select_type", %{"type" => "postgres"})
+
+      refute has_element?(lv, "#sink-form-errors")
     end
   end
 
@@ -399,7 +423,8 @@ defmodule FluxWeb.SinkLive.FormTest do
         })
         |> render_submit()
 
-      assert html =~ "Couldn&#39;t save sink" or html =~ "Couldn't save sink"
+      assert has_element?(lv, "#sink-form-errors a[href='#sink_config_from']")
+      assert has_element?(lv, "#sink_config_from.input-error")
       assert html =~ "at least two labels"
     end
 
@@ -460,7 +485,8 @@ defmodule FluxWeb.SinkLive.FormTest do
         |> form("form", %{"sink" => %{"config_subject" => ""}})
         |> render_submit()
 
-      assert html =~ "subject is required"
+      assert html =~ "Subject is required"
+      assert has_element?(lv, "#sink-form-errors a[href='#sink_config_subject']")
 
       assert Flux.Sinks.get_sink(sink.id, scope.organization_id).config["subject"] ==
                sink.config["subject"]
@@ -508,7 +534,8 @@ defmodule FluxWeb.SinkLive.FormTest do
         |> form("form", %{"sink" => %{"config_provider" => "postmark"}})
         |> render_submit()
 
-      assert html =~ "api_key is required"
+      assert html =~ "API key is required"
+      assert has_element?(lv, "#sink_config_api_key.input-error")
 
       config = Flux.Sinks.get_sink(sink.id, scope.organization_id).config
       assert config["provider"] == "sendgrid"
