@@ -1,11 +1,16 @@
 defmodule FluxWeb.SystemSettingsLive.SecurityTab do
   @moduledoc """
-  IP allowlist, session timeout, password policy and MFA enforcement for System Settings.
+  The Security tab of System Settings: IP allowlist, session timeout, password
+  policy and MFA enforcement, one card each.
   """
   use FluxWeb, :html
 
+  import FluxWeb.SystemSettingsLive.Components
+
   alias FluxWeb.Components.UpgradePrompt
 
+  # All four forms share one form struct (`as: :security`); each submits only
+  # its own fields and its own event.
   attr :form, :any, required: true
   attr :error, :string, default: nil
   attr :password_policy_enabled, :boolean, default: false
@@ -13,79 +18,77 @@ defmodule FluxWeb.SystemSettingsLive.SecurityTab do
 
   def security_tab(assigns) do
     ~H"""
-    <section class="card bg-base-100 shadow-sm border border-base-200">
-      <div class="card-body">
-        <h2 class="card-title text-base font-bold">
-          <.icon name="hero-shield-check" class="w-5 h-5" /> IP Allowlist
-        </h2>
-        <p class="text-sm text-base-content/60">
+    <div class="grid gap-6 lg:grid-cols-2">
+      <.settings_card id="ip-allowlist-card" title="IP allowlist" icon="hero-globe-alt">
+        <:description>
           Restrict <span class="font-semibold">API</span>
           access to specific networks. One CIDR range per line
-          (e.g. <code>203.0.113.0/24</code>
-          or <code>198.51.100.7</code>). Leave empty to allow all
+          (e.g. <code class="font-mono text-xs">203.0.113.0/24</code>
+          or <code class="font-mono text-xs">198.51.100.7</code>). Leave empty to allow all
           IPs. Applies to the whole API, including inbound webhooks — this does
           <span class="font-semibold">not</span>
           restrict this settings UI, so you cannot lock yourself out.
-        </p>
+        </:description>
 
         <.form
           for={@form}
           id="ip-allowlist-form"
           phx-submit="save_security_settings"
-          class="mt-4 space-y-2"
+          class="space-y-2"
         >
           <.input
             field={@form[:ip_allowlist]}
             type="textarea"
             rows="4"
+            aria-label="Allowed CIDR ranges"
             placeholder="203.0.113.0/24\n198.51.100.7"
-            class="font-mono"
+            class="textarea w-full font-mono text-sm"
           />
           <p :if={@error} class="text-sm text-error" id="ip-allowlist-error">{@error}</p>
           <.button class="btn btn-primary btn-sm">Save allowlist</.button>
         </.form>
+      </.settings_card>
 
-        <div class="divider my-2"></div>
-
-        <h3 class="font-semibold text-sm">Session timeout</h3>
-        <p class="text-sm text-base-content/60">
+      <.settings_card id="session-timeout-card" title="Session timeout" icon="hero-clock">
+        <:description>
           Sign members out of the web app after this period of inactivity.
-        </p>
+        </:description>
 
         <.form
           for={@form}
           id="session-timeout-form"
           phx-submit="save_session_timeout"
-          class="mt-2 flex flex-col sm:flex-row gap-2 sm:items-end"
+          class="flex flex-col gap-x-2 sm:flex-row sm:items-end"
         >
-          <.input
-            field={@form[:session_timeout_minutes]}
-            type="select"
-            label="Idle timeout"
-            options={session_timeout_options()}
-          />
-          <.button class="btn btn-primary btn-sm">Save timeout</.button>
+          <div class="sm:min-w-48">
+            <.input
+              field={@form[:session_timeout_minutes]}
+              type="select"
+              label="Idle timeout"
+              options={session_timeout_options()}
+            />
+          </div>
+          <div class="mb-2">
+            <.button class="btn btn-primary btn-sm">Save timeout</.button>
+          </div>
         </.form>
+      </.settings_card>
 
-        <div class="divider my-2"></div>
-
-        <h3 class="font-semibold text-sm">
-          <.icon name="hero-key" class="w-4 h-4" /> Password policy
-        </h3>
-        <p class="text-sm text-base-content/60">
+      <.settings_card id="password-policy-card" title="Password policy" icon="hero-lock-closed">
+        <:description>
           Strengthen the rules new passwords must satisfy, on top of the built-in
           12-character minimum. Optionally require members to rotate their password
           on a schedule.
-        </p>
+        </:description>
 
         <%= if @password_policy_enabled do %>
           <.form
             for={@form}
             id="password-policy-form"
             phx-submit="save_password_policy"
-            class="mt-2 space-y-3"
+            class="space-y-3"
           >
-            <div class="flex flex-col sm:flex-row gap-2 sm:items-end">
+            <div class="grid gap-x-3 sm:grid-cols-2">
               <.input
                 field={@form[:password_min_length]}
                 type="number"
@@ -102,8 +105,8 @@ defmodule FluxWeb.SystemSettingsLive.SecurityTab do
               />
             </div>
 
-            <fieldset class="flex flex-col gap-1">
-              <legend class="text-sm font-medium">Require at least one…</legend>
+            <fieldset class="grid gap-x-4 sm:grid-cols-2">
+              <legend class="mb-1 text-sm font-medium">Require at least one…</legend>
               <.input
                 field={@form[:password_require_upper]}
                 type="checkbox"
@@ -114,11 +117,7 @@ defmodule FluxWeb.SystemSettingsLive.SecurityTab do
                 type="checkbox"
                 label="Lowercase letter (a–z)"
               />
-              <.input
-                field={@form[:password_require_number]}
-                type="checkbox"
-                label="Number (0–9)"
-              />
+              <.input field={@form[:password_require_number]} type="checkbox" label="Number (0–9)" />
               <.input
                 field={@form[:password_require_special]}
                 type="checkbox"
@@ -129,41 +128,34 @@ defmodule FluxWeb.SystemSettingsLive.SecurityTab do
             <.button class="btn btn-primary btn-sm">Save password policy</.button>
           </.form>
         <% else %>
-          <div class="mt-2">
-            <UpgradePrompt.upgrade_prompt feature={:password_policy} size={:compact} />
-          </div>
+          <UpgradePrompt.upgrade_prompt feature={:password_policy} size={:compact} />
         <% end %>
-      </div>
+      </.settings_card>
 
-      <div class="mt-6">
-        <h3 class="text-sm font-semibold">Require two-factor authentication</h3>
-        <p class="text-sm text-base-content/70">
+      <.settings_card id="mfa-card" title="Two-factor authentication" icon="hero-device-phone-mobile">
+        <:description>
           Require every member of this organization to enable two-factor
           authentication. Members without it are prompted to enroll before they can
           continue. Members set up their own authenticator under Account Settings.
-        </p>
+        </:description>
 
         <%= if @mfa_enforcement_enabled do %>
           <.form
             for={@form}
             id="mfa-enforcement-form"
             phx-submit="save_mfa_enforcement"
-            class="mt-2 space-y-3"
+            class="space-y-3"
           >
-            <.input
-              field={@form[:require_mfa]}
-              type="checkbox"
-              label="Require MFA for all members"
-            />
+            <div class="rounded-box border border-base-content/5 bg-base-300 px-4 pt-3 pb-1">
+              <.input field={@form[:require_mfa]} type="checkbox" label="Require MFA for all members" />
+            </div>
             <.button class="btn btn-primary btn-sm">Save</.button>
           </.form>
         <% else %>
-          <div class="mt-2">
-            <UpgradePrompt.upgrade_prompt feature={:mfa_enforcement} size={:compact} />
-          </div>
+          <UpgradePrompt.upgrade_prompt feature={:mfa_enforcement} size={:compact} />
         <% end %>
-      </div>
-    </section>
+      </.settings_card>
+    </div>
     """
   end
 

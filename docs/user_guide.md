@@ -265,6 +265,18 @@ networking.
 
 System settings are restricted to users with the **owner** role. Non-owners see a 403 Forbidden page with an automatic redirect countdown.
 
+The page is split into tabs. Each has its own URL, so you can bookmark or link straight to one, and the browser's back button moves between them:
+
+| Tab | URL | What's there |
+|-----|-----|--------------|
+| General | `/system/settings` | License (tier, expiry, cluster nodes, activation), usage and quotas, build information |
+| Members & teams | `/system/settings?tab=members` | Organization or team members, and teams |
+| API keys | `/system/settings?tab=api-keys` | Create and revoke API keys |
+| Security | `/system/settings?tab=security` | IP allowlist, session timeout, password policy, two-factor enforcement |
+| Branding | `/system/settings?tab=branding` | White-label name, colour, logo and favicon |
+
+A dot on the **General** tab means the license needs attention: it is expiring or expired, the cluster's nodes are not yet running the same license, or more nodes are running than the license covers.
+
 ### Teams Management
 
 - View all teams in your organization

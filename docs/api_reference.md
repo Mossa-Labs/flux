@@ -27,7 +27,7 @@ All API requests except `GET /health` require an `X-API-Key` header carrying a
 **per-organization API key**. Each key is bound to one organization, so requests
 are automatically scoped to that organization's data.
 
-Create and manage keys under **System Settings → API Keys**. A key looks like
+Create and manage keys under **System Settings → API keys**. A key looks like
 `flux_pk_<random>` and is shown in full **once, at creation** — only a hash is
 stored, so copy it then. Keys can be given an optional expiry and revoked at any
 time.
