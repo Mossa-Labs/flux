@@ -486,6 +486,90 @@ defmodule FluxWeb.SinkLive.FormTest do
       assert config["cc"] == ["lead@example.com"]
     end
 
+    test "switching provider with a blank key is rejected instead of reusing the old key",
+         %{conn: conn, scope: scope} do
+      sink = sendgrid_sink_fixture(scope)
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_provider" => "postmark"}})
+        |> render_submit()
+
+      assert html =~ "api_key is required"
+
+      config = Flux.Sinks.get_sink(sink.id, scope.organization_id).config
+      assert config["provider"] == "sendgrid"
+      assert config["api_key"] == "SG.old-sendgrid-key"
+    end
+
+    test "switching provider saves the new provider's key", %{conn: conn, scope: scope} do
+      sink = sendgrid_sink_fixture(scope)
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      result =
+        lv
+        |> form("form", %{
+          "sink" => %{"config_provider" => "postmark", "config_api_key" => "pm-new-token"}
+        })
+        |> render_submit()
+
+      assert {:error, {:live_redirect, %{to: "/sinks"}}} = result
+
+      config = Flux.Sinks.get_sink(sink.id, scope.organization_id).config
+      assert config["provider"] == "postmark"
+      assert config["api_key"] == "pm-new-token"
+    end
+
+    test "switching away drops the old provider's secrets", %{conn: conn, scope: scope} do
+      sink = email_sink_fixture(scope.organization_id)
+      assert sink.config["password"] == "smtp-s3cr3t"
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      lv
+      |> form("form", %{"sink" => %{"config_provider" => "system"}})
+      |> render_submit()
+
+      config = Flux.Sinks.get_sink(sink.id, scope.organization_id).config
+      assert config["provider"] == "system"
+      refute Map.has_key?(config, "password")
+    end
+
+    test "keeping the provider keeps a blank API key", %{conn: conn, scope: scope} do
+      sink = sendgrid_sink_fixture(scope)
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      lv
+      |> form("form", %{"sink" => %{"config_subject" => "updated"}})
+      |> render_submit()
+
+      config = Flux.Sinks.get_sink(sink.id, scope.organization_id).config
+      assert config["subject"] == "updated"
+      assert config["api_key"] == "SG.old-sendgrid-key"
+    end
+
+    test "the key field asks for a new key once the provider changes",
+         %{conn: conn, scope: scope} do
+      sink = sendgrid_sink_fixture(scope)
+
+      {:ok, lv, html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+      assert html =~ "Leave blank to keep current"
+      # `required` renders the label's `*` marker (span[title=required]).
+      refute has_element?(lv, ~s(#email-api-fields span[title="required"]))
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_provider" => "postmark"}})
+        |> render_change()
+
+      refute html =~ "Leave blank to keep current"
+      assert has_element?(lv, ~s(#email-api-fields span[title="required"]))
+    end
+
     test "editing without re-entering the password keeps it and hydrates recipients",
          %{conn: conn, scope: scope} do
       sink =
@@ -515,6 +599,18 @@ defmodule FluxWeb.SinkLive.FormTest do
       assert updated.config["password"] == "smtp-s3cr3t"
       assert updated.config["to"] == ["ops@example.com", "oncall@example.com"]
     end
+  end
+
+  defp sendgrid_sink_fixture(scope) do
+    email_sink_fixture(scope.organization_id, %{
+      config: %{
+        "provider" => "sendgrid",
+        "api_key" => "SG.old-sendgrid-key",
+        "from" => "alerts@example.com",
+        "to" => ["ops@example.com"],
+        "subject" => "hi"
+      }
+    })
   end
 
   defp postgres_sink_fixture(scope) do
