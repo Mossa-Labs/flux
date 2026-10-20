@@ -65,42 +65,29 @@ defmodule FluxWeb.SystemSettingsLive.ApiKeysTab do
       </div>
 
       <div class="rounded-box border border-base-content/5 bg-base-300 p-4">
-        <.form
-          for={@api_key_form}
-          id="api-key-form"
-          phx-submit="create_api_key"
-          class="flex flex-col gap-x-3 sm:flex-row sm:flex-wrap sm:items-end"
-        >
-          <div class="sm:min-w-48 sm:flex-[2]">
-            <.input field={@api_key_form[:name]} type="text" label="Name" placeholder="Production CI" />
-          </div>
-          <div class="sm:min-w-32 sm:flex-1">
+        <.form for={@api_key_form} id="api-key-form" phx-submit="create_api_key" class="space-y-3">
+          <div class="grid gap-x-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="sm:col-span-2">
+              <.input
+                field={@api_key_form[:name]}
+                type="text"
+                label="Name"
+                placeholder="Production CI"
+              />
+            </div>
             <.input
               field={@api_key_form[:role]}
               type="select"
               label="Role"
               options={[{"Admin", "admin"}, {"Member", "member"}, {"Viewer", "viewer"}]}
             />
-          </div>
-          <div :if={@scopes_enabled} class="sm:min-w-48 sm:flex-[2]">
-            <.input
-              field={@api_key_form[:scopes]}
-              type="select"
-              multiple
-              label="Scopes"
-              options={scope_options()}
-            />
-          </div>
-          <div class="sm:min-w-36 sm:flex-1">
             <.input field={@api_key_form[:expires_at]} type="date" label="Expires (optional)" />
           </div>
-          <div class="mb-2">
-            <.button class="btn btn-primary">Create key</.button>
-          </div>
+
+          <.scope_picker :if={@scopes_enabled} field={@api_key_form[:scopes]} />
+
+          <.button class="btn btn-primary btn-sm">Create key</.button>
         </.form>
-        <p :if={@scopes_enabled} class="text-xs text-base-content/60">
-          A key's access is the intersection of its role and its scopes.
-        </p>
       </div>
       <UpgradePrompt.upgrade_prompt :if={!@scopes_enabled} feature={:api_key_scopes} size={:compact} />
 
@@ -192,5 +179,67 @@ defmodule FluxWeb.SystemSettingsLive.ApiKeysTab do
   defp format_last_used(nil), do: "Never"
   defp format_last_used(%DateTime{} = dt), do: Calendar.strftime(dt, "%Y-%m-%d %H:%M")
 
-  defp scope_options, do: Enum.map(Flux.Accounts.ApiKey.scopes(), &{&1, &1})
+  attr :field, Phoenix.HTML.FormField, required: true
+
+  # One row per resource with a checkbox per action, rather than a multi-select:
+  # a native <select multiple> squeezed to input height showed a line and a half
+  # of six options and needed cmd-click to change.
+  defp scope_picker(assigns) do
+    assigns = assign(assigns, :selected, List.wrap(assigns.field.value))
+
+    ~H"""
+    <fieldset id="api-key-scopes" class="space-y-2">
+      <legend class="mb-1 text-sm font-medium">Scopes</legend>
+      <p class="text-xs text-base-content/60">
+        A key's access is the intersection of its role and its scopes. Leave every
+        box unchecked to use the role's defaults.
+      </p>
+      <div class="divide-y divide-base-content/5 rounded-field border border-base-content/10 bg-base-200">
+        <div
+          :for={{resource, actions} <- scope_rows()}
+          class="flex flex-wrap items-center gap-x-6 gap-y-1 px-3 py-1.5"
+        >
+          <span class="w-28 text-sm font-medium">{resource_label(resource)}</span>
+          <label
+            :for={{action, scope} <- actions}
+            class="inline-flex min-h-8 cursor-pointer items-center gap-2 text-sm"
+            title={scope}
+          >
+            <input
+              type="checkbox"
+              name={@field.name <> "[]"}
+              value={scope}
+              checked={scope in @selected}
+              class="checkbox checkbox-sm checkbox-primary"
+            />
+            {String.capitalize(action)}
+          </label>
+        </div>
+      </div>
+    </fieldset>
+    """
+  end
+
+  # Scopes are "<action>:<resource>". Grouped by resource in declaration order,
+  # each with its actions, e.g. {"pipelines", [{"read", "read:pipelines"}, ...]}.
+  defp scope_rows do
+    scopes = Flux.Accounts.ApiKey.scopes()
+
+    resources =
+      scopes
+      |> Enum.map(&(&1 |> String.split(":", parts: 2) |> List.last()))
+      |> Enum.uniq()
+
+    for resource <- resources do
+      {resource,
+       for(
+         scope <- scopes,
+         [action, ^resource] <- [String.split(scope, ":", parts: 2)],
+         do: {action, scope}
+       )}
+    end
+  end
+
+  defp resource_label(resource),
+    do: resource |> String.replace("_", " ") |> String.capitalize()
 end
