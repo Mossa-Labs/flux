@@ -164,7 +164,7 @@ A file is written when **any** of these happens:
   first);
 - Flux shuts down normally.
 
-Each file is written to a hidden temporary file (`.name.parquet.<id>.tmp`) and then
+Each file is written to a hidden temporary file (`.flux-<id>.tmp`) and then
 renamed into place. Readers that list the directory never see a half-written
 file, so ignore dotfiles when you scan it.
 

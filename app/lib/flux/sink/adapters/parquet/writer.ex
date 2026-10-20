@@ -24,7 +24,10 @@ defmodule Flux.Sink.Adapters.Parquet.Writer do
   @spec write(String.t(), Schema.t(), %{String.t() => list()}, term()) ::
           {:ok, non_neg_integer()} | {:error, term()}
   def write(path, schema, columns, compression) do
-    tmp = Path.join(Path.dirname(path), ".#{Path.basename(path)}.#{Paths.uid()}.tmp")
+    # A short temporary name in the same directory (so the final move stays on one
+    # filesystem), independent of the final name: deriving it from the final name
+    # would push long-but-valid filenames past the 255-byte limit.
+    tmp = Path.join(Path.dirname(path), ".flux-#{Paths.uid()}.tmp")
 
     with :ok <- File.mkdir_p(Path.dirname(path)),
          {:ok, df} <- build(schema, columns),
