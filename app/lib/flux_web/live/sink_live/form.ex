@@ -101,7 +101,7 @@ defmodule FluxWeb.SinkLive.Form do
         phx-hook=".FocusOnEvent"
         class="mt-6 space-y-4"
       >
-        <.error_summary :if={@show_errors?} errors={error_items(@form)} />
+        <.error_summary :if={@show_errors?} errors={error_items(@form, @selected_type)} />
 
         <%!-- On phones the open picker drops its card so two tiles fit side by side. --%>
         <section
@@ -1607,13 +1607,15 @@ defmodule FluxWeb.SinkLive.Form do
 
   # The banner's lines, as {text, anchor-id-or-nil}: "URL is required" links to
   # the URL input; a message that names no field is shown as-is.
-  # Ordered as on the page: changeset errors are newest-first, and the
-  # connection settings come before the Details section.
-  defp error_items(form) do
-    errors =
-      form.errors
-      |> Enum.reverse()
-      |> Enum.sort_by(fn {field, _} -> field in [:name, :description] end)
+  # Ordered as the page shows the fields, so following the banner walks down
+  # the form. Anything not on the page (e.g. a :config message) goes last.
+  defp error_items(form, type) do
+    order = displayed_fields(form, type)
+    position = fn {field, _} -> Enum.find_index(order, &(&1 == field)) || length(order) end
+
+    # Changeset errors are newest-first; reversing first keeps ties in
+    # validation order, since sort_by is stable.
+    errors = form.errors |> Enum.reverse() |> Enum.sort_by(position)
 
     for {field, error} <- errors do
       message = translate_error(error)
@@ -1623,6 +1625,28 @@ defmodule FluxWeb.SinkLive.Form do
         field -> {"#{error_field_name(field)} #{message}", form[field].id}
       end
     end
+  end
+
+  # The selected type's settings in rendered order, then the Details fields.
+  # Read from the rendered settings rather than a hand-kept list, so it follows
+  # the form as fields are added or shown conditionally (e.g. per provider).
+  defp displayed_fields(_form, nil), do: [:name, :description]
+
+  defp displayed_fields(form, type) do
+    html =
+      %{type: type, form: form, __changed__: nil}
+      |> type_config_fields()
+      |> Phoenix.HTML.Safe.to_iodata()
+      |> IO.iodata_to_binary()
+
+    config_fields =
+      ~r/name="#{Regex.escape(form.name)}\[(config_\w+)\]/
+      |> Regex.scan(html, capture: :all_but_first)
+      |> List.flatten()
+      |> Enum.uniq()
+      |> Enum.map(&String.to_existing_atom/1)
+
+    config_fields ++ [:name, :description]
   end
 
   @label_words %{
