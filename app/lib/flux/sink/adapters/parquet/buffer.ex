@@ -26,7 +26,7 @@ defmodule Flux.Sink.Adapters.Parquet.Buffer do
 
   require Logger
 
-  alias Flux.Sink.Adapters.Parquet.{Paths, Schema, Settings, Writer}
+  alias Flux.Sink.Adapters.Parquet.{Paths, Schema, Settings, Sweeper, Writer}
 
   @registry Flux.Sink.Adapters.Parquet.BufferRegistry
   @default_idle_timeout_ms 300_000
@@ -91,6 +91,7 @@ defmodule Flux.Sink.Adapters.Parquet.Buffer do
       last_activity: now_ms()
     }
 
+    Sweeper.sweep(state.settings.directory)
     schedule_tick(state)
     {:ok, state}
   end
@@ -248,35 +249,31 @@ defmodule Flux.Sink.Adapters.Parquet.Buffer do
     started = System.monotonic_time()
     columns = Map.new(part.columns, fn {name, values} -> {name, Enum.reverse(values)} end)
 
-    result = write_new_file(state, partition, part.schema, columns, seq, @write_attempts)
+    result = write_new_file(state, partition, part.schema, columns, seq)
     emit_flush(state, partition, part.rows, started, result)
   end
 
   # Renders a fresh name (new {uid} and {timestamp}) for each attempt, so a
-  # name collision costs a retry instead of the rows.
-  defp write_new_file(state, partition, schema, columns, seq, attempts) do
+  # name collision costs a retry instead of the rows. The file is encoded once;
+  # only its name is retried.
+  defp write_new_file(state, partition, schema, columns, seq) do
     settings = state.settings
 
-    relative =
-      Paths.render_file(settings.path_template, %{
-        pipeline_id: state.pipeline_id,
-        partition: partition,
-        now: DateTime.utc_now(),
-        seq: seq,
-        uid: Paths.uid()
-      })
+    next_path = fn ->
+      relative =
+        Paths.render_file(settings.path_template, %{
+          pipeline_id: state.pipeline_id,
+          partition: partition,
+          now: DateTime.utc_now(),
+          seq: seq,
+          uid: Paths.uid()
+        })
 
-    with {:ok, root} <- Paths.root(%{"directory" => settings.directory}),
-         {:ok, path} <- Paths.resolve(root, relative),
-         {:ok, bytes} <- Writer.write(path, schema, columns, settings.compression) do
-      {:ok, path, bytes}
-    else
-      {:error, :eexist} when attempts > 1 ->
-        write_new_file(state, partition, schema, columns, seq, attempts - 1)
-
-      error ->
-        error
+      with {:ok, root} <- Paths.root(%{"directory" => settings.directory}),
+           do: Paths.resolve(root, relative)
     end
+
+    Writer.write(next_path, schema, columns, settings.compression, @write_attempts)
   end
 
   defp emit_flush(state, partition, rows, started, result) do
@@ -317,7 +314,9 @@ defmodule Flux.Sink.Adapters.Parquet.Buffer do
       state
     else
       state = flush_all(state)
-      %{state | config_hash: hash, settings: Settings.from_config(config), schema: nil}
+      settings = Settings.from_config(config)
+      Sweeper.sweep(settings.directory)
+      %{state | config_hash: hash, settings: settings, schema: nil}
     end
   end
 

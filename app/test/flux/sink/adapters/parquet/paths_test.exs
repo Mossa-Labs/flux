@@ -1,7 +1,7 @@
 defmodule Flux.Sink.Adapters.Parquet.PathsTest do
   use ExUnit.Case, async: true
 
-  alias Flux.Sink.Adapters.Parquet.Paths
+  alias Flux.Sink.Adapters.Parquet.{Paths, Settings}
 
   @now ~U[2026-04-07 09:05:03.123456Z]
 
@@ -84,9 +84,59 @@ defmodule Flux.Sink.Adapters.Parquet.PathsTest do
       assert {:ok, _} = Paths.resolve("/base", partition <> "f.parquet")
     end
 
+    test "bounds field values and directory names in bytes, not characters" do
+      # 200 three-byte characters: 200 characters, 600 bytes.
+      wide = String.duplicate("界", 200)
+      partition = Paths.render_partition("{v}", %{"v" => wide}, @now, 1)
+
+      assert partition == String.duplicate("界", 42) <> "/"
+      assert String.valid?(partition)
+
+      long =
+        Paths.render_partition("{a}-{b}-{c}", %{"a" => wide, "b" => wide, "c" => wide}, @now, 1)
+
+      assert long |> String.trim_trailing("/") |> byte_size() <= 255
+    end
+
     test "empty template renders no prefix" do
       assert Paths.render_partition("", %{}, @now, 1) == ""
     end
+  end
+
+  test "render_file/2 caps directory names but never the file name" do
+    dir = String.duplicate("d", 300)
+    name = String.duplicate("f", 300) <> ".parquet"
+    vars = %{pipeline_id: 1, partition: "", now: @now, seq: 1, uid: "u"}
+
+    assert Paths.render_file("#{dir}/#{name}", vars) == String.duplicate("d", 255) <> "/" <> name
+  end
+
+  describe "validate_file_name/2" do
+    test "accepts the default and typical templates" do
+      assert :ok = Paths.validate_file_name(Settings.default_path_template(), "")
+      assert :ok = Paths.validate_file_name("{pipeline_id}-{timestamp}-{seq}-{uid}.parquet", "")
+    end
+
+    test "rejects a file name that can render past 255 bytes" do
+      prefix = String.duplicate("p", 200)
+
+      assert {:error, msg} = Paths.validate_file_name("#{prefix}-{uid}-{timestamp}.parquet", "")
+      assert msg =~ "limit is 255"
+    end
+
+    test "counts text on both sides of an empty partition as one name" do
+      half = String.duplicate("p", 120)
+      template = "#{half}{partition}#{half}-{uid}.parquet"
+
+      assert {:error, _} = Paths.validate_file_name(template, "")
+      # A partition ends the name before it, so only the second half counts.
+      assert :ok = Paths.validate_file_name(template, "r={region}/")
+    end
+  end
+
+  test "scratch names are hidden and match their glob" do
+    assert Paths.scratch_name(".tmp") =~ ~r/^\.flux-[a-z2-7]{26}\.tmp$/
+    assert Paths.scratch_glob(".tmp") == ".flux-*.tmp"
   end
 
   test "render_file/2 fills every file placeholder" do

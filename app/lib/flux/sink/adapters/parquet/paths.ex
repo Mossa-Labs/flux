@@ -21,12 +21,22 @@ defmodule Flux.Sink.Adapters.Parquet.Paths do
   `{yyyy}`, `{MM}`, `{dd}`, `{HH}`, `{date}`, `{pipeline_id}`, and any other
   `{name}` or `{dotted.path}` is a record field. Field values are sanitized
   into a single path segment; a missing field renders as `unknown`.
+
+  ## Name length
+
+  Filesystems cap each path component at 255 bytes. Partition values are
+  capped at 128 bytes, and rendered directory components at 255, so a
+  record can never produce an unwritable directory. The file name itself is
+  never shortened (that could drop its `{uid}`); instead `validate_file_name/2`
+  rejects a `path_template` whose file name could render longer than the limit.
   """
 
   @placeholder ~r/\{([A-Za-z0-9_.\-]+)\}/
   @file_placeholders ~w(pipeline_id partition timestamp date seq uid)
   @time_placeholders ~w(yyyy MM dd HH date pipeline_id)
-  @max_segment_length 128
+  @max_segment_bytes 128
+  @max_name_bytes 255
+  @scratch_prefix ".flux-"
 
   @doc "The expanded base directory every Parquet sink writes under."
   @spec base_dir() :: String.t()
@@ -108,6 +118,37 @@ defmodule Flux.Sink.Adapters.Parquet.Paths do
     |> Enum.uniq()
   end
 
+  @doc """
+  Checks that every file name `path_template` can render fits the filesystem's
+  #{@max_name_bytes}-byte name limit, rendering it with the widest value each
+  placeholder can take.
+  """
+  @spec validate_file_name(String.t(), String.t()) :: :ok | {:error, String.t()}
+  def validate_file_name(path_template, partition_template) do
+    vars = %{
+      pipeline_id: String.duplicate("x", @max_segment_bytes),
+      now: DateTime.utc_now(),
+      seq: 999_999_999,
+      uid: uid()
+    }
+
+    # A non-empty partition always ends in `/`, closing the path component
+    # before it; only its length as a directory matters, and that is capped.
+    partition = if String.trim(partition_template, "/") == "", do: "", else: "p/"
+    name = path_template |> render_file(Map.put(vars, :partition, partition)) |> Path.basename()
+
+    if byte_size(name) <= @max_name_bytes,
+      do: :ok,
+      else:
+        {:error,
+         "path_template file name can render up to #{byte_size(name)} bytes; " <>
+           "the limit is #{@max_name_bytes}"}
+  end
+
+  @doc "Whether the last component of `path` fits the filesystem's name limit."
+  @spec file_name_fits?(String.t()) :: boolean()
+  def file_name_fits?(path), do: byte_size(Path.basename(path)) <= @max_name_bytes
+
   @doc "Whether `template` references `placeholder` (e.g. `\"uid\"`)."
   @spec uses?(String.t(), String.t()) :: boolean()
   def uses?(template, placeholder), do: String.contains?(template, "{#{placeholder}}")
@@ -127,7 +168,7 @@ defmodule Flux.Sink.Adapters.Parquet.Paths do
           else: data |> get_path(name) |> segment()
       end)
 
-    case String.trim(rendered, "/") do
+    case rendered |> String.trim("/") |> String.split("/") |> Enum.map_join("/", &cap_name/1) do
       "" -> ""
       prefix -> prefix <> "/"
     end
@@ -140,20 +181,42 @@ defmodule Flux.Sink.Adapters.Parquet.Paths do
   defp time_value("date", now, _), do: now |> DateTime.to_date() |> Date.to_iso8601()
   defp time_value("pipeline_id", _, pipeline_id), do: segment(pipeline_id)
 
-  @doc "Renders the relative file path for one flush."
+  @doc """
+  Renders the relative file path for one flush. Directory components are capped
+  at the name limit; the file name is left whole (see `validate_file_name/2`).
+  """
   @spec render_file(String.t(), map()) :: String.t()
   def render_file(template, vars) do
-    Regex.replace(@placeholder, template, fn _match, name ->
-      case name do
-        "pipeline_id" -> segment(vars.pipeline_id)
-        "partition" -> vars.partition
-        "timestamp" -> Calendar.strftime(vars.now, "%Y%m%dT%H%M%S.%fZ")
-        "date" -> vars.now |> DateTime.to_date() |> Date.to_iso8601()
-        "seq" -> pad(vars.seq, 6)
-        "uid" -> vars.uid
-      end
-    end)
+    rendered =
+      Regex.replace(@placeholder, template, fn _match, name ->
+        case name do
+          "pipeline_id" -> segment(vars.pipeline_id)
+          "partition" -> vars.partition
+          "timestamp" -> Calendar.strftime(vars.now, "%Y%m%dT%H%M%S.%fZ")
+          "date" -> vars.now |> DateTime.to_date() |> Date.to_iso8601()
+          "seq" -> pad(vars.seq, 6)
+          "uid" -> vars.uid
+        end
+      end)
+
+    # A directory only groups files, so shortening one is harmless.
+    {dirs, [name]} = rendered |> String.split("/") |> Enum.split(-1)
+    Enum.map_join(dirs, &(cap_name(&1) <> "/")) <> name
   end
+
+  defp cap_name(name), do: take_bytes(name, @max_name_bytes)
+
+  @doc """
+  A hidden name for a Flux scratch file: `.flux-<uid><suffix>`. Every temporary
+  or probe file the sink creates uses this shape, so readers can ignore
+  dotfiles and stale ones can be found by `scratch_glob/1`.
+  """
+  @spec scratch_name(String.t()) :: String.t()
+  def scratch_name(suffix), do: @scratch_prefix <> uid() <> suffix
+
+  @doc "A `Path.wildcard/2` pattern matching `scratch_name(suffix)` names."
+  @spec scratch_glob(String.t()) :: String.t()
+  def scratch_glob(suffix), do: @scratch_prefix <> "*" <> suffix
 
   @doc """
   A random 128-bit id (26 lowercase base32 characters). Large enough that a
@@ -172,13 +235,14 @@ defmodule Flux.Sink.Adapters.Parquet.Paths do
   end
 
   # Collapses a value into one safe path segment: no separators, no `..`, no
-  # control characters, bounded length.
+  # control characters, bounded length (in bytes, since that is what the
+  # filesystem limits).
   defp segment(value) when is_binary(value) or is_number(value) or is_boolean(value) do
     value
     |> to_string()
     |> String.replace(~r/[\/\\[:cntrl:]]/u, "_")
     |> String.replace("..", "_")
-    |> String.slice(0, @max_segment_length)
+    |> take_bytes(@max_segment_bytes)
     |> case do
       "" -> "unknown"
       "." -> "_"
@@ -190,6 +254,20 @@ defmodule Flux.Sink.Adapters.Parquet.Paths do
     do: segment(Atom.to_string(value))
 
   defp segment(_value), do: "unknown"
+
+  # The longest prefix of `string` that fits in `max` bytes without splitting a
+  # character.
+  defp take_bytes(string, max) when byte_size(string) <= max, do: string
+
+  defp take_bytes(string, max) do
+    string
+    |> String.graphemes()
+    |> Enum.reduce_while("", fn grapheme, acc ->
+      if byte_size(acc) + byte_size(grapheme) <= max,
+        do: {:cont, acc <> grapheme},
+        else: {:halt, acc}
+    end)
+  end
 
   defp pad(int, width), do: int |> Integer.to_string() |> String.pad_leading(width, "0")
 end

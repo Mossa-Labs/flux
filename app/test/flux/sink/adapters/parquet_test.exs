@@ -74,6 +74,13 @@ defmodule Flux.Sink.Adapters.ParquetTest do
                )
 
       assert msg =~ "{partition}"
+
+      long_name = String.duplicate("x", 240) <> "-{uid}.parquet"
+
+      assert {:error, [msg]} =
+               Parquet.validate_config(Map.put(base, "path_template", long_name))
+
+      assert msg =~ "limit is 255"
     end
 
     test "checks compression and levels" do
@@ -148,6 +155,11 @@ defmodule Flux.Sink.Adapters.ParquetTest do
       assert :ok = Parquet.test_connection(%{"directory" => directory})
       assert File.dir?(root)
       assert File.ls!(root) == []
+    end
+
+    test "rejects a directory name over the filesystem limit" do
+      assert {:error, {:not_writable, :enametoolong}} =
+               Parquet.test_connection(%{"directory" => String.duplicate("d", 256)})
     end
 
     test "refuses directories outside the base dir" do

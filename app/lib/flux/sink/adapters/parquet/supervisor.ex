@@ -2,7 +2,8 @@ defmodule Flux.Sink.Adapters.Parquet.Supervisor do
   @moduledoc """
   Hosts the Parquet sink's buffer processes: a unique `Registry` keyed by
   `{sink, pipeline}` and a `DynamicSupervisor` the buffers start under on first
-  delivery.
+  delivery, plus the `Sweeper` that clears temporary files left by interrupted
+  writes.
 
   Started from `Flux.Application` *before* the pipeline supervisor, so on
   shutdown pipelines stop first and buffers flush last.
@@ -10,7 +11,7 @@ defmodule Flux.Sink.Adapters.Parquet.Supervisor do
 
   use Supervisor
 
-  alias Flux.Sink.Adapters.Parquet.Buffer
+  alias Flux.Sink.Adapters.Parquet.{Buffer, Sweeper}
 
   @registry Flux.Sink.Adapters.Parquet.BufferRegistry
   @buffers Flux.Sink.Adapters.Parquet.BufferSupervisor
@@ -21,7 +22,9 @@ defmodule Flux.Sink.Adapters.Parquet.Supervisor do
   def init(_opts) do
     children = [
       {Registry, keys: :unique, name: @registry},
-      {DynamicSupervisor, name: @buffers, strategy: :one_for_one}
+      {DynamicSupervisor, name: @buffers, strategy: :one_for_one},
+      # Last, so a sweeper crash never restarts (and flushes) the buffers.
+      Sweeper
     ]
 
     Supervisor.init(children, strategy: :rest_for_one)
