@@ -28,6 +28,9 @@ config :flux, FluxWeb.Endpoint,
 # In test we don't send emails
 config :flux, Flux.Mailer, adapter: Swoosh.Adapters.Test
 
+# The email sink builds its own transport per sink; capture it instead.
+config :flux, :email_sink_swoosh_adapter, Swoosh.Adapters.Test
+
 # Disable swoosh api client as it is only required for production adapters
 config :swoosh, :api_client, false
 

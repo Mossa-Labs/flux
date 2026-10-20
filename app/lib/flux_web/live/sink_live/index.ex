@@ -153,6 +153,7 @@ defmodule FluxWeb.SinkLive.Index do
         "s3" -> "hero-cloud-arrow-up"
         "postgres" -> "hero-circle-stack"
         "parquet" -> "hero-document-chart-bar"
+        "email" -> "hero-envelope"
         "redis" -> "hero-bolt"
         "mongodb" -> "hero-document-text"
         "slack" -> "hero-chat-bubble-left-right"
@@ -175,6 +176,7 @@ defmodule FluxWeb.SinkLive.Index do
         "s3" -> {"badge-secondary", "S3"}
         "postgres" -> {"badge-accent", "Postgres"}
         "parquet" -> {"badge-primary", "Parquet"}
+        "email" -> {"badge-neutral", "Email"}
         "redis" -> {"badge-error", "Redis"}
         "mongodb" -> {"badge-success", "MongoDB"}
         "slack" -> {"badge-warning", "Slack"}

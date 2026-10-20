@@ -12,15 +12,15 @@ defmodule Flux.Sinks.Secrets do
       them transparently on read.
 
   Secrets are identified by *key name*, not by sink type, so the same taxonomy
-  applies uniformly across every adapter (HTTP, Postgres/MySQL, S3, BigQuery,
-  Kafka, Snowflake, Redis, Mongo, Slack). Top-level keys live directly on the
+  applies uniformly across every adapter (HTTP, Postgres/MySQL, Email, S3,
+  BigQuery, Kafka, Snowflake, Redis, Mongo, Slack). Top-level keys live directly on the
   config map; auth keys live nested under the `"auth"` map (HTTP-style auth).
   """
 
   # Top-level secret keys, across all sink types.
   @top_keys ~w(password private_key private_key_passphrase secret_access_key
                credentials database_url sasl_password ssl_keyfile uri
-               webhook_url bot_token)
+               webhook_url bot_token api_key)
 
   # Secret keys nested under the HTTP-style `"auth"` map.
   @auth_keys ~w(token password username key)

@@ -2,8 +2,8 @@ defmodule Flux.Sink.Registry do
   @moduledoc """
   Runtime lookup table for sink adapters.
 
-  Community adapters (HTTP, Postgres, MySQL, Parquet) self-register at boot from
-  `Flux.Registrations`. The commercial edition registers its own adapters
+  Community adapters (HTTP, Postgres, MySQL, Parquet, Email) self-register at
+  boot from `Flux.Registrations`. The commercial edition registers its own adapters
   (S3, Snowflake, BigQuery, Kafka, ...) at boot.
 
   The table is an ETS-backed keyed map; reads are lock-free.

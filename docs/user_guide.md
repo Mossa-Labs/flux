@@ -273,6 +273,21 @@ for the full reference.
 | Explicit Schema | Optional JSON column → type map; blank infers the schema from records |
 | On Schema Change | `rotate` to a new file with the widened schema, or `strict` to reject mismatches |
 
+#### Email Sink
+Send an email for each record, with the subject and body filled from the record.
+See [Email Sink](connectors/email.md) for the full reference.
+
+| Field | Description |
+|-------|-------------|
+| Send With | Your SMTP server, the Flux system mailer, SendGrid, Mailgun, Postmark, or Amazon SES |
+| Credentials | Depend on the provider: SMTP host, port, encryption and login, or an API key |
+| From Address / From Name | Who the email is from (optional for the system mailer) |
+| Reply-To | Optional reply address |
+| To / Cc / Bcc | Recipients, separated by commas or new lines (up to 50 in total) |
+| Subject | Subject template, e.g. `Order {order.id} failed` |
+| HTML Body / Plain-Text Body | Optional body templates. Leave both blank to send the record as JSON |
+| Max Emails per Minute | Rate limit for this sink (default: 30). Records over it wait, then are dropped |
+
 ---
 
 ## System Settings

@@ -9,8 +9,8 @@ defmodule Flux.Sink.Adapter do
 
   Adapters shipped with Community: `Flux.Sink.Adapters.HTTP`,
   `Flux.Sink.Adapters.Postgres`, `Flux.Sink.Adapters.MySQL`,
-  `Flux.Sink.Adapters.Parquet`. Pro/EE adapters (e.g. S3, Snowflake,
-  BigQuery, Kafka) ship in the commercial edition and register themselves at
+  `Flux.Sink.Adapters.Parquet`, `Flux.Sink.Adapters.Email`. Pro/EE adapters
+  (e.g. S3, Snowflake, BigQuery, Kafka) ship in the commercial edition and register themselves at
   boot; in Community builds the type identifier is backed by
   `Flux.Sink.Adapters.Stub`, which returns `{:error, {:pro_required, _}}`.
   """

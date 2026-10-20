@@ -11,6 +11,10 @@ defmodule Flux.Sink.RegistryTest do
       assert {:ok, Flux.Sink.Adapters.Parquet} = Registry.lookup("parquet")
     end
 
+    test "email resolves to the Community Email adapter" do
+      assert {:ok, Flux.Sink.Adapters.Email} = Registry.lookup("email")
+    end
+
     test "s3 resolves to Stub in Community" do
       assert {:ok, Flux.Sink.Adapters.Stub} = Registry.lookup("s3")
     end

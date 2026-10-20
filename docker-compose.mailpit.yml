@@ -1,0 +1,22 @@
+# Mailpit — a local SMTP server and inbox for testing the Email sink.
+#
+#   docker compose -f docker-compose.mailpit.yml up -d
+#
+# SMTP on localhost:1025 requires STARTTLS (self-signed certificate) and
+# accepts any username/password. Captured mail is browsable at
+# http://localhost:8025 and readable via its API, which the integration test
+# (app/test/integration/email_sink_test.exs) uses to check what arrived.
+#
+# Because the certificate is self-signed, point a sink at it with
+# "Skip TLS certificate verification" checked.
+services:
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_REQUIRE_STARTTLS: "true"
+      MP_SMTP_TLS_CERT: "sans:localhost"
+      MP_SMTP_TLS_KEY: "sans:localhost"
