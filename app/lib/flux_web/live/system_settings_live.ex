@@ -1,6 +1,12 @@
 defmodule FluxWeb.SystemSettingsLive do
   @moduledoc """
-  Owner-only system settings: manage teams and users.
+  Owner-only system settings: licensing, members and teams, API keys, security
+  and branding, one tab each.
+
+  The tab lives in the URL (`?tab=security`), so every tab is deep-linkable and
+  the back button moves between them. All state and every event handler stay in
+  this LiveView; the tab modules under `system_settings_live/` only render.
+
   Renders 403 with 20-second redirect when not authorized.
   """
   use FluxWeb, :live_view
@@ -15,6 +21,7 @@ defmodule FluxWeb.SystemSettingsLive do
   alias FluxWeb.SystemSettingsLive.{
     ApiKeysTab,
     BrandingTab,
+    Components,
     GeneralTab,
     LicenseCard,
     MembersTab,
@@ -37,7 +44,10 @@ defmodule FluxWeb.SystemSettingsLive do
 
       {:ok,
        socket
+       # :active_tab is the sidebar's key; the page's own tab is :settings_tab,
+       # set for real by handle_params/3.
        |> assign(:active_tab, :system_settings)
+       |> assign(:settings_tab, :general)
        |> assign(:page_title, "System Settings")
        |> assign(:authorized, true)
        |> assign(:org_id, org_id)
@@ -50,6 +60,7 @@ defmodule FluxWeb.SystemSettingsLive do
        |> assign(:teams, teams)
        |> assign(:members, members)
        |> assign(:team_form, nil)
+       |> assign(:editing_team_id, nil)
        |> assign(:member_form, nil)
        |> assign(:editing_member_id, nil)
        |> assign(:api_keys, if(org_id, do: Accounts.list_api_keys(org_id), else: []))
@@ -92,6 +103,61 @@ defmodule FluxWeb.SystemSettingsLive do
        |> assign(:seconds_left, 20)}
     end
   end
+
+  # An unauthorized visitor gets the same 403 whatever ?tab= says, and nothing
+  # here may load data on their behalf.
+  @impl true
+  def handle_params(_params, _uri, %{assigns: %{authorized: false}} = socket),
+    do: {:noreply, socket}
+
+  def handle_params(params, _uri, socket) do
+    tab = Components.tab_from_params(params)
+
+    {:noreply,
+     socket
+     |> leave_tab(socket.assigns.settings_tab, tab)
+     |> enter_tab(tab)
+     |> assign(:settings_tab, tab)
+     |> assign(:page_title, page_title(tab))}
+  end
+
+  defp leave_tab(socket, same, same), do: socket
+
+  defp leave_tab(socket, from, _to) do
+    socket
+    # A modal belongs to the tab that opened it; the back button must not leave
+    # one floating over another tab.
+    |> assign(team_form: nil, editing_team_id: nil, member_form: nil, editing_member_id: nil)
+    |> then(&if from == :branding, do: cancel_staged_uploads(&1), else: &1)
+  end
+
+  # Stream items are dropped from the socket once rendered, and the teams list
+  # is not in the DOM on any other tab, so whatever mount streamed is gone by
+  # the time someone arrives here from General. Re-send it on every entry.
+  defp enter_tab(socket, :members),
+    do: stream(socket, :teams_stream, socket.assigns.teams, reset: true)
+
+  # Cheap, and the roster is the one thing on this page that changes underneath
+  # it (a rolling restart), so coming back to General shows the current state.
+  defp enter_tab(%{assigns: %{settings_tab: from}} = socket, :general) when from != :general do
+    socket
+    |> assign(:node_states, Flux.License.node_states())
+    |> assign(:node_capacity, Flux.License.node_capacity())
+  end
+
+  defp enter_tab(socket, _tab), do: socket
+
+  # A file staged on Branding and then abandoned would otherwise still hold the
+  # single upload slot when the user comes back, and the next pick would fail
+  # with "too many files" against an input that shows nothing.
+  defp cancel_staged_uploads(socket) do
+    Enum.reduce([:logo, :favicon], socket, fn name, acc ->
+      Enum.reduce(acc.assigns.uploads[name].entries, acc, &cancel_upload(&2, name, &1.ref))
+    end)
+  end
+
+  defp page_title(:general), do: "System Settings"
+  defp page_title(tab), do: "#{Components.tab_label(tab)} · System Settings"
 
   @impl true
   def handle_info(:redirect_to_dashboard, socket) do
@@ -291,41 +357,81 @@ defmodule FluxWeb.SystemSettingsLive do
     ~H"""
     <div class="space-y-6">
       <%= if @authorized do %>
-        <.authorized_content
-          org_id={@org_id}
-          current_scope={@current_scope}
-          license={@license}
-          activation_supported={@activation_supported}
-          license_form={@license_form}
-          node_states={@node_states}
-          node_capacity={@node_capacity}
-          branding_enabled={@branding_enabled}
-          branding={@branding}
-          branding_form={@branding_form}
-          uploads={@uploads}
-          teams={@teams}
-          members={@members}
-          rbac_mode={@rbac_mode}
-          team_form={@team_form}
-          member_form={@member_form}
-          editing_member_id={@editing_member_id}
-          api_keys={@api_keys}
-          api_key_form={@api_key_form}
-          revealed_key={@revealed_key}
-          api_key_scopes_enabled={@api_key_scopes_enabled}
-          password_policy_enabled={@password_policy_enabled}
-          mfa_enforcement_enabled={@mfa_enforcement_enabled}
-          usage_metering_enabled={@usage_metering_enabled}
-          usage={@usage}
-          security_form={@security_form}
-          security_error={@security_error}
-          streams={@streams}
-        />
+        <div class="max-w-6xl space-y-6">
+          <header class="space-y-1">
+            <h1 class="text-2xl font-bold tracking-tight text-base-content">System Settings</h1>
+            <p class="text-base-content/60">
+              Licensing, access, security and branding for this Flux deployment.
+            </p>
+          </header>
+
+          <Components.settings_tabs
+            current={@settings_tab}
+            attention={attention_tabs(@license, @node_states, @node_capacity)}
+          />
+
+          <div id="settings-panel" aria-label={Components.tab_label(@settings_tab)}>
+            <%= cond do %>
+              <% @settings_tab == :general -> %>
+                <GeneralTab.general_tab
+                  license={@license}
+                  activation_supported={@activation_supported}
+                  license_form={@license_form}
+                  node_states={@node_states}
+                  node_capacity={@node_capacity}
+                  usage_metering_enabled={@usage_metering_enabled}
+                  usage={@usage}
+                />
+              <% is_nil(@org_id) -> %>
+                <Components.org_required />
+              <% @settings_tab == :members -> %>
+                <MembersTab.members_tab
+                  scope={@current_scope}
+                  members={@members}
+                  teams={@teams}
+                  rbac_mode={@rbac_mode}
+                  member_form={@member_form}
+                  editing_member_id={@editing_member_id}
+                  team_form={@team_form}
+                  streams={@streams}
+                />
+              <% @settings_tab == :api_keys -> %>
+                <ApiKeysTab.api_keys_tab
+                  api_keys={@api_keys}
+                  api_key_form={@api_key_form}
+                  revealed_key={@revealed_key}
+                  scopes_enabled={@api_key_scopes_enabled}
+                />
+              <% @settings_tab == :security -> %>
+                <SecurityTab.security_tab
+                  form={@security_form}
+                  error={@security_error}
+                  password_policy_enabled={@password_policy_enabled}
+                  mfa_enforcement_enabled={@mfa_enforcement_enabled}
+                />
+              <% @settings_tab == :branding -> %>
+                <BrandingTab.branding_tab
+                  enabled={@branding_enabled}
+                  branding={@branding}
+                  form={@branding_form}
+                  uploads={@uploads}
+                />
+            <% end %>
+          </div>
+        </div>
       <% else %>
         <.forbidden_content seconds_left={@seconds_left} />
       <% end %>
     </div>
     """
+  end
+
+  # General is the only tab that can need attention: an expiry banner, nodes
+  # that disagree, or more nodes than the license covers.
+  defp attention_tabs(license, node_states, node_capacity) do
+    if LicenseCard.needs_attention?(license, node_states, node_capacity),
+      do: [:general],
+      else: []
   end
 
   defp forbidden_content(assigns) do
@@ -344,73 +450,6 @@ defmodule FluxWeb.SystemSettingsLive do
       <.link navigate={~p"/dashboard"} class="btn btn-primary mt-6">
         Go to Dashboard
       </.link>
-    </div>
-    """
-  end
-
-  defp authorized_content(assigns) do
-    ~H"""
-    <div class="space-y-8">
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight text-base-content">
-          System Settings
-        </h1>
-        <p class="text-base-content/60 mt-1">Manage teams and users for your organization</p>
-      </div>
-
-      <LicenseCard.license_section
-        license={@license}
-        activation_supported={@activation_supported}
-        license_form={@license_form}
-        node_states={@node_states}
-        node_capacity={@node_capacity}
-      />
-
-      <GeneralTab.usage_section enabled={@usage_metering_enabled} usage={@usage} />
-
-      <BrandingTab.branding_section
-        :if={@org_id}
-        enabled={@branding_enabled}
-        branding={@branding}
-        form={@branding_form}
-        uploads={@uploads}
-      />
-
-      <%= if @org_id do %>
-        <MembersTab.teams_section
-          scope={@current_scope}
-          teams={@teams}
-          team_form={@team_form}
-          stream_name={:teams_stream}
-          streams={@streams}
-        />
-        <MembersTab.members_section
-          scope={@current_scope}
-          members={@members}
-          teams={@teams}
-          rbac_mode={@rbac_mode}
-          member_form={@member_form}
-          editing_member_id={@editing_member_id}
-        />
-        <ApiKeysTab.api_keys_section
-          api_keys={@api_keys}
-          api_key_form={@api_key_form}
-          revealed_key={@revealed_key}
-          scopes_enabled={@api_key_scopes_enabled}
-        />
-        <SecurityTab.security_section
-          form={@security_form}
-          error={@security_error}
-          password_policy_enabled={@password_policy_enabled}
-          mfa_enforcement_enabled={@mfa_enforcement_enabled}
-        />
-      <% else %>
-        <p class="text-base-content/60">
-          No organization in scope. Create or select an organization first.
-        </p>
-      <% end %>
-
-      <GeneralTab.about_section />
     </div>
     """
   end

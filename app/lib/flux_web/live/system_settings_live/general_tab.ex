@@ -1,34 +1,54 @@
 defmodule FluxWeb.SystemSettingsLive.GeneralTab do
   @moduledoc """
-  Usage & quotas and build information for System Settings.
+  The General tab of System Settings: the License card, Usage & quotas, and
+  build information.
   """
   use FluxWeb, :html
 
+  import FluxWeb.SystemSettingsLive.Components
+
   alias FluxWeb.Components.UpgradePrompt
+  alias FluxWeb.SystemSettingsLive.LicenseCard
+
+  attr :license, :map, required: true
+  attr :activation_supported, :boolean, default: false
+  attr :license_form, :any, default: nil
+  attr :node_states, :list, default: []
+  attr :node_capacity, :any, default: nil
+  attr :usage_metering_enabled, :boolean, required: true
+  attr :usage, :map, default: nil
+
+  def general_tab(assigns) do
+    ~H"""
+    <div class="space-y-6">
+      <LicenseCard.license_section
+        license={@license}
+        activation_supported={@activation_supported}
+        license_form={@license_form}
+        node_states={@node_states}
+        node_capacity={@node_capacity}
+      />
+      <.usage_section enabled={@usage_metering_enabled} usage={@usage} />
+      <.about_section />
+    </div>
+    """
+  end
 
   attr :enabled, :boolean, required: true
   attr :usage, :map, default: nil
 
-  def usage_section(assigns) do
+  defp usage_section(assigns) do
     ~H"""
-    <section class="card bg-base-100 shadow-sm border border-base-200">
-      <div class="card-body">
-        <h2 class="card-title text-base font-bold">
-          <.icon name="hero-chart-bar" class="w-5 h-5" /> Usage & Quotas
-        </h2>
-
-        <%= cond do %>
-          <% !@enabled -> %>
-            <div class="mt-2">
-              <UpgradePrompt.upgrade_prompt feature={:usage_metering} />
-            </div>
-          <% is_nil(@usage) -> %>
-            <p class="text-sm text-base-content/60 mt-2">Usage data is not available yet.</p>
-          <% true -> %>
-            <.usage_body usage={@usage} />
-        <% end %>
-      </div>
-    </section>
+    <.settings_card id="usage-card" title="Usage & quotas" icon="hero-chart-bar">
+      <%= cond do %>
+        <% !@enabled -> %>
+          <UpgradePrompt.upgrade_prompt feature={:usage_metering} />
+        <% is_nil(@usage) -> %>
+          <p class="text-sm text-base-content/60">Usage data is not available yet.</p>
+        <% true -> %>
+          <.usage_body usage={@usage} />
+      <% end %>
+    </.settings_card>
     """
   end
 
@@ -42,8 +62,8 @@ defmodule FluxWeb.SystemSettingsLive.GeneralTab do
 
     ~H"""
     <div class="space-y-4">
-      <div :if={!Map.get(@quota, :unlimited, true)} class="space-y-1">
-        <div class="flex items-center justify-between text-sm">
+      <div :if={!Map.get(@quota, :unlimited, true)} class="space-y-1.5">
+        <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
           <span class="text-base-content/70">
             Messages this period
             <span :if={Map.get(@quota, :state) == :warn} class="badge badge-warning badge-sm ml-1">
@@ -53,26 +73,31 @@ defmodule FluxWeb.SystemSettingsLive.GeneralTab do
               over quota
             </span>
           </span>
-          <span class="font-medium">
+          <span class="font-medium tabular-nums">
             {format_metric(:messages_ingested, Map.get(@quota, :usage, 0))} / {format_metric(
               :messages_ingested,
               Map.get(@quota, :limit)
             )}
           </span>
         </div>
-        <div class="w-full bg-base-200 rounded-full h-2 overflow-hidden">
+        <div class="h-1.5 w-full overflow-hidden rounded-full bg-base-300">
           <div
-            class={["h-2 rounded-full", quota_bar_class(Map.get(@quota, :state))]}
+            class={["h-full rounded-full transition-all", quota_bar_class(Map.get(@quota, :state))]}
             style={"width: #{quota_bar_width(@quota)}%"}
           >
           </div>
         </div>
       </div>
 
-      <dl class="grid grid-cols-2 sm:grid-cols-5 gap-4">
-        <div :for={metric <- Flux.Metering.metrics()} class="rounded-lg border border-base-200 p-3">
+      <dl class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div
+          :for={metric <- Flux.Metering.metrics()}
+          class="rounded-box border border-base-content/5 bg-base-300 px-4 py-3"
+        >
           <dt class="text-xs text-base-content/60">{usage_metric_label(metric)}</dt>
-          <dd class="text-lg font-semibold">{format_metric(metric, Map.get(@metrics, metric))}</dd>
+          <dd class="mt-0.5 text-xl font-semibold tabular-nums">
+            {format_metric(metric, Map.get(@metrics, metric))}
+          </dd>
         </div>
       </dl>
     </div>
@@ -124,66 +149,57 @@ defmodule FluxWeb.SystemSettingsLive.GeneralTab do
   # everyone; the toolchain and exact build time sit here because an
   # unauthenticated, precisely-versioned instance is easier to match against
   # published CVEs.
-  def about_section(assigns) do
+  defp about_section(assigns) do
     assigns = assign(assigns, :build, Flux.BuildInfo.to_map())
 
     ~H"""
-    <section class="card bg-base-100 shadow-sm border border-base-200">
-      <div class="card-body">
-        <div class="flex items-start justify-between gap-4">
-          <div>
-            <h2 class="card-title text-base-content">About this build</h2>
-            <p class="text-sm text-base-content/60 mt-1">
-              Quote this when contacting support.
-            </p>
-          </div>
-          <button
-            type="button"
-            class="btn btn-sm btn-ghost gap-2"
-            id="copy-build-info"
-            phx-hook=".CopyBuildInfo"
-            data-build={Flux.BuildInfo.long()}
-          >
-            <.icon name="hero-clipboard-document" class="w-4 h-4" /> Copy
-          </button>
+    <.settings_card id="about-card" title="About this build" icon="hero-code-bracket">
+      <:description>Quote this when contacting support.</:description>
+      <:actions>
+        <button
+          type="button"
+          class="btn btn-sm btn-ghost gap-2"
+          id="copy-build-info"
+          phx-hook=".CopyBuildInfo"
+          data-build={Flux.BuildInfo.long()}
+        >
+          <.icon name="hero-clipboard-document" class="size-4" /> Copy
+        </button>
+      </:actions>
+
+      <dl class="grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+        <div>
+          <dt class="text-xs text-base-content/60">Edition</dt>
+          <dd class="font-medium">{@build.edition}</dd>
         </div>
+        <div>
+          <dt class="text-xs text-base-content/60">Version</dt>
+          <dd class="font-medium">{@build.version}</dd>
+        </div>
+        <div>
+          <dt class="text-xs text-base-content/60">Core revision</dt>
+          <dd class="font-mono text-xs">{@build.core_sha}</dd>
+        </div>
+        <div :if={@build.edition_sha}>
+          <dt class="text-xs text-base-content/60">Edition revision</dt>
+          <dd class="font-mono text-xs">{@build.edition_sha}</dd>
+        </div>
+        <div>
+          <dt class="text-xs text-base-content/60">Toolchain</dt>
+          <dd class="font-medium">OTP {@build.otp} / Elixir {@build.elixir}</dd>
+        </div>
+        <div>
+          <dt class="text-xs text-base-content/60">Built</dt>
+          <dd class="font-medium">{@build.built_at || "—"}</dd>
+        </div>
+      </dl>
 
-        <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 text-sm">
-          <div class="flex justify-between sm:block">
-            <dt class="text-base-content/60">Edition</dt>
-            <dd class="font-medium text-base-content">{@build.edition}</dd>
-          </div>
-          <div class="flex justify-between sm:block">
-            <dt class="text-base-content/60">Version</dt>
-            <dd class="font-medium text-base-content">{@build.version}</dd>
-          </div>
-          <div class="flex justify-between sm:block">
-            <dt class="text-base-content/60">Core revision</dt>
-            <dd class="font-mono text-xs text-base-content">{@build.core_sha}</dd>
-          </div>
-          <div :if={@build.edition_sha} class="flex justify-between sm:block">
-            <dt class="text-base-content/60">Edition revision</dt>
-            <dd class="font-mono text-xs text-base-content">{@build.edition_sha}</dd>
-          </div>
-          <div class="flex justify-between sm:block">
-            <dt class="text-base-content/60">Toolchain</dt>
-            <dd class="font-medium text-base-content">
-              OTP {@build.otp} / Elixir {@build.elixir}
-            </dd>
-          </div>
-          <div class="flex justify-between sm:block">
-            <dt class="text-base-content/60">Built</dt>
-            <dd class="font-medium text-base-content">{@build.built_at || "—"}</dd>
-          </div>
-        </dl>
-
-        <p :if={not @build.released} class="mt-4 text-xs text-warning">
-          <.icon name="hero-exclamation-triangle" class="w-4 h-4 inline-block align-text-bottom" />
-          This build carries no source revision, so it was not produced by the release
-          pipeline and cannot be reproduced from a tag.
-        </p>
-      </div>
-    </section>
+      <p :if={not @build.released} class="flex items-start gap-2 text-xs text-warning">
+        <.icon name="hero-exclamation-triangle" class="size-4 shrink-0" />
+        This build carries no source revision, so it was not produced by the release
+        pipeline and cannot be reproduced from a tag.
+      </p>
+    </.settings_card>
 
     <script :type={Phoenix.LiveView.ColocatedHook} name=".CopyBuildInfo">
       export default {

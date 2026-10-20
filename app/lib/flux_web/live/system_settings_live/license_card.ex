@@ -166,6 +166,16 @@ defmodule FluxWeb.SystemSettingsLive.LicenseCard do
     """
   end
 
+  @doc """
+  Whether the license or the cluster is in a state an operator should look at:
+  an expiry banner is showing, the visible nodes disagree, or the provider says
+  the deployment is over its licensed node count.
+  """
+  def needs_attention?(license, node_states, node_capacity) do
+    Map.get(license, :status) in [:near_expiry, :grace, :expired] or
+      divergent?(node_states) or over_capacity?(node_capacity)
+  end
+
   defp divergent?(node_states) do
     node_states
     |> Enum.map(&{Map.get(&1, :tier), Map.get(&1, :license_id)})
