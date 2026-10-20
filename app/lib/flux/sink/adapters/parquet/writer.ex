@@ -50,7 +50,7 @@ defmodule Flux.Sink.Adapters.Parquet.Writer do
   defp next_path(target) do
     with {:ok, path} <- if(is_function(target, 0), do: target.(), else: {:ok, target}) do
       # Fail before encoding anything: the file could never be created.
-      if Paths.file_name_fits?(path), do: {:ok, path}, else: {:error, :enametoolong}
+      if Paths.names_fit?(path), do: {:ok, path}, else: {:error, :enametoolong}
     end
   end
 

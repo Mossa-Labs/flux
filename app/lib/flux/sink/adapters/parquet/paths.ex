@@ -25,10 +25,11 @@ defmodule Flux.Sink.Adapters.Parquet.Paths do
   ## Name length
 
   Filesystems cap each path component at 255 bytes. Partition values are
-  capped at 128 bytes, and rendered directory components at 255, so a
-  record can never produce an unwritable directory. The file name itself is
-  never shortened (that could drop its `{uid}`); instead `validate_file_name/2`
-  rejects a `path_template` whose file name could render longer than the limit.
+  capped at 128 bytes and rendered partition folders at 255, so a record can
+  never produce an unwritable folder. Nothing else is shortened, since that
+  could cut a file's `{uid}` or `{timestamp}` and make every flush collide;
+  instead `validate_name_lengths/2` rejects a `path_template` that could
+  render a file or folder name over the limit.
   """
 
   @placeholder ~r/\{([A-Za-z0-9_.\-]+)\}/
@@ -119,35 +120,34 @@ defmodule Flux.Sink.Adapters.Parquet.Paths do
   end
 
   @doc """
-  Checks that every file name `path_template` can render fits the filesystem's
-  #{@max_name_bytes}-byte name limit, rendering it with the widest value each
-  placeholder can take.
+  Checks that every file and folder name `path_template` can render fits the
+  filesystem's #{@max_name_bytes}-byte name limit, rendering it (and
+  `partition_template`) with the widest value each placeholder can take.
   """
-  @spec validate_file_name(String.t(), String.t()) :: :ok | {:error, String.t()}
-  def validate_file_name(path_template, partition_template) do
-    vars = %{
-      pipeline_id: String.duplicate("x", @max_segment_bytes),
-      now: DateTime.utc_now(),
-      seq: 999_999_999,
-      uid: uid()
-    }
+  @spec validate_name_lengths(String.t(), String.t()) :: :ok | {:error, String.t()}
+  def validate_name_lengths(path_template, partition_template) do
+    widest = String.duplicate("x", @max_segment_bytes)
+    now = DateTime.utc_now()
 
-    # A non-empty partition always ends in `/`, closing the path component
-    # before it; only its length as a directory matters, and that is capped.
-    partition = if String.trim(partition_template, "/") == "", do: "", else: "p/"
-    name = path_template |> render_file(Map.put(vars, :partition, partition)) |> Path.basename()
+    partition =
+      fill_partition(partition_template, fn name ->
+        if name in @time_placeholders, do: time_value(name, now, widest), else: widest
+      end)
 
-    if byte_size(name) <= @max_name_bytes,
+    vars = %{pipeline_id: widest, partition: partition, now: now, seq: 999_999_999, uid: uid()}
+    longest = path_template |> render_file(vars) |> String.split("/") |> Enum.max_by(&byte_size/1)
+
+    if byte_size(longest) <= @max_name_bytes,
       do: :ok,
       else:
         {:error,
-         "path_template file name can render up to #{byte_size(name)} bytes; " <>
+         "path_template can render a file or folder name of #{byte_size(longest)} bytes; " <>
            "the limit is #{@max_name_bytes}"}
   end
 
-  @doc "Whether the last component of `path` fits the filesystem's name limit."
-  @spec file_name_fits?(String.t()) :: boolean()
-  def file_name_fits?(path), do: byte_size(Path.basename(path)) <= @max_name_bytes
+  @doc "Whether every component of `path` fits the filesystem's name limit."
+  @spec names_fit?(String.t()) :: boolean()
+  def names_fit?(path), do: path |> Path.split() |> Enum.all?(&(byte_size(&1) <= @max_name_bytes))
 
   @doc "Whether `template` references `placeholder` (e.g. `\"uid\"`)."
   @spec uses?(String.t(), String.t()) :: boolean()
@@ -161,14 +161,23 @@ defmodule Flux.Sink.Adapters.Parquet.Paths do
   def render_partition("", _data, _now, _pipeline_id), do: ""
 
   def render_partition(template, data, now, pipeline_id) do
-    rendered =
-      Regex.replace(@placeholder, template, fn _match, name ->
-        if name in @time_placeholders,
-          do: time_value(name, now, pipeline_id),
-          else: data |> get_path(name) |> segment()
-      end)
+    fill_partition(template, fn name ->
+      if name in @time_placeholders,
+        do: time_value(name, now, pipeline_id),
+        else: data |> get_path(name) |> segment()
+    end)
+  end
 
-    case rendered |> String.trim("/") |> String.split("/") |> Enum.map_join("/", &cap_name/1) do
+  # Partition folders only group files and never carry a file's unique part
+  # ({uid}, {timestamp}), so an over-long one is safely shortened.
+  defp fill_partition(template, value) do
+    rendered = Regex.replace(@placeholder, template, fn _match, name -> value.(name) end)
+
+    rendered
+    |> String.trim("/")
+    |> String.split("/")
+    |> Enum.map_join("/", &take_bytes(&1, @max_name_bytes))
+    |> case do
       "" -> ""
       prefix -> prefix <> "/"
     end
@@ -182,29 +191,23 @@ defmodule Flux.Sink.Adapters.Parquet.Paths do
   defp time_value("pipeline_id", _, pipeline_id), do: segment(pipeline_id)
 
   @doc """
-  Renders the relative file path for one flush. Directory components are capped
-  at the name limit; the file name is left whole (see `validate_file_name/2`).
+  Renders the relative file path for one flush. Nothing outside the partition
+  is shortened, since that could cut a name's `{uid}` or `{timestamp}`;
+  `validate_name_lengths/2` rejects templates that could render too long.
   """
   @spec render_file(String.t(), map()) :: String.t()
   def render_file(template, vars) do
-    rendered =
-      Regex.replace(@placeholder, template, fn _match, name ->
-        case name do
-          "pipeline_id" -> segment(vars.pipeline_id)
-          "partition" -> vars.partition
-          "timestamp" -> Calendar.strftime(vars.now, "%Y%m%dT%H%M%S.%fZ")
-          "date" -> vars.now |> DateTime.to_date() |> Date.to_iso8601()
-          "seq" -> pad(vars.seq, 6)
-          "uid" -> vars.uid
-        end
-      end)
-
-    # A directory only groups files, so shortening one is harmless.
-    {dirs, [name]} = rendered |> String.split("/") |> Enum.split(-1)
-    Enum.map_join(dirs, &(cap_name(&1) <> "/")) <> name
+    Regex.replace(@placeholder, template, fn _match, name ->
+      case name do
+        "pipeline_id" -> segment(vars.pipeline_id)
+        "partition" -> vars.partition
+        "timestamp" -> Calendar.strftime(vars.now, "%Y%m%dT%H%M%S.%fZ")
+        "date" -> vars.now |> DateTime.to_date() |> Date.to_iso8601()
+        "seq" -> pad(vars.seq, 6)
+        "uid" -> vars.uid
+      end
+    end)
   end
-
-  defp cap_name(name), do: take_bytes(name, @max_name_bytes)
 
   @doc """
   A hidden name for a Flux scratch file: `.flux-<uid><suffix>`. Every temporary

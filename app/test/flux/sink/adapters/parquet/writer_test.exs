@@ -63,10 +63,12 @@ defmodule Flux.Sink.Adapters.Parquet.WriterTest do
     assert File.ls!(dir) == [name]
   end
 
-  test "a filename over the limit fails before anything is written", %{dir: dir} do
-    path = Path.join(dir, String.duplicate("a", 256) <> ".parquet")
+  test "a file or folder name over the limit fails before anything is written", %{dir: dir} do
+    long_file = Path.join(dir, String.duplicate("a", 256) <> ".parquet")
+    long_folder = Path.join([dir, String.duplicate("d", 256), "out.parquet"])
 
-    assert {:error, :enametoolong} = write(path, [1])
+    assert {:error, :enametoolong} = write(long_file, [1])
+    assert {:error, :enametoolong} = write(long_folder, [1])
     refute File.exists?(dir)
   end
 
