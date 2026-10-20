@@ -237,6 +237,24 @@ defmodule FluxWeb.SinkLive.FormTest do
       assert has_element?(lv, "#sink-type-postgres[aria-pressed='true']")
     end
 
+    test "focus follows the destination so keyboard users keep their place", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      # The focused tile disappears, so focus moves to the first setting...
+      render_click(lv, "select_type", %{"type" => "postgres"})
+      assert_push_event(lv, "sink-form:focus", %{to: "#sink-connection " <> _})
+
+      # ...and back to the chosen tile when the picker reopens.
+      lv |> element("#sink-type-change") |> render_click()
+      assert_push_event(lv, "sink-form:focus", %{to: "#sink-type-postgres"})
+      assert has_element?(lv, "#sink-type-postgres")
+
+      # A locked type has no settings; focus lands on the upgrade heading.
+      render_click(lv, "select_type", %{"type" => "s3"})
+      assert_push_event(lv, "sink-form:focus", %{to: "#sink-pro-required-title"})
+      assert has_element?(lv, "#sink-pro-required-title[tabindex='-1']")
+    end
+
     test "a locked Pro type disables submit and explains why", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
 
