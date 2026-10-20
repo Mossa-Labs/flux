@@ -72,6 +72,17 @@ defmodule FluxWeb.SinkLive.FormTest do
       assert html =~ "Explicit Schema"
     end
 
+    test "Postgres asks for a database URL only in external mode", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "postgres"})
+
+      refute has_element?(lv, "#sink_config_database_url")
+
+      lv |> form("form", %{"sink" => %{"config_mode" => "external"}}) |> render_change()
+
+      assert has_element?(lv, "#sink_config_database_url")
+    end
+
     test "creates a Parquet sink", %{conn: conn, scope: scope} do
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
       render_click(lv, "select_type", %{"type" => "parquet"})

@@ -254,7 +254,12 @@ defmodule FluxWeb.SinkLive.Form do
         label="HTTP Method"
         options={["POST", "PUT", "PATCH"]}
       />
-      <.input field={@form[:config_timeout]} type="number" label="Timeout (ms)" placeholder="30000" />
+      <.input
+        field={@form[:config_timeout]}
+        type="number"
+        label="Timeout (ms)"
+        placeholder="Default: 30000"
+      />
     </div>
     """
   end
@@ -315,15 +320,16 @@ defmodule FluxWeb.SinkLive.Form do
         field={@form[:config_table]}
         type="text"
         label="Table Name"
-        placeholder="events"
+        placeholder="e.g. events"
         required
       />
       <.input
+        :if={cfg(@form, "config_mode") == "external"}
         field={@form[:config_database_url]}
         type="text"
-        label="Database URL (for external)"
+        label="Database URL"
         placeholder="postgres://user:pass@host:5432/db"
-        required={cfg(@form, "config_mode") == "external"}
+        required
       />
       <.input
         field={@form[:config_columns]}
@@ -354,7 +360,7 @@ defmodule FluxWeb.SinkLive.Form do
         field={@form[:config_table]}
         type="text"
         label="Table Name"
-        placeholder="events"
+        placeholder="e.g. events"
         required
       />
       <.input
@@ -393,7 +399,7 @@ defmodule FluxWeb.SinkLive.Form do
         field={@form[:config_directory]}
         type="text"
         label="Directory"
-        placeholder="events"
+        placeholder="e.g. events"
         required
       />
       <p class="text-xs text-base-content/60 -mt-2">
@@ -445,13 +451,13 @@ defmodule FluxWeb.SinkLive.Form do
           field={@form[:config_max_rows]}
           type="number"
           label="Rotate After Rows"
-          placeholder="100000"
+          placeholder="Default: 100000"
         />
         <.input
           field={@form[:config_max_interval_seconds]}
           type="number"
           label="Rotate After Seconds"
-          placeholder="600"
+          placeholder="Default: 600"
         />
       </div>
       <.input
@@ -515,7 +521,12 @@ defmodule FluxWeb.SinkLive.Form do
                 required
               />
             </div>
-            <.input field={@form[:config_port]} type="number" label="Port" placeholder="587" />
+            <.input
+              field={@form[:config_port]}
+              type="number"
+              label="Port"
+              placeholder="Default: 587"
+            />
           </div>
           <.input
             field={@form[:config_security]}
@@ -686,14 +697,14 @@ defmodule FluxWeb.SinkLive.Form do
             field={@form[:config_max_per_minute]}
             type="number"
             label="Max Emails per Minute"
-            placeholder="30"
+            placeholder="Default: 30"
             min="1"
           />
           <.input
             field={@form[:config_max_wait_ms]}
             type="number"
             label="Max Wait When Limited (ms)"
-            placeholder="30000"
+            placeholder="Default: 30000"
             min="0"
           />
         </div>
@@ -722,7 +733,13 @@ defmodule FluxWeb.SinkLive.Form do
         placeholder="analytics"
         required
       />
-      <.input field={@form[:config_table]} type="text" label="Table" placeholder="events" required />
+      <.input
+        field={@form[:config_table]}
+        type="text"
+        label="Table"
+        placeholder="e.g. events"
+        required
+      />
       <.input
         field={@form[:config_credentials]}
         type="textarea"
@@ -754,7 +771,13 @@ defmodule FluxWeb.SinkLive.Form do
         placeholder="broker1:9092,broker2:9092"
         required
       />
-      <.input field={@form[:config_topic]} type="text" label="Topic" placeholder="events" required />
+      <.input
+        field={@form[:config_topic]}
+        type="text"
+        label="Topic"
+        placeholder="e.g. events"
+        required
+      />
       <.input
         field={@form[:config_auth_mode]}
         type="select"
@@ -840,7 +863,13 @@ defmodule FluxWeb.SinkLive.Form do
         required
       />
       <.input field={@form[:config_schema]} type="text" label="Schema" placeholder="public" required />
-      <.input field={@form[:config_table]} type="text" label="Table" placeholder="events" required />
+      <.input
+        field={@form[:config_table]}
+        type="text"
+        label="Table"
+        placeholder="e.g. events"
+        required
+      />
       <.input
         field={@form[:config_user]}
         type="text"
@@ -978,7 +1007,7 @@ defmodule FluxWeb.SinkLive.Form do
         </div>
         <.input field={@form[:config_port]} type="number" label="Port" placeholder="27017" />
       </div>
-      <.input field={@form[:config_database]} type="text" label="Database" placeholder="events" />
+      <.input field={@form[:config_database]} type="text" label="Database" placeholder="e.g. events" />
       <.input
         field={@form[:config_collection]}
         type="text"
