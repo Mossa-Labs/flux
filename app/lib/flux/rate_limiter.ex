@@ -59,6 +59,28 @@ defmodule Flux.RateLimiter do
     :atomics.add_get(ref, 1, 1) <= limit
   end
 
+  @doc """
+  Takes one of at most `max` concurrent slots for `key`, returning whether one
+  was free. Unlike `allow?/3` this is a gauge, not a windowed counter: every
+  successful `acquire/2` must be paired with a `release/1`, typically in an
+  `after` block.
+  """
+  @spec acquire(term(), non_neg_integer()) :: boolean()
+  def acquire(key, max) do
+    ref = gauge(key)
+
+    if :atomics.add_get(ref, 1, 1) <= max do
+      true
+    else
+      :atomics.sub(ref, 1, 1)
+      false
+    end
+  end
+
+  @doc "Returns a slot taken with `acquire/2`."
+  @spec release(term()) :: :ok
+  def release(key), do: :atomics.sub(gauge(key), 1, 1)
+
   @doc "Clears all counters. For tests."
   @spec reset() :: :ok
   def reset do
@@ -79,6 +101,27 @@ defmodule Flux.RateLimiter do
     ])
 
     {:ok, nil}
+  end
+
+  # Gauges live in the same table as window counters, under their own key so a
+  # caller can use one key for both without the two colliding.
+  defp gauge(key) do
+    table_key = {:gauge, key}
+
+    case :ets.lookup(@table, table_key) do
+      [{^table_key, ref}] ->
+        ref
+
+      [] ->
+        ref = :atomics.new(1, [])
+
+        if :ets.insert_new(@table, {table_key, ref}) do
+          ref
+        else
+          [{^table_key, existing}] = :ets.lookup(@table, table_key)
+          existing
+        end
+    end
   end
 
   # Fetch the atomics ref for `key`, creating it on first use. The window start

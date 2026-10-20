@@ -1245,15 +1245,21 @@ defmodule FluxWeb.SinkLive.Form do
 
   # Merge freshly built config over the sink's stored config so that any field
   # the user left blank (dropped by `maybe_put/3` — notably secrets) falls back
-  # to the persisted value instead of being silently wiped on edit. When the
-  # type changes we start from an empty base so stale keys aren't carried over.
+  # to the persisted value instead of being silently wiped on edit. A field a
+  # builder puts as nil was cleared on purpose and is removed. When the type
+  # changes we start from an empty base so stale keys aren't carried over.
   defp merge_config_params(params, type, sink) do
     built = build_config(params, type)
     base = if type == sink.type, do: sink.config || %{}, else: %{}
 
+    config =
+      base
+      |> Map.merge(built)
+      |> Map.reject(fn {_key, value} -> is_nil(value) end)
+
     params
     |> Map.put("type", type)
-    |> Map.put("config", Map.merge(base, built))
+    |> Map.put("config", config)
   end
 
   # Reverse of build_config/2: hydrate the virtual config_* form fields from a
@@ -1514,6 +1520,10 @@ defmodule FluxWeb.SinkLive.Form do
     |> Map.put("schema", schema)
   end
 
+  # Non-secret fields always take the form's value, so clearing one (a body, the
+  # Reply-To, a rate limit) removes it rather than the saved value creeping
+  # back in through merge_config_params/3. Only the secrets keep "blank means
+  # unchanged", because they are never echoed into the form.
   defp build_config(params, "email") do
     rate_limit =
       %{}
@@ -1521,28 +1531,28 @@ defmodule FluxWeb.SinkLive.Form do
       |> maybe_put("max_wait_ms", parse_int(params["config_max_wait_ms"]))
 
     %{}
-    |> maybe_put("provider", params["config_provider"] || "smtp")
-    |> maybe_put("host", trim(params["config_host"]))
-    |> maybe_put("port", parse_int(params["config_port"]))
-    |> maybe_put("security", params["config_security"])
-    |> maybe_put("username", trim(params["config_username"]))
+    |> Map.put("provider", blank_to_nil(params["config_provider"]) || "smtp")
+    |> put_clearable("host", params["config_host"])
+    |> Map.put("port", parse_int(params["config_port"]))
+    |> put_clearable("security", params["config_security"])
+    |> put_clearable("username", params["config_username"])
     |> maybe_put("password", params["config_password"])
     |> Map.put("tls_verify", params["config_tls_skip_verify"] != "true")
     |> maybe_put("api_key", trim(params["config_api_key"]))
-    |> maybe_put("domain", trim(params["config_domain"]))
-    |> maybe_put("region", trim(params["config_region"]))
-    |> maybe_put("access_key", trim(params["config_access_key"]))
+    |> put_clearable("domain", params["config_domain"])
+    |> put_clearable("region", params["config_region"])
+    |> put_clearable("access_key", params["config_access_key"])
     |> maybe_put("secret_access_key", trim(params["config_secret_access_key"]))
-    |> maybe_put("from", trim(params["config_from"]))
-    |> maybe_put("from_name", trim(params["config_from_name"]))
-    |> maybe_put("reply_to", trim(params["config_reply_to"]))
+    |> put_clearable("from", params["config_from"])
+    |> put_clearable("from_name", params["config_from_name"])
+    |> put_clearable("reply_to", params["config_reply_to"])
     |> Map.put("to", address_list(params["config_to"]))
     |> Map.put("cc", address_list(params["config_cc"]))
     |> Map.put("bcc", address_list(params["config_bcc"]))
-    |> maybe_put("subject", params["config_subject"])
-    |> maybe_put("html_body", params["config_html_body"])
-    |> maybe_put("text_body", params["config_text_body"])
-    |> then(&if(rate_limit == %{}, do: &1, else: Map.put(&1, "rate_limit", rate_limit)))
+    |> put_clearable("subject", params["config_subject"], trim: false)
+    |> put_clearable("html_body", params["config_html_body"], trim: false)
+    |> put_clearable("text_body", params["config_text_body"], trim: false)
+    |> Map.put("rate_limit", if(rate_limit == %{}, do: nil, else: rate_limit))
   end
 
   defp build_config(params, "bigquery") do
@@ -1643,7 +1653,10 @@ defmodule FluxWeb.SinkLive.Form do
     end
   end
 
+  # Stored recipients are normally a list, but the adapter also accepts a
+  # comma-separated string (e.g. a sink created through the API).
   defp join_addresses(list) when is_list(list) and list != [], do: Enum.join(list, ", ")
+  defp join_addresses(value) when is_binary(value), do: blank_to_nil(value)
   defp join_addresses(_), do: nil
 
   defp recipient_fields do
@@ -1671,6 +1684,12 @@ defmodule FluxWeb.SinkLive.Form do
 
   defp trim(value) when is_binary(value), do: String.trim(value)
   defp trim(value), do: value
+
+  # Puts the field even when blank (as nil), so it overrides the stored value.
+  defp put_clearable(map, key, value, opts \\ []) do
+    value = if Keyword.get(opts, :trim, true), do: trim(value), else: value
+    Map.put(map, key, blank_to_nil(value))
+  end
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, _key, ""), do: map

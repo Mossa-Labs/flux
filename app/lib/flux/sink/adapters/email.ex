@@ -341,8 +341,14 @@ defmodule Flux.Sink.Adapters.Email do
 
   # ── Rate limiting ────────────────────────────────────────────────────────
 
-  # Waits for a send slot in this sink's per-minute window, polling until
-  # `max_wait_ms` has passed. Keyed by sink id so sinks don't share a budget.
+  # Takes a send slot in this sink's per-minute window. Keyed by sink id so
+  # sinks don't share a budget.
+  #
+  # A record over the limit may wait up to `max_wait_ms` for the next window,
+  # but only as many records wait as one window can send (`max_per_minute`).
+  # The runner starts a task per record, so without that cap a burst would park
+  # thousands of polling tasks that are nearly all dropped in the end; the
+  # excess is dropped straight away instead.
   defp acquire_slot(config, opts) do
     rate = if is_map(config["rate_limit"]), do: config["rate_limit"], else: %{}
     limit = parse_int(rate["max_per_minute"]) || @default_max_per_minute
@@ -350,22 +356,36 @@ defmodule Flux.Sink.Adapters.Email do
     window = parse_int(rate["window_ms"]) || @rate_window_ms
     key = {:email_sink, opts[:sink_id] || :erlang.phash2(config)}
 
-    wait_for_slot(key, limit, window, now_ms() + max_wait)
+    cond do
+      Flux.RateLimiter.allow?(key, limit, window) ->
+        :ok
+
+      max_wait <= 0 ->
+        {:error, :rate_limited}
+
+      Flux.RateLimiter.acquire(key, limit) ->
+        try do
+          wait_for_slot(key, limit, window, now_ms() + max_wait)
+        after
+          Flux.RateLimiter.release(key)
+        end
+
+      true ->
+        {:error, :rate_limited}
+    end
   end
 
   defp wait_for_slot(key, limit, window, deadline) do
     remaining = deadline - now_ms()
 
-    cond do
-      Flux.RateLimiter.allow?(key, limit, window) ->
-        :ok
+    if remaining <= 0 do
+      {:error, :rate_limited}
+    else
+      Process.sleep(min(@rate_poll_ms, remaining))
 
-      remaining <= 0 ->
-        {:error, :rate_limited}
-
-      true ->
-        Process.sleep(min(@rate_poll_ms, remaining))
-        wait_for_slot(key, limit, window, deadline)
+      if Flux.RateLimiter.allow?(key, limit, window),
+        do: :ok,
+        else: wait_for_slot(key, limit, window, deadline)
     end
   end
 
