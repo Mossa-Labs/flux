@@ -4,9 +4,11 @@ defmodule Flux.Sink.RegistryTest do
   alias Flux.Sink.Registry
 
   describe "Community boot-time registrations" do
-    test "http, postgres resolve to their adapters" do
+    test "http, postgres, mysql, parquet resolve to their adapters" do
       assert {:ok, Flux.Sink.Adapters.HTTP} = Registry.lookup("http")
       assert {:ok, Flux.Sink.Adapters.Postgres} = Registry.lookup("postgres")
+      assert {:ok, Flux.Sink.Adapters.MySQL} = Registry.lookup("mysql")
+      assert {:ok, Flux.Sink.Adapters.Parquet} = Registry.lookup("parquet")
     end
 
     test "s3 resolves to Stub in Community" do

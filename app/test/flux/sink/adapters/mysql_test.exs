@@ -9,6 +9,12 @@ defmodule Flux.Sink.Adapters.MySQLTest do
     "columns" => %{"type" => "event_type"}
   }
 
+  use Flux.SinkConformance,
+    adapter: MySQL,
+    type: "mysql",
+    valid_config: @valid,
+    invalid_configs: [%{}, Map.delete(@valid, "table"), Map.delete(@valid, "database_url")]
+
   describe "validate_config/1" do
     test "valid config returns :ok" do
       assert :ok = MySQL.validate_config(@valid)

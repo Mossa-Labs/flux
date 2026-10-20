@@ -55,6 +55,9 @@ defmodule Flux.Application do
       # backend (`Flux.Pipeline.Supervision.Local`). The `:unique` registry keeps
       # a pipeline running at most once on this node. The Pro build starts its own
       # Horde-backed registry/supervisor and routes through them instead.
+      # Parquet sink row buffers. Must start before the pipeline supervisor so that
+      # on shutdown (reverse order) pipelines stop first and buffers flush last.
+      Flux.Sink.Adapters.Parquet.Supervisor,
       {Registry, keys: :unique, name: Flux.Pipeline.Registry},
       {DynamicSupervisor, name: Flux.Pipeline.DynamicSupervisor, strategy: :one_for_one},
       # Source ingestion: supervisor hosts active (long-lived) source consumers;

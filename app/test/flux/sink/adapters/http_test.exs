@@ -3,6 +3,22 @@ defmodule Flux.Sink.Adapters.HTTPTest do
 
   alias Flux.Sink.Adapters.HTTP
 
+  use Flux.SinkConformance,
+    adapter: HTTP,
+    type: "http",
+    valid_config: %{"url" => "https://example.com/webhook"},
+    invalid_configs: [
+      %{},
+      %{"url" => "not-a-url"},
+      %{"url" => "https://example.com", "method" => "TRACE"}
+    ],
+    # Nothing listens on port 1: connection refused, no retries — fails fast.
+    deliver_config: %{
+      "url" => "http://127.0.0.1:1/hook",
+      "retry" => %{"max_attempts" => 1},
+      "timeout_ms" => 1_000
+    }
+
   describe "validate_config/1" do
     test "valid config with url returns :ok" do
       config = %{"url" => "https://example.com/webhook"}

@@ -60,3 +60,7 @@ config :flux, FluxWeb.Plugs.ApiAuth, api_key: "test-api-key"
 
 # The Test adapter captures rather than sends; the sender just has to exist.
 config :flux, :mail_from, name: "Flux", address: "flux@test.local"
+
+# Parquet sink output in tests; each test uses its own `directory` under this.
+config :flux, Flux.Sink.Adapters.Parquet,
+  base_dir: Path.join(System.tmp_dir!(), "flux_parquet_test")

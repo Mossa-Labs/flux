@@ -20,6 +20,12 @@ if System.get_env("PHX_SERVER") do
   config :flux, FluxWeb.Endpoint, server: true
 end
 
+# Root directory every Parquet sink writes under (sinks configure a relative
+# directory inside it). Point it at a mounted bucket to land files in S3/GCS/Azure.
+if parquet_dir = System.get_env("FLUX_PARQUET_BASE_DIR") do
+  config :flux, Flux.Sink.Adapters.Parquet, base_dir: parquet_dir
+end
+
 config :flux, FluxWeb.Endpoint, http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
 if config_env() == :prod do

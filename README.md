@@ -52,7 +52,7 @@ Everything you need to run real pipelines in production, free and open source:
 |------|-----------------------|
 | **Ingestion** | Webhook (push) sources |
 | **Transform** | Map, Filter, Rename, and Lua **Script** steps |
-| **Sinks** | HTTP, Postgres |
+| **Sinks** | HTTP, Postgres, MySQL, Parquet files |
 | **Queue** | In-memory queue adapter |
 | **Pipeline builder** | Visual React-Flow canvas on `/pipelines/builder` |
 | **REST API** | Full developer API (8 endpoints) with per-organization API keys |

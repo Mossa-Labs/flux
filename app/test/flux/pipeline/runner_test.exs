@@ -83,6 +83,40 @@ defmodule Flux.Pipeline.RunnerTest do
       result = Runner.handle_message(:default, message(%{"ok" => true}), context(sink_ids: []))
       assert result.data == %{"ok" => true}
     end
+
+    test "delivers to a Parquet sink buffered per sink and pipeline", %{org_id: org_id} do
+      alias Flux.Sink.Adapters.Parquet
+
+      directory = "runner-test-#{System.unique_integer([:positive])}"
+      root = Path.join(Parquet.Paths.base_dir(), directory)
+      on_exit(fn -> File.rm_rf!(root) end)
+
+      sink =
+        Flux.SinksFixtures.sink_fixture(org_id, %{
+          type: "parquet",
+          config: %{"directory" => directory}
+        })
+
+      on_exit(fn -> Parquet.Supervisor.stop_buffer({sink.id, 1}) end)
+      attach_telemetry([[:flux, :sink, :delivered]])
+      sink_id = sink.id
+
+      for i <- 1..3 do
+        Runner.handle_message(:default, message(%{"i" => i}), context(sink_ids: [sink.id]))
+      end
+
+      for _ <- 1..3 do
+        assert_receive {:telemetry, [:flux, :sink, :delivered], _,
+                        %{sink_id: ^sink_id, pipeline_id: 1}}
+      end
+
+      {:ok, pid} = Parquet.Supervisor.buffer({sink.id, 1}, %{})
+      :ok = Parquet.Buffer.flush(pid)
+
+      assert [file] = root |> Path.join("1/*.parquet") |> Path.wildcard()
+      rows = file |> Explorer.DataFrame.from_parquet!() |> Explorer.DataFrame.to_columns()
+      assert Enum.sort(rows["i"]) == [1, 2, 3]
+    end
   end
 
   describe "handle_message/3 — skip path" do

@@ -3,6 +3,18 @@ defmodule Flux.Sink.Adapters.PostgresTest do
 
   alias Flux.Sink.Adapters.Postgres
 
+  use Flux.SinkConformance,
+    adapter: Postgres,
+    type: "postgres",
+    valid_config: %{"table" => "events", "columns" => %{"type" => "event_type"}},
+    invalid_configs: [
+      %{},
+      %{"table" => "events"},
+      %{"mode" => "external", "table" => "events", "columns" => %{"a" => "b"}}
+    ],
+    # The table does not exist: delivery must come back as {:error, _}, not raise.
+    deliver_config: %{"table" => "conformance_missing_table", "columns" => %{"id" => "id"}}
+
   describe "validate_config/1" do
     test "valid internal config with table and columns returns :ok" do
       config = %{"table" => "events", "columns" => %{"type" => "event_type"}}

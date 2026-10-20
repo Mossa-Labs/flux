@@ -114,6 +114,14 @@ defmodule FluxWeb.SinkLive.Form do
                 <.sink_type_option
                   field={@form[:type]}
                   selected_type={@selected_type}
+                  type="parquet"
+                  icon="hero-document-chart-bar"
+                  label="Parquet"
+                  sublabel="Data Lake Files"
+                />
+                <.sink_type_option
+                  field={@form[:type]}
+                  selected_type={@selected_type}
                   type="bigquery"
                   icon="hero-table-cells"
                   label="BigQuery"
@@ -359,6 +367,103 @@ defmodule FluxWeb.SinkLive.Form do
         ]}
       />
       <.input field={@form[:config_ssl]} type="checkbox" label="Use TLS/SSL connection" />
+    </div>
+    """
+  end
+
+  defp type_config_fields(%{type: "parquet"} = assigns) do
+    assigns =
+      assign(assigns,
+        base_dir: Flux.Sink.Adapters.Parquet.Paths.base_dir(),
+        default_path_template: Flux.Sink.Adapters.Parquet.Settings.default_path_template(),
+        schema_types: Flux.Sink.Adapters.Parquet.Schema.explicit_type_names()
+      )
+
+    ~H"""
+    <div class="space-y-4">
+      <.input
+        field={@form[:config_directory]}
+        type="text"
+        label="Directory"
+        placeholder="events"
+        required
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Relative to the Parquet base directory <code>{@base_dir}</code>
+        (set by <code>FLUX_PARQUET_BASE_DIR</code>). Mount a bucket there to land files in
+        S3, GCS or Azure — see <code>docs/connectors/parquet.md</code>.
+      </p>
+      <.input
+        field={@form[:config_partition_template]}
+        type="text"
+        label="Partition Template (optional)"
+        placeholder="year={yyyy}/month={MM}/day={dd}/"
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Placeholders: {"{yyyy}"}, {"{MM}"}, {"{dd}"}, {"{HH}"}, {"{date}"}, {"{pipeline_id}"},
+        or any record field such as {"{region}"} or {"{user.tier}"}.
+      </p>
+      <.input
+        field={@form[:config_path_template]}
+        type="text"
+        label="File Path Template"
+        placeholder={@default_path_template}
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Placeholders: {"{pipeline_id}"}, {"{partition}"}, {"{timestamp}"}, {"{date}"}, {"{seq}"}, {"{uid}"}.
+        Must include {"{uid}"} or {"{timestamp}"} and end in <code>.parquet</code>.
+      </p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <.input
+          field={@form[:config_compression]}
+          type="select"
+          label="Compression"
+          options={[
+            {"Snappy (default)", "snappy"},
+            {"Zstandard", "zstd"},
+            {"Gzip", "gzip"},
+            {"None", "none"}
+          ]}
+        />
+        <.input
+          field={@form[:config_compression_level]}
+          type="number"
+          label="Compression Level (optional)"
+          placeholder="gzip 1–9, zstd -7–22"
+        />
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <.input
+          field={@form[:config_max_rows]}
+          type="number"
+          label="Rotate After Rows"
+          placeholder="100000"
+        />
+        <.input
+          field={@form[:config_max_interval_seconds]}
+          type="number"
+          label="Rotate After Seconds"
+          placeholder="600"
+        />
+      </div>
+      <.input
+        field={@form[:config_schema]}
+        type="textarea"
+        label="Explicit Schema (JSON, optional)"
+        placeholder={~s({"id": "integer", "email": "string", "created_at": "timestamp"})}
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Leave blank to infer the schema from incoming records. Types: {Enum.join(@schema_types, ", ")}.
+      </p>
+      <.input
+        field={@form[:config_schema_mode]}
+        type="select"
+        label="On Schema Change (inferred schemas)"
+        options={[
+          {"Rotate to a new file with the widened schema", "rotate"},
+          {"Reject records that don't match", "strict"}
+        ]}
+      />
     </div>
     """
   end
@@ -966,6 +1071,19 @@ defmodule FluxWeb.SinkLive.Form do
     |> put_columns("config_columns", config["columns"])
   end
 
+  defp config_form_params("parquet", config) do
+    %{}
+    |> put_field("config_directory", config["directory"])
+    |> put_field("config_path_template", config["path_template"])
+    |> put_field("config_partition_template", config["partition_template"])
+    |> put_field("config_compression", config["compression"])
+    |> put_field("config_compression_level", config["compression_level"])
+    |> put_field("config_max_rows", config["max_rows"])
+    |> put_field("config_max_interval_seconds", config["max_interval_seconds"])
+    |> put_field("config_schema_mode", config["schema_mode"])
+    |> put_columns("config_schema", config["schema"])
+  end
+
   defp config_form_params("bigquery", config) do
     # credentials (service-account JSON) is secret — left blank on edit.
     %{}
@@ -1108,6 +1226,36 @@ defmodule FluxWeb.SinkLive.Form do
     |> maybe_put("on_conflict", params["config_on_conflict"])
     |> Map.put("ssl", params["config_ssl"] == "true")
     |> Map.put("columns", columns)
+  end
+
+  defp build_config(params, "parquet") do
+    # Optional fields that can be cleared are always written (as nil / ""), so
+    # clearing them on edit isn't undone by merge_config_params/3.
+    # Unparseable schema JSON is passed through as the raw string so
+    # validate_config/1 rejects it, rather than silently falling back to inference.
+    schema =
+      case String.trim(params["config_schema"] || "") do
+        "" ->
+          nil
+
+        raw ->
+          case Jason.decode(raw) do
+            {:ok, map} when map == %{} -> nil
+            {:ok, map} when is_map(map) -> map
+            _ -> raw
+          end
+      end
+
+    %{}
+    |> maybe_put("directory", params["config_directory"])
+    |> maybe_put("path_template", params["config_path_template"])
+    |> maybe_put("compression", params["config_compression"])
+    |> maybe_put("schema_mode", params["config_schema_mode"])
+    |> Map.put("partition_template", params["config_partition_template"] || "")
+    |> Map.put("compression_level", parse_int(params["config_compression_level"]))
+    |> Map.put("max_rows", parse_int(params["config_max_rows"]))
+    |> Map.put("max_interval_seconds", parse_int(params["config_max_interval_seconds"]))
+    |> Map.put("schema", schema)
   end
 
   defp build_config(params, "bigquery") do

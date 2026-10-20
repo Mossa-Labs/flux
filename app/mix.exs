@@ -77,7 +77,9 @@ defmodule Flux.MixProject do
         Sinks: [
           Flux.Sink,
           Flux.Sink.Adapters.HTTP,
-          Flux.Sink.Adapters.Postgres
+          Flux.Sink.Adapters.Postgres,
+          Flux.Sink.Adapters.MySQL,
+          Flux.Sink.Adapters.Parquet
         ],
         "AI/ML": [Flux.AI.Scorer],
         Web: ~r/FluxWeb/
@@ -130,6 +132,8 @@ defmodule Flux.MixProject do
       {:oban, "~> 2.17"},
       {:broadway, "~> 1.0"},
       {:nx, "~> 0.9"},
+      # Columnar DataFrames + Parquet writer for the Parquet file sink (MOS-515)
+      {:explorer, "~> 0.11.1"},
       {:luerl, "~> 1.2"},
       # Trustworthy client IP behind proxies + CIDR matching for the IP allowlist
       {:remote_ip, "~> 1.2"},

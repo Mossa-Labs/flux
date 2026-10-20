@@ -1794,6 +1794,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp sink_icon("http"), do: "hero-globe-alt"
   defp sink_icon("s3"), do: "hero-cloud-arrow-up"
   defp sink_icon("postgres"), do: "hero-circle-stack"
+  defp sink_icon("parquet"), do: "hero-document-chart-bar"
   defp sink_icon(_), do: "hero-queue-list"
 
   defp default_sink_label("queue"), do: "Queue Output"
