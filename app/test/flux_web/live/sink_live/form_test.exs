@@ -652,6 +652,17 @@ defmodule FluxWeb.SinkLive.FormTest do
       assert config["api_key"] == "SG.old-sendgrid-key"
     end
 
+    test "the port hint shows the default for the chosen encryption", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "email"})
+
+      assert has_element?(lv, "#sink_config_port[placeholder='Default: 587']")
+
+      lv |> form("form", %{"sink" => %{"config_security" => "ssl"}}) |> render_change()
+
+      assert has_element?(lv, "#sink_config_port[placeholder='Default: 465']")
+    end
+
     test "the error summary follows the form's field order", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
       render_click(lv, "select_type", %{"type" => "email"})

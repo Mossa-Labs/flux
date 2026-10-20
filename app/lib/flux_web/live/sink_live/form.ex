@@ -758,7 +758,15 @@ defmodule FluxWeb.SinkLive.Form do
       not is_nil(assigns.form.data.id) and
         (assigns.form.data.config || %{})["provider"] == provider
 
-    assigns = assign(assigns, provider: provider, keeps_secrets?: keeps_secrets?)
+    # Mirrors the adapter's fallback for a blank port (Email.smtp_config/1).
+    default_port = if cfg(assigns.form, "config_security") == "ssl", do: 465, else: 587
+
+    assigns =
+      assign(assigns,
+        provider: provider,
+        keeps_secrets?: keeps_secrets?,
+        default_port: default_port
+      )
 
     ~H"""
     <div class="space-y-6">
@@ -792,7 +800,7 @@ defmodule FluxWeb.SinkLive.Form do
               field={@form[:config_port]}
               type="number"
               label="Port"
-              placeholder="Default: 587"
+              placeholder={"Default: #{@default_port}"}
             />
           </div>
           <.input
