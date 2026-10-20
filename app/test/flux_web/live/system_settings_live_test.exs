@@ -544,6 +544,76 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/system/settings")
       assert html =~ "Renew soon"
     end
+
+    # MOS-600: the node roster and activation share the License card's lower row.
+    test "puts nodes and activation side by side in the License card", %{conn: conn} do
+      use_activation_provider()
+
+      Application.put_env(:flux, :test_node_states, [
+        %{node: :"flux@10.0.0.1", tier: :pro, license_id: "lic-1", valid_until: nil},
+        %{node: :"flux@10.0.0.2", tier: :pro, license_id: "lic-1", valid_until: nil}
+      ])
+
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      assert has_element?(lv, "#license-card #cluster-license-state")
+      assert has_element?(lv, "#license-card #activate-license-form")
+      assert has_element?(lv, "#license-card .lg\\:grid-cols-2")
+    end
+
+    test "offers to replace, not activate, while a license is live", %{conn: conn} do
+      use_activation_provider()
+
+      {:ok, lv, html} = live(conn, ~p"/system/settings")
+
+      assert html =~ "Replace license"
+      refute html =~ "Activate Pro"
+      # Collapsed behind its toggle, but still in the page and still submittable.
+      assert has_element?(lv, "#replace-license-panel.hidden #activate-license-form")
+
+      applied =
+        lv
+        |> form("#activate-license-form", license: %{token: "a-signed-token"})
+        |> render_submit()
+
+      assert applied =~ "license applied"
+    end
+
+    test "asks for a renewed license once the current one has expired", %{conn: conn} do
+      use_activation_provider()
+
+      Application.put_env(:flux, :test_activation_license, %{
+        tier: :pro,
+        features: [],
+        org: "Acme",
+        valid_until: ~U[2026-01-01 00:00:00Z],
+        node_count: 1,
+        status: :expired
+      })
+
+      {:ok, lv, html} = live(conn, ~p"/system/settings")
+
+      assert html =~ "Apply renewed license"
+      refute has_element?(lv, "#replace-license-panel")
+    end
+
+    test "offers to activate Pro on a Community deployment that can take a key", %{conn: conn} do
+      use_activation_provider()
+
+      Application.put_env(:flux, :test_activation_license, %{
+        tier: :community,
+        features: [],
+        org: nil,
+        valid_until: nil,
+        node_count: nil,
+        status: :active
+      })
+
+      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+
+      assert html =~ "Activate Pro"
+      assert html =~ "Running the Community tier"
+    end
   end
 
   describe "tabs" do

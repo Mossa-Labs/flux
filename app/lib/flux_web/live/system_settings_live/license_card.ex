@@ -1,8 +1,11 @@
 defmodule FluxWeb.SystemSettingsLive.LicenseCard do
   @moduledoc """
-  The License card on System Settings: tier, expiry, cluster nodes and activation.
+  The License card on System Settings: tier and expiry on top, then the
+  cluster's nodes and license activation side by side.
   """
   use FluxWeb, :html
+
+  import FluxWeb.SystemSettingsLive.Components
 
   attr :license, :map, required: true
   attr :activation_supported, :boolean, default: false
@@ -10,54 +13,74 @@ defmodule FluxWeb.SystemSettingsLive.LicenseCard do
   attr :node_states, :list, default: []
   attr :node_capacity, :any, default: nil
 
-  def license_section(assigns) do
+  def license_card(assigns) do
+    show_nodes =
+      show_cluster_state?(
+        assigns.node_states,
+        Map.get(assigns.license, :node_count),
+        assigns.node_capacity
+      )
+
+    assigns =
+      assigns
+      |> assign(:show_nodes, show_nodes)
+      |> assign(:two_columns, show_nodes and assigns.activation_supported)
+
     ~H"""
-    <section class="card bg-base-100 shadow-sm border border-base-200">
-      <div class="card-body">
-        <div class="flex items-center justify-between">
-          <h2 class="card-title text-base font-bold">
-            <.icon name="hero-key" class="w-5 h-5" /> License
-          </h2>
-          <span class={[
-            "badge badge-lg font-semibold capitalize",
-            tier_badge_class(@license.tier)
-          ]}>
-            {@license.tier}
-          </span>
+    <.settings_card id="license-card" title="License" icon="hero-key">
+      <:actions>
+        <span class={["badge font-semibold capitalize", tier_badge_class(@license.tier)]}>
+          {@license.tier}
+        </span>
+      </:actions>
+
+      <%!-- Community has no license to describe: every field would read "—". --%>
+      <dl :if={@license.tier != :community} class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div>
+          <dt class="text-xs text-base-content/60">Organization</dt>
+          <dd class="font-medium">{license_value(Map.get(@license, :org))}</dd>
         </div>
+        <div>
+          <dt class="text-xs text-base-content/60">Expires</dt>
+          <dd class="font-medium tabular-nums">{format_expiry(Map.get(@license, :valid_until))}</dd>
+        </div>
+        <div>
+          <dt class="text-xs text-base-content/60">Licensed nodes</dt>
+          <dd class="font-medium tabular-nums">{license_value(Map.get(@license, :node_count))}</dd>
+        </div>
+      </dl>
 
-        <dl class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <dt class="text-sm text-base-content/60">Organization</dt>
-            <dd class="font-medium">{license_value(Map.get(@license, :org))}</dd>
-          </div>
-          <div>
-            <dt class="text-sm text-base-content/60">Expires</dt>
-            <dd class="font-medium">{format_expiry(Map.get(@license, :valid_until))}</dd>
-          </div>
-          <div>
-            <dt class="text-sm text-base-content/60">Licensed nodes</dt>
-            <dd class="font-medium">{license_value(Map.get(@license, :node_count))}</dd>
-          </div>
-        </dl>
+      <p :if={@license.tier == :community} class="text-sm text-base-content/70">
+        Running the Community tier.
+        <.link href={Flux.Marketing.pricing_url()} class="link link-primary">Upgrade</.link>
+        to unlock Pro and Enterprise features.
+      </p>
 
-        <.license_status_banner license={@license} />
+      <.license_status_banner license={@license} />
 
-        <p :if={@license.tier == :community} class="text-sm text-base-content/60 mt-2">
-          Running the Community tier.
-          <.link href={Flux.Marketing.pricing_url()} class="link link-primary">Upgrade</.link>
-          to unlock Pro and Enterprise features.
-        </p>
-
+      <%!--
+      MOS-600: nodes and activation sit side by side when there is something to
+      say about both. With only one of them, it takes the full width rather than
+      leaving half the card empty.
+      --%>
+      <div
+        :if={@show_nodes or @activation_supported}
+        class={["grid grid-cols-1 gap-4", @two_columns && "lg:grid-cols-2"]}
+      >
         <.cluster_license_state
+          :if={@show_nodes}
           node_states={@node_states}
           node_count={Map.get(@license, :node_count)}
           node_capacity={@node_capacity}
         />
-
-        <.activate_license_form :if={@activation_supported} form={@license_form} />
+        <.activation_panel
+          :if={@activation_supported}
+          form={@license_form}
+          mode={activation_mode(@license)}
+          narrow={!@two_columns}
+        />
       </div>
-    </section>
+    </.settings_card>
     """
   end
 
@@ -103,23 +126,44 @@ defmodule FluxWeb.SystemSettingsLive.LicenseCard do
   defp cluster_license_state(assigns) do
     ~H"""
     <div
-      :if={show_cluster_state?(@node_states, @node_count, @node_capacity)}
       id="cluster-license-state"
-      class="mt-4"
+      class="min-w-0 space-y-3 rounded-box border border-base-content/5 bg-base-300 p-4"
     >
-      <div class="flex items-center justify-between">
-        <h3 class="text-sm font-semibold text-base-content/80">
-          Nodes
-          <span :if={@node_capacity} class="ml-1 font-normal text-base-content/60">
-            {@node_capacity.live} of {@node_capacity.licensed}
-          </span>
+      <div class="flex flex-wrap items-center gap-2">
+        <h3 class="flex items-center gap-2 text-sm font-semibold">
+          <.icon name="hero-server-stack" class="size-4" /> Nodes
         </h3>
-        <span :if={divergent?(@node_states)} class="badge badge-warning badge-sm gap-1">
-          <.icon name="hero-exclamation-triangle" class="w-3 h-3" /> Not yet consistent
+        <span
+          :if={@node_capacity}
+          class={[
+            "badge badge-sm tabular-nums",
+            if(over_capacity?(@node_capacity), do: "badge-warning badge-soft", else: "badge-ghost")
+          ]}
+        >
+          {@node_capacity.live} of {@node_capacity.licensed}
+        </span>
+        <span :if={divergent?(@node_states)} class="badge badge-warning badge-soft badge-sm gap-1">
+          <.icon name="hero-exclamation-triangle" class="size-3" /> Not yet consistent
         </span>
       </div>
 
-      <p :if={divergent?(@node_states)} class="mt-1 text-xs text-base-content/60">
+      <ul class="divide-y divide-base-content/5 overflow-hidden rounded-field border border-base-content/5 bg-base-200">
+        <li :for={n <- @node_states} class="flex items-center gap-3 px-3 py-2 text-sm">
+          <span
+            class={["size-2 shrink-0 rounded-full", node_dot_class(Map.get(n, :tier))]}
+            aria-hidden="true"
+          >
+          </span>
+          <span class="min-w-0 flex-1 truncate font-mono text-xs" title={to_string(n.node)}>
+            {n.node}
+          </span>
+          <span class={["badge badge-sm capitalize", node_tier_class(Map.get(n, :tier))]}>
+            {Map.get(n, :tier)}
+          </span>
+        </li>
+      </ul>
+
+      <p :if={divergent?(@node_states)} class="text-xs text-base-content/70">
         These nodes are not all running the same license yet. Feature gating follows
         the license immediately, but services are wired up at boot — finish the
         rolling restart so every node matches.
@@ -129,12 +173,19 @@ defmodule FluxWeb.SystemSettingsLive.LicenseCard do
       Distinct from the divergence warning above: that one means the nodes we can
       see disagree, this one means we cannot see all the nodes we are licensed for.
       A node that has not restarted since activation has not joined the cluster, so
-      it is absent rather than inconsistent.
+      it is absent rather than inconsistent — expected mid-rollout, hence neutral
+      rather than warning-toned.
       --%>
-      <p :if={shortfall = node_shortfall(@node_states, @node_count)} class="mt-1 text-xs text-warning">
-        Licensed for {elem(shortfall, 0)} nodes; {elem(shortfall, 1)} currently reachable.
-        A node that has not restarted since the license was applied does not join the
-        cluster and will not appear here.
+      <p
+        :if={shortfall = node_shortfall(@node_states, @node_count)}
+        class="flex items-start gap-2 text-xs text-base-content/70"
+      >
+        <.icon name="hero-information-circle" class="size-4 shrink-0" />
+        <span>
+          Licensed for {elem(shortfall, 0)} nodes; {elem(shortfall, 1)} currently reachable.
+          A node that has not restarted since the license was applied does not join the
+          cluster and will not appear here.
+        </span>
       </p>
 
       <%!--
@@ -143,27 +194,25 @@ defmodule FluxWeb.SystemSettingsLive.LicenseCard do
       for. Warning-toned rather than an error banner on purpose — nothing is
       broken, and Flux keeps running; this is a commercial state, not an outage.
       --%>
-      <p :if={over_capacity?(@node_capacity)} class="mt-1 text-xs text-warning">
-        Running {@node_capacity.live} nodes on a license for {@node_capacity.licensed}.
-        Flux keeps running, but this is an unsupported configuration — reduce to {@node_capacity.licensed} nodes or <.link
-          href={Flux.Marketing.pricing_url()}
-          class="link"
-        >extend your license</.link>.
+      <p :if={over_capacity?(@node_capacity)} class="flex items-start gap-2 text-xs text-warning">
+        <.icon name="hero-exclamation-triangle" class="size-4 shrink-0" />
+        <span>
+          Running {@node_capacity.live} nodes on a license for {@node_capacity.licensed}.
+          Flux keeps running, but this is an unsupported configuration — reduce to {@node_capacity.licensed} nodes or <.link
+            href={Flux.Marketing.pricing_url()}
+            class="link"
+          >extend your license</.link>.
+        </span>
       </p>
-
-      <ul class="mt-2 divide-y divide-base-200 rounded-md border border-base-200">
-        <li :for={n <- @node_states} class="flex items-center justify-between px-3 py-2 text-sm">
-          <span class="font-mono text-xs text-base-content/70">{n.node}</span>
-          <span class={[
-            "badge badge-sm capitalize",
-            node_tier_class(Map.get(n, :tier))
-          ]}>
-            {Map.get(n, :tier)}
-          </span>
-        </li>
-      </ul>
     </div>
     """
+  end
+
+  defp divergent?(node_states) do
+    node_states
+    |> Enum.map(&{Map.get(&1, :tier), Map.get(&1, :license_id)})
+    |> Enum.uniq()
+    |> length() > 1
   end
 
   @doc """
@@ -176,19 +225,15 @@ defmodule FluxWeb.SystemSettingsLive.LicenseCard do
       divergent?(node_states) or over_capacity?(node_capacity)
   end
 
-  defp divergent?(node_states) do
-    node_states
-    |> Enum.map(&{Map.get(&1, :tier), Map.get(&1, :license_id)})
-    |> Enum.uniq()
-    |> length() > 1
-  end
-
   # An unreachable node is called out rather than shown as unlicensed: during a
   # rolling restart "we could not ask" and "it has no license" are different
   # problems, and conflating them sends the operator the wrong way.
   defp node_tier_class(:unreachable), do: "badge-ghost text-base-content/50"
   defp node_tier_class(:community), do: "badge-ghost"
-  defp node_tier_class(_), do: "badge-success"
+  defp node_tier_class(_), do: "badge-success badge-soft"
+
+  defp node_dot_class(tier) when tier in [:unreachable, :community], do: "bg-base-content/30"
+  defp node_dot_class(_), do: "bg-success"
 
   attr :license, :map, required: true
 
@@ -196,58 +241,122 @@ defmodule FluxWeb.SystemSettingsLive.LicenseCard do
     assigns = assign(assigns, :status, Map.get(assigns.license, :status, :active))
 
     ~H"""
-    <div
-      :if={@status == :near_expiry}
-      class="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
-    >
-      <.icon name="hero-clock" class="w-4 h-4 inline" />
-      Your license expires on {format_expiry(Map.get(@license, :valid_until))}. Renew soon to avoid
-      interruption.
+    <div :if={@status == :near_expiry} role="status" class="alert alert-warning alert-soft text-sm">
+      <.icon name="hero-clock" class="size-5" />
+      <span>
+        <strong class="font-semibold">Renew soon.</strong>
+        Your license expires on {format_expiry(Map.get(@license, :valid_until))}. Renew to avoid
+        interruption.
+      </span>
     </div>
-    <div
-      :if={@status == :grace}
-      class="mt-3 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-900"
-    >
-      <.icon name="hero-exclamation-triangle" class="w-4 h-4 inline" />
-      Your license expired on {format_expiry(Map.get(@license, :valid_until))}. Pro stays active
-      during the grace period — apply a renewed license to continue.
+    <div :if={@status == :grace} role="status" class="alert alert-warning alert-soft text-sm">
+      <.icon name="hero-exclamation-triangle" class="size-5" />
+      <span>
+        <strong class="font-semibold">Grace period.</strong>
+        Your license expired on {format_expiry(Map.get(@license, :valid_until))}. Pro stays active
+        during the grace period — apply a renewed license to continue.
+      </span>
     </div>
-    <div
-      :if={@status == :expired}
-      class="mt-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900"
-    >
-      <.icon name="hero-x-circle" class="w-4 h-4 inline" />
-      Your license expired on {format_expiry(Map.get(@license, :valid_until))}. Apply a renewed
-      license to keep Pro features.
+    <div :if={@status == :expired} role="alert" class="alert alert-error alert-soft text-sm">
+      <.icon name="hero-x-circle" class="size-5" />
+      <span>
+        <strong class="font-semibold">License expired.</strong>
+        Your license expired on {format_expiry(Map.get(@license, :valid_until))}. Apply a renewed
+        license to keep Pro features.
+      </span>
+    </div>
+    """
+  end
+
+  # What the activation panel is for depends on what is already applied: with no
+  # license it is the way in, after expiry it is the way back, and with a live
+  # license it is an occasional replacement that should not dominate the card.
+  defp activation_mode(%{tier: :community}), do: :activate
+
+  defp activation_mode(license) do
+    if Map.get(license, :status) in [:grace, :expired], do: :renew, else: :replace
+  end
+
+  attr :form, :any, required: true
+  attr :mode, :atom, values: [:activate, :renew, :replace], required: true
+  attr :narrow, :boolean, default: false, doc: "cap the width when alone on the row"
+
+  defp activation_panel(%{mode: :replace} = assigns) do
+    ~H"""
+    <div class="min-w-0 rounded-box border border-base-content/5 bg-base-300 p-4">
+      <div class={["space-y-3", @narrow && "max-w-xl"]}>
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0">
+            <h3 class="flex items-center gap-2 text-sm font-semibold">
+              <.icon name="hero-arrow-path" class="size-4" /> Replace license
+            </h3>
+            <p class="mt-1 text-xs text-base-content/60">
+              Have a new token? Apply it to replace the current license.
+            </p>
+          </div>
+          <%!--
+          JS commands rather than <details>: a server patch can reset a
+          <details> element's open state, while JS-applied state survives it.
+          --%>
+          <button
+            type="button"
+            id="replace-license-toggle"
+            class="btn btn-sm btn-outline"
+            aria-expanded="false"
+            aria-controls="replace-license-panel"
+            phx-click={
+              JS.toggle(to: "#replace-license-panel")
+              |> JS.toggle_attribute({"aria-expanded", "true", "false"})
+            }
+          >
+            Replace
+          </button>
+        </div>
+        <div id="replace-license-panel" class="hidden">
+          <.license_token_form form={@form} submit_label="Apply license" />
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  defp activation_panel(assigns) do
+    ~H"""
+    <div class="min-w-0 rounded-box border border-base-content/5 bg-base-300 p-4">
+      <div class={["space-y-3", @narrow && "max-w-xl"]}>
+        <div>
+          <h3 class="flex items-center gap-2 text-sm font-semibold">
+            <.icon name="hero-sparkles" class="size-4" />
+            {if @mode == :renew, do: "Apply renewed license", else: "Activate Pro"}
+          </h3>
+          <p class="mt-1 text-xs text-base-content/60">
+            {if @mode == :renew,
+              do: "Paste the renewed token you received to restore Pro features.",
+              else: "Paste your signed license token to activate Pro on this deployment."}
+          </p>
+        </div>
+        <.license_token_form form={@form} submit_label="Activate license" />
+      </div>
     </div>
     """
   end
 
   attr :form, :any, required: true
+  attr :submit_label, :string, required: true
 
-  defp activate_license_form(assigns) do
+  defp license_token_form(assigns) do
     ~H"""
-    <div class="mt-4 border-t border-base-200 pt-4">
-      <h3 class="text-sm font-semibold">Activate Pro</h3>
-      <p class="text-xs text-base-content/60 mt-1">
-        Paste your signed license token to activate Pro on this node.
-      </p>
-      <.form
-        for={@form}
-        id="activate-license-form"
-        phx-submit="activate_license"
-        class="mt-2 space-y-2"
-      >
-        <.input
-          field={@form[:token]}
-          type="textarea"
-          rows="3"
-          placeholder="flux license token…"
-          class="w-full textarea font-mono text-xs break-all"
-        />
-        <.button class="btn btn-primary btn-sm">Activate license</.button>
-      </.form>
-    </div>
+    <.form for={@form} id="activate-license-form" phx-submit="activate_license" class="space-y-2">
+      <.input
+        field={@form[:token]}
+        type="textarea"
+        rows="3"
+        label="License token"
+        placeholder="flux license token…"
+        class="textarea w-full break-all font-mono text-xs"
+      />
+      <.button class="btn btn-primary btn-sm">{@submit_label}</.button>
+    </.form>
     """
   end
 
