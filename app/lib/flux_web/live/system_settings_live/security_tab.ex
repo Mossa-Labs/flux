@@ -11,7 +11,7 @@ defmodule FluxWeb.SystemSettingsLive.SecurityTab do
   attr :password_policy_enabled, :boolean, default: false
   attr :mfa_enforcement_enabled, :boolean, default: false
 
-  def security_section(assigns) do
+  def security_tab(assigns) do
     ~H"""
     <section class="card bg-base-100 shadow-sm border border-base-200">
       <div class="card-body">

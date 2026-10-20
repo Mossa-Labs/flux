@@ -15,14 +15,15 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/system/settings")
 
       assert html =~ "System Settings"
-      assert html =~ "Manage teams and users"
+      assert html =~ "Licensing, access, security and branding"
     end
 
     test "shows Teams section", %{conn: conn} do
-      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+      {:ok, _lv, html} = live(conn, ~p"/system/settings?tab=members")
 
       assert html =~ "Teams"
-      assert html =~ "New Team"
+      assert html =~ "New team"
+      assert html =~ "Default Team"
     end
 
     test "shows the License section with the current tier", %{conn: conn} do
@@ -34,14 +35,14 @@ defmodule FluxWeb.SystemSettingsLiveTest do
     end
 
     test "shows Members section", %{conn: conn} do
-      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+      {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=members")
 
       # In team_centric mode the heading reads "Team members"
-      assert html =~ "members"
+      assert has_element?(lv, "#members-card", "Team members")
     end
 
     test "shows the current user in members list", %{conn: conn, user: user} do
-      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+      {:ok, _lv, html} = live(conn, ~p"/system/settings?tab=members")
 
       assert html =~ user.email
     end
@@ -93,14 +94,14 @@ defmodule FluxWeb.SystemSettingsLiveTest do
     end
 
     test "shows the API Keys section", %{conn: conn} do
-      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+      {:ok, _lv, html} = live(conn, ~p"/system/settings?tab=api-keys")
 
-      assert html =~ "API Keys"
+      assert html =~ "API keys"
       assert html =~ "No API keys yet."
     end
 
     test "hides the scope picker without the Pro entitlement", %{conn: conn} do
-      {:ok, lv, html} = live(conn, ~p"/system/settings")
+      {:ok, lv, html} = live(conn, ~p"/system/settings?tab=api-keys")
 
       refute has_element?(lv, "#api-key-form select[multiple]")
       assert html =~ "Fine-grained API key scopes"
@@ -108,13 +109,13 @@ defmodule FluxWeb.SystemSettingsLiveTest do
 
     test "shows the scope picker with the Pro entitlement", %{conn: conn} do
       Flux.LicenseHelpers.with_license_tier(:pro, fn ->
-        {:ok, lv, _html} = live(conn, ~p"/system/settings")
+        {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=api-keys")
         assert has_element?(lv, "#api-key-form select[multiple]")
       end)
     end
 
     test "creates an API key and reveals the plaintext once", %{conn: conn} do
-      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+      {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=api-keys")
 
       html =
         lv
@@ -128,12 +129,12 @@ defmodule FluxWeb.SystemSettingsLiveTest do
     end
 
     test "shows the IP Allowlist section", %{conn: conn} do
-      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+      {:ok, _lv, html} = live(conn, ~p"/system/settings?tab=security")
       assert html =~ "IP Allowlist"
     end
 
     test "saves a valid allowlist and persists it", %{conn: conn, owner_scope: scope} do
-      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+      {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=security")
 
       html =
         lv
@@ -152,7 +153,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       conn: conn,
       owner_scope: scope
     } do
-      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+      {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=security")
 
       html =
         lv
@@ -164,7 +165,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
     end
 
     test "saves the session timeout", %{conn: conn, owner_scope: scope} do
-      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+      {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=security")
 
       html =
         lv
@@ -178,7 +179,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
     test "shows the password policy upgrade prompt without the Enterprise entitlement", %{
       conn: conn
     } do
-      {:ok, lv, html} = live(conn, ~p"/system/settings")
+      {:ok, lv, html} = live(conn, ~p"/system/settings?tab=security")
 
       assert html =~ "Password policy"
       # Community build: locked — prompt shown, editable form absent.
@@ -188,14 +189,14 @@ defmodule FluxWeb.SystemSettingsLiveTest do
 
     test "shows the editable password policy form with the Enterprise entitlement", %{conn: conn} do
       Flux.LicenseHelpers.with_license_tier(:enterprise, fn ->
-        {:ok, lv, _html} = live(conn, ~p"/system/settings")
+        {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=security")
         assert has_element?(lv, "#password-policy-form")
       end)
     end
 
     test "saves a valid password policy and persists it", %{conn: conn, owner_scope: scope} do
       Flux.LicenseHelpers.with_license_tier(:enterprise, fn ->
-        {:ok, lv, _html} = live(conn, ~p"/system/settings")
+        {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=security")
 
         html =
           lv
@@ -222,7 +223,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
 
     test "rejects a password policy below the min-12 floor", %{conn: conn, owner_scope: scope} do
       Flux.LicenseHelpers.with_license_tier(:enterprise, fn ->
-        {:ok, lv, _html} = live(conn, ~p"/system/settings")
+        {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=security")
 
         html =
           lv
@@ -237,7 +238,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
     test "shows the MFA enforcement upgrade prompt without the Enterprise entitlement", %{
       conn: conn
     } do
-      {:ok, lv, html} = live(conn, ~p"/system/settings")
+      {:ok, lv, html} = live(conn, ~p"/system/settings?tab=security")
 
       assert html =~ "Require two-factor authentication"
       # Community build: locked — prompt shown, editable form absent.
@@ -250,7 +251,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       owner_scope: scope
     } do
       Flux.LicenseHelpers.with_license_tier(:enterprise, fn ->
-        {:ok, lv, _html} = live(conn, ~p"/system/settings")
+        {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=security")
         assert has_element?(lv, "#mfa-enforcement-form")
 
         html =
@@ -272,7 +273,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
 
       {:ok, _raw, key} = Flux.Accounts.create_api_key(org.id, %{name: "to-revoke"})
 
-      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+      {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=api-keys")
       html = lv |> element("#api-key-#{key.id} button", "Revoke") |> render_click()
 
       refute html =~ "Revoke"
@@ -545,6 +546,117 @@ defmodule FluxWeb.SystemSettingsLiveTest do
     end
   end
 
+  describe "tabs" do
+    setup :register_and_log_in_user
+    setup :establish_owner_scope
+
+    test "the bare URL opens General", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      assert has_element?(lv, ~s(#settings-tab-general[aria-current="page"]))
+      assert has_element?(lv, "#usage-card")
+      refute has_element?(lv, "#members-card")
+    end
+
+    test "every tab is deep-linkable", %{conn: conn} do
+      for {slug, card} <- [
+            {"general", "#usage-card"},
+            {"members", "#members-card"},
+            {"api-keys", "#api-keys-card"},
+            {"security", "#ip-allowlist-form"},
+            {"branding", "#branding-card"}
+          ] do
+        {:ok, lv, _html} = live(conn, ~p"/system/settings?#{[tab: slug]}")
+
+        assert has_element?(lv, ~s(#settings-tab-#{slug}[aria-current="page"])), slug
+        assert has_element?(lv, card), slug
+      end
+    end
+
+    test "an unknown tab falls back to General", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=nope")
+
+      assert has_element?(lv, ~s(#settings-tab-general[aria-current="page"]))
+      assert has_element?(lv, "#usage-card")
+    end
+
+    test "clicking a tab patches the URL", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      lv |> element("#settings-tab-security") |> render_click()
+
+      assert_patch(lv, ~p"/system/settings?tab=security")
+      assert has_element?(lv, "#ip-allowlist-form")
+      assert page_title(lv) =~ "Security"
+    end
+
+    # THE REGRESSION TEST for streams across tabs. Stream items are dropped once
+    # rendered, and on General the teams list is not in the DOM, so a list
+    # streamed only in mount arrives empty when you switch to Members.
+    test "the teams list is filled after switching to it from another tab", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+
+      lv |> element("#settings-tab-members") |> render_click()
+
+      assert has_element?(lv, "#teams-list", "Default Team")
+    end
+
+    test "a just-created API key survives a round trip through other tabs", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=api-keys")
+
+      lv
+      |> form("#api-key-form", api_key: %{name: "Production CI", role: "viewer"})
+      |> render_submit()
+
+      lv |> element("#settings-tab-general") |> render_click()
+      lv |> element("#settings-tab-api-keys") |> render_click()
+
+      assert has_element?(lv, "#revealed-api-key", "Copy this key now")
+    end
+
+    test "leaving a tab closes its modal", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=members")
+
+      lv |> element("#teams-card button", "New team") |> render_click()
+      assert has_element?(lv, "#team-modal")
+
+      lv |> element("#settings-tab-general") |> render_click()
+      lv |> element("#settings-tab-members") |> render_click()
+
+      refute has_element?(lv, "#team-modal")
+    end
+  end
+
+  describe "tabs for someone who may not view System Settings" do
+    test "every tab renders the 403, never the tab's contents" do
+      owner = user_fixture()
+
+      org =
+        Flux.Structure.Organization
+        |> where([o], o.user_id == ^owner.id)
+        |> limit(1)
+        |> Flux.Repo.one!()
+
+      owner_scope = %Flux.Accounts.Scope{
+        user: owner,
+        organization_id: org.id,
+        organization_role: "owner"
+      }
+
+      {:ok, team} = Structure.create_team(owner_scope, %{name: "Ops"})
+      viewer = user_fixture()
+
+      {:ok, _} =
+        Structure.create_team_member(%{user_id: viewer.id, team_id: team.id, role: "viewer"})
+
+      conn = log_in_user(build_conn(), viewer)
+      {:ok, _lv, html} = live(conn, ~p"/system/settings?tab=security")
+
+      assert html =~ "403 Forbidden"
+      refute html =~ "ip-allowlist-form"
+    end
+  end
+
   # Swap in the activation-capable provider for one test, restoring afterwards.
   describe "branding" do
     setup :register_and_log_in_user
@@ -571,7 +683,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
     end
 
     test "Community sees an upgrade prompt, not a form", %{conn: conn} do
-      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+      {:ok, _lv, html} = live(conn, ~p"/system/settings?tab=branding")
 
       assert html =~ "White-label branding"
       refute html =~ ~s(id="branding-form")
@@ -581,7 +693,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       Flux.LicenseHelpers.put_license_tier(:enterprise)
       use_branding_provider(%Flux.Branding.Theme{brand_name: "Acme", primary_color: "#ff0000"})
 
-      {:ok, _lv, html} = live(conn, ~p"/system/settings")
+      {:ok, _lv, html} = live(conn, ~p"/system/settings?tab=branding")
 
       assert html =~ ~s(id="branding-form")
       assert html =~ "Acme"
@@ -594,7 +706,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       Flux.LicenseHelpers.put_license_tier(:enterprise)
       use_branding_provider(%Flux.Branding.Theme{brand_name: "Acme"})
 
-      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+      {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=branding")
 
       html =
         lv
@@ -612,7 +724,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
         logo_digest: "newdigest00"
       })
 
-      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+      {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=branding")
 
       # A real 1x1 PNG as an inline binary — no fixture file to drift or go
       # missing, and readable by anyone reviewing this.
@@ -650,7 +762,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
 
       on_exit(fn -> Application.delete_env(:flux, :test_branding_put_asset_result) end)
 
-      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+      {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=branding")
 
       png = <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A>> <> <<0::64>>
 
@@ -688,7 +800,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
 
       on_exit(fn -> Application.delete_env(:flux, :test_branding_put_asset_result) end)
 
-      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+      {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=branding")
 
       html =
         lv
@@ -722,7 +834,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       # control — the event can still be pushed over the socket.
       Flux.LicenseHelpers.put_license_tier(:enterprise)
       use_branding_provider(%Flux.Branding.Theme{brand_name: "Acme"})
-      {:ok, lv, _html} = live(conn, ~p"/system/settings")
+      {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=branding")
 
       Flux.LicenseHelpers.put_license_tier(:community)
 

@@ -1,157 +1,172 @@
 defmodule FluxWeb.SystemSettingsLive.ApiKeysTab do
   @moduledoc """
-  API key management for System Settings.
+  The API keys tab of System Settings.
   """
   use FluxWeb, :html
 
+  import FluxWeb.SystemSettingsLive.Components
+
   alias FluxWeb.Components.UpgradePrompt
 
-  def api_keys_section(assigns) do
+  attr :api_keys, :list, required: true
+  attr :api_key_form, :any, required: true
+  attr :revealed_key, :string, default: nil
+  attr :scopes_enabled, :boolean, default: false
+
+  def api_keys_tab(assigns) do
     ~H"""
-    <section class="card bg-base-100 shadow-sm border border-base-200">
-      <div class="card-body">
-        <div class="flex items-center justify-between">
-          <h2 class="card-title text-base font-bold">
-            <.icon name="hero-key" class="w-5 h-5" /> API Keys
-          </h2>
-        </div>
-        <p class="text-sm text-base-content/60">
-          Programmatic access to the REST API via the <code>X-API-Key</code> header.
-          A key acts with the role you assign it.
-        </p>
+    <.settings_card id="api-keys-card" title="API keys" icon="hero-key">
+      <:description>
+        Programmatic access to the REST API via the <code class="font-mono text-xs">X-API-Key</code>
+        header. A key acts with the role you assign it.
+      </:description>
 
-        <div
-          :if={@revealed_key}
-          id="revealed-api-key"
-          class="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4"
-        >
-          <div class="flex items-start justify-between gap-2">
-            <p class="text-sm font-semibold text-amber-900">
-              Copy this key now — it will not be shown again.
-            </p>
-            <button
-              type="button"
-              phx-click="dismiss_api_key"
-              class="btn btn-ghost btn-xs btn-circle"
-              aria-label="Dismiss"
-            >
-              <.icon name="hero-x-mark" class="w-4 h-4" />
-            </button>
-          </div>
-          <div class="mt-2 flex items-center gap-2">
-            <input
-              type="text"
-              readonly
-              value={@revealed_key}
-              class="input input-sm input-bordered font-mono w-full"
-            />
-            <button
-              type="button"
-              id="copy-api-key"
-              phx-hook=".CopyApiKey"
-              data-key={@revealed_key}
-              class="btn btn-sm"
-            >
-              Copy
-            </button>
-          </div>
+      <%!--
+      Kept until dismissed or the page is left, so switching tabs does not lose a
+      secret that can never be shown again.
+      --%>
+      <div
+        :if={@revealed_key}
+        id="revealed-api-key"
+        role="status"
+        class="space-y-3 rounded-box border border-warning/30 bg-warning/10 p-4"
+      >
+        <div class="flex items-start justify-between gap-2">
+          <p class="text-sm font-semibold text-warning">
+            Copy this key now — it will not be shown again.
+          </p>
+          <button
+            type="button"
+            phx-click="dismiss_api_key"
+            class="btn btn-ghost btn-xs btn-circle text-warning"
+            aria-label="Dismiss"
+          >
+            <.icon name="hero-x-mark" class="size-4" />
+          </button>
         </div>
+        <div class="flex flex-col gap-2 sm:flex-row">
+          <input
+            type="text"
+            readonly
+            value={@revealed_key}
+            aria-label="New API key"
+            class="input input-sm w-full font-mono"
+          />
+          <button
+            type="button"
+            id="copy-api-key"
+            phx-hook=".CopyApiKey"
+            data-key={@revealed_key}
+            class="btn btn-sm btn-warning"
+          >
+            <.icon name="hero-clipboard-document" class="size-4" /> Copy
+          </button>
+        </div>
+      </div>
 
+      <div class="rounded-box border border-base-content/5 bg-base-300 p-4">
         <.form
           for={@api_key_form}
           id="api-key-form"
           phx-submit="create_api_key"
-          class="mt-4 flex flex-col sm:flex-row gap-2 sm:items-end"
+          class="flex flex-col gap-x-3 sm:flex-row sm:flex-wrap sm:items-end"
         >
-          <.input field={@api_key_form[:name]} type="text" label="Name" placeholder="Production CI" />
-          <.input
-            field={@api_key_form[:role]}
-            type="select"
-            label="Role"
-            options={[{"Admin", "admin"}, {"Member", "member"}, {"Viewer", "viewer"}]}
-          />
-          <.input
-            :if={@scopes_enabled}
-            field={@api_key_form[:scopes]}
-            type="select"
-            multiple
-            label="Scopes"
-            options={scope_options()}
-          />
-          <.input field={@api_key_form[:expires_at]} type="date" label="Expires (optional)" />
-          <.button class="btn btn-primary">Create key</.button>
+          <div class="sm:min-w-48 sm:flex-[2]">
+            <.input field={@api_key_form[:name]} type="text" label="Name" placeholder="Production CI" />
+          </div>
+          <div class="sm:min-w-32 sm:flex-1">
+            <.input
+              field={@api_key_form[:role]}
+              type="select"
+              label="Role"
+              options={[{"Admin", "admin"}, {"Member", "member"}, {"Viewer", "viewer"}]}
+            />
+          </div>
+          <div :if={@scopes_enabled} class="sm:min-w-48 sm:flex-[2]">
+            <.input
+              field={@api_key_form[:scopes]}
+              type="select"
+              multiple
+              label="Scopes"
+              options={scope_options()}
+            />
+          </div>
+          <div class="sm:min-w-36 sm:flex-1">
+            <.input field={@api_key_form[:expires_at]} type="date" label="Expires (optional)" />
+          </div>
+          <div class="mb-2">
+            <.button class="btn btn-primary">Create key</.button>
+          </div>
         </.form>
-        <p :if={@scopes_enabled} class="text-xs text-base-content/50 mt-1">
+        <p :if={@scopes_enabled} class="text-xs text-base-content/60">
           A key's access is the intersection of its role and its scopes.
         </p>
-        <div :if={!@scopes_enabled} class="mt-2">
-          <UpgradePrompt.upgrade_prompt feature={:api_key_scopes} size={:compact} />
-        </div>
-
-        <div class="mt-4 overflow-x-auto">
-          <table class="table table-sm">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Key</th>
-                <th>Role</th>
-                <th>Scopes</th>
-                <th>Last used</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr :for={key <- @api_keys} id={"api-key-#{key.id}"}>
-                <td class="font-medium">{key.name}</td>
-                <td class="font-mono text-xs">{key.key_prefix}…</td>
-                <td class="capitalize">{key.role}</td>
-                <td class="text-xs">
-                  <span
-                    :for={scope <- Flux.Accounts.ApiKey.effective_scopes(key)}
-                    class="badge badge-ghost badge-xs mr-1 whitespace-nowrap"
-                  >
-                    {scope}
-                  </span>
-                </td>
-                <td class="text-sm text-base-content/60">{format_last_used(key.last_used_at)}</td>
-                <td>
-                  <span class={["badge badge-sm", api_key_status_class(key)]}>
-                    {api_key_status(key)}
-                  </span>
-                </td>
-                <td class="text-right">
-                  <button
-                    :if={Flux.Accounts.ApiKey.active?(key)}
-                    type="button"
-                    phx-click="revoke_api_key"
-                    phx-value-id={key.id}
-                    data-confirm={"Revoke #{key.name}? This cannot be undone."}
-                    class="btn btn-ghost btn-xs text-error"
-                  >
-                    Revoke
-                  </button>
-                </td>
-              </tr>
-              <tr :if={@api_keys == []}>
-                <td colspan="7" class="text-center text-base-content/50 py-6">
-                  No API keys yet.
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
       </div>
-    </section>
+      <UpgradePrompt.upgrade_prompt :if={!@scopes_enabled} feature={:api_key_scopes} size={:compact} />
+
+      <div class="-mx-2 overflow-x-auto">
+        <table class="table table-sm">
+          <thead>
+            <tr class="text-base-content/60">
+              <th>Name</th>
+              <th>Key</th>
+              <th>Role</th>
+              <th>Scopes</th>
+              <th>Last used</th>
+              <th>Status</th>
+              <th><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr :for={key <- @api_keys} id={"api-key-#{key.id}"} class="border-base-content/5">
+              <td class="font-medium">{key.name}</td>
+              <td class="font-mono text-xs">{key.key_prefix}…</td>
+              <td class="capitalize">{key.role}</td>
+              <td class="text-xs">
+                <span
+                  :for={scope <- Flux.Accounts.ApiKey.effective_scopes(key)}
+                  class="badge badge-ghost badge-xs mr-1 whitespace-nowrap font-mono"
+                >
+                  {scope}
+                </span>
+              </td>
+              <td class="text-sm text-base-content/60">{format_last_used(key.last_used_at)}</td>
+              <td>
+                <span class={["badge badge-sm", api_key_status_class(key)]}>
+                  {api_key_status(key)}
+                </span>
+              </td>
+              <td class="text-right">
+                <button
+                  :if={Flux.Accounts.ApiKey.active?(key)}
+                  type="button"
+                  phx-click="revoke_api_key"
+                  phx-value-id={key.id}
+                  data-confirm={"Revoke #{key.name}? This cannot be undone."}
+                  class="btn btn-ghost btn-xs text-error"
+                >
+                  Revoke
+                </button>
+              </td>
+            </tr>
+            <tr :if={@api_keys == []}>
+              <td colspan="7" class="py-6 text-center text-base-content/60">
+                No API keys yet.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </.settings_card>
 
     <script :type={Phoenix.LiveView.ColocatedHook} name=".CopyApiKey">
       export default {
         mounted() {
           this.el.addEventListener("click", () => {
             navigator.clipboard?.writeText(this.el.dataset.key)
-            const original = this.el.textContent
+            const original = this.el.innerHTML
             this.el.textContent = "Copied!"
-            setTimeout(() => { this.el.textContent = original }, 1500)
+            setTimeout(() => { this.el.innerHTML = original }, 1500)
           })
         }
       }
@@ -169,7 +184,7 @@ defmodule FluxWeb.SystemSettingsLive.ApiKeysTab do
 
   defp api_key_status_class(key) do
     case api_key_status(key) do
-      "active" -> "badge-success"
+      "active" -> "badge-success badge-soft"
       _ -> "badge-ghost"
     end
   end
