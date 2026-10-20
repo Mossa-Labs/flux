@@ -96,6 +96,30 @@ defmodule Flux.Sinks.SecretEncryptionTest do
     assert reloaded.config["auth"]["token"] == "legacy"
   end
 
+  test "email sink api_key and password are ciphertext at rest", %{org_id: org_id} do
+    {:ok, sink} =
+      Sinks.create_sink(%{
+        name: "email-enc-sink",
+        type: "email",
+        organization_id: org_id,
+        config: %{
+          "provider" => "sendgrid",
+          "api_key" => "SG.super-secret-key",
+          "from" => "alerts@example.com",
+          "to" => ["ops@example.com"],
+          "subject" => "hi"
+        }
+      })
+
+    raw = raw_config(sink.id)
+    assert %{"encrypted" => true, "ciphertext" => ct} = raw["api_key"]
+    refute ct =~ "super-secret-key"
+    assert raw["from"] == "alerts@example.com"
+
+    assert Sinks.get_sink(sink.id, org_id).config["api_key"] == "SG.super-secret-key"
+    assert Sinks.redact_config(sink.config)["api_key"] != "SG.super-secret-key"
+  end
+
   test "a ciphertext relocated into a non-secret field is not decrypted (no oracle)", %{
     org_id: org_id
   } do

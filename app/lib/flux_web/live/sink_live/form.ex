@@ -122,6 +122,14 @@ defmodule FluxWeb.SinkLive.Form do
                 <.sink_type_option
                   field={@form[:type]}
                   selected_type={@selected_type}
+                  type="email"
+                  icon="hero-envelope"
+                  label="Email"
+                  sublabel="Notifications"
+                />
+                <.sink_type_option
+                  field={@form[:type]}
+                  selected_type={@selected_type}
                   type="bigquery"
                   icon="hero-table-cells"
                   label="BigQuery"
@@ -464,6 +472,227 @@ defmodule FluxWeb.SinkLive.Form do
           {"Reject records that don't match", "strict"}
         ]}
       />
+    </div>
+    """
+  end
+
+  defp type_config_fields(%{type: "email"} = assigns) do
+    assigns = assign(assigns, :provider, cfg(assigns.form, "config_provider") || "smtp")
+
+    ~H"""
+    <div class="space-y-6">
+      <div class="space-y-4">
+        <.input
+          field={@form[:config_provider]}
+          type="select"
+          label="Send With"
+          options={[
+            {"SMTP server", "smtp"},
+            {"Flux system mailer", "system"},
+            {"SendGrid", "sendgrid"},
+            {"Mailgun", "mailgun"},
+            {"Postmark", "postmark"},
+            {"Amazon SES", "amazon_ses"}
+          ]}
+        />
+
+        <div :if={@provider == "smtp"} id="email-smtp-fields" class="space-y-4">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="sm:col-span-2">
+              <.input
+                field={@form[:config_host]}
+                type="text"
+                label="SMTP Host"
+                placeholder="smtp.example.com"
+                required
+              />
+            </div>
+            <.input field={@form[:config_port]} type="number" label="Port" placeholder="587" />
+          </div>
+          <.input
+            field={@form[:config_security]}
+            type="select"
+            label="Encryption"
+            options={[
+              {"STARTTLS (port 587)", "starttls"},
+              {"SSL/TLS (port 465)", "ssl"},
+              {"None (internal relays only)", "none"}
+            ]}
+          />
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <.input field={@form[:config_username]} type="text" label="Username (optional)" />
+            <.input
+              field={@form[:config_password]}
+              type="password"
+              label="Password"
+              placeholder={if @form.data.id, do: "Leave blank to keep current", else: ""}
+            />
+          </div>
+          <.input
+            field={@form[:config_tls_skip_verify]}
+            type="checkbox"
+            label="Skip TLS certificate verification (insecure — self-signed internal relays only)"
+          />
+        </div>
+
+        <div
+          :if={@provider == "system"}
+          id="email-system-note"
+          class="rounded-lg bg-base-200/60 p-3 text-sm text-base-content/70"
+        >
+          Sends through the mail server this Flux instance is configured with
+          (<code>FLUX_SMTP_*</code>). The From address defaults to <code>FLUX_MAIL_FROM_ADDRESS</code>.
+        </div>
+
+        <div
+          :if={@provider in ["sendgrid", "mailgun", "postmark"]}
+          id="email-api-fields"
+          class="space-y-4"
+        >
+          <.input
+            field={@form[:config_api_key]}
+            type="password"
+            label="API Key"
+            placeholder={if @form.data.id, do: "Leave blank to keep current", else: ""}
+            required={is_nil(@form.data.id)}
+          />
+          <div :if={@provider == "mailgun"} class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <.input
+              field={@form[:config_domain]}
+              type="text"
+              label="Sending Domain"
+              placeholder="mg.example.com"
+              required
+            />
+            <.input
+              field={@form[:config_region]}
+              type="select"
+              label="Region"
+              options={[{"US", "us"}, {"EU", "eu"}]}
+            />
+          </div>
+        </div>
+
+        <div :if={@provider == "amazon_ses"} id="email-ses-fields" class="space-y-4">
+          <.input
+            field={@form[:config_region]}
+            type="text"
+            label="AWS Region"
+            placeholder="us-east-1"
+            required
+          />
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <.input field={@form[:config_access_key]} type="text" label="Access Key ID" required />
+            <.input
+              field={@form[:config_secret_access_key]}
+              type="password"
+              label="Secret Access Key"
+              placeholder={if @form.data.id, do: "Leave blank to keep current", else: ""}
+              required={is_nil(@form.data.id)}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div class="space-y-4">
+        <h3 class="text-sm font-semibold text-base-content/80">Sender &amp; Recipients</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <.input
+            field={@form[:config_from]}
+            type="email"
+            label={if @provider == "system", do: "From Address (optional)", else: "From Address"}
+            placeholder="alerts@example.com"
+            maxlength="254"
+            required={@provider != "system"}
+          />
+          <.input
+            field={@form[:config_from_name]}
+            type="text"
+            label="From Name (optional)"
+            placeholder="Pipeline Alerts"
+            maxlength="78"
+          />
+        </div>
+        <.input
+          field={@form[:config_reply_to]}
+          type="email"
+          label="Reply-To (optional)"
+          placeholder="ops@example.com"
+          maxlength="254"
+        />
+        <div :for={{field, label, required} <- recipient_fields()} id={"email-#{field}"}>
+          <.input
+            field={@form[field]}
+            type="textarea"
+            label={label}
+            rows="2"
+            placeholder="ops@example.com, oncall@example.com"
+            required={required}
+          />
+          <p
+            :for={msg <- recipient_errors(@form, field)}
+            class="-mt-1 flex gap-2 items-center text-sm text-error"
+          >
+            <.icon name="hero-exclamation-circle" class="size-5 shrink-0" />{msg}
+          </p>
+        </div>
+        <p class="text-xs text-base-content/60">
+          Separate addresses with commas or new lines. Up to {Flux.EmailAddress.max_recipients()} recipients in total.
+        </p>
+      </div>
+
+      <div class="space-y-4">
+        <h3 class="text-sm font-semibold text-base-content/80">Message</h3>
+        <.input
+          field={@form[:config_subject]}
+          type="text"
+          label="Subject"
+          placeholder="Order {order.id} failed"
+          required
+        />
+        <.input
+          field={@form[:config_html_body]}
+          type="textarea"
+          label="HTML Body (optional)"
+          rows="5"
+          placeholder="<p>Order <strong>{order.id}</strong> failed: {error.message}</p>"
+        />
+        <.input
+          field={@form[:config_text_body]}
+          type="textarea"
+          label="Plain-Text Body (optional)"
+          rows="4"
+          placeholder="Order {order.id} failed: {error.message}"
+        />
+        <p class="text-xs text-base-content/60 -mt-2">
+          <code phx-no-curly-interpolation>{field}</code>
+          placeholders (dot-paths supported) are filled from each record. Values are
+          HTML-escaped in the HTML body. Leave both bodies blank to send the record as JSON.
+        </p>
+      </div>
+
+      <div class="space-y-4">
+        <h3 class="text-sm font-semibold text-base-content/80">Rate Limit</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <.input
+            field={@form[:config_max_per_minute]}
+            type="number"
+            label="Max Emails per Minute"
+            placeholder="30"
+            min="1"
+          />
+          <.input
+            field={@form[:config_max_wait_ms]}
+            type="number"
+            label="Max Wait When Limited (ms)"
+            placeholder="30000"
+            min="0"
+          />
+        </div>
+        <p class="text-xs text-base-content/60 -mt-2">
+          Records over the limit wait for the next minute, then are dropped. Applies per Flux node.
+        </p>
+      </div>
     </div>
     """
   end
@@ -1084,6 +1313,33 @@ defmodule FluxWeb.SinkLive.Form do
     |> put_columns("config_schema", config["schema"])
   end
 
+  defp config_form_params("email", config) do
+    # password, api_key and secret_access_key are secret — left blank on edit.
+    rate = if is_map(config["rate_limit"]), do: config["rate_limit"], else: %{}
+
+    %{}
+    |> put_field("config_provider", config["provider"])
+    |> put_field("config_host", config["host"])
+    |> put_field("config_port", config["port"])
+    |> put_field("config_security", config["security"])
+    |> put_field("config_username", config["username"])
+    |> put_field("config_tls_skip_verify", bool_to_param(config["tls_verify"] == false))
+    |> put_field("config_domain", config["domain"])
+    |> put_field("config_region", config["region"])
+    |> put_field("config_access_key", config["access_key"])
+    |> put_field("config_from", config["from"])
+    |> put_field("config_from_name", config["from_name"])
+    |> put_field("config_reply_to", config["reply_to"])
+    |> put_field("config_to", join_addresses(config["to"]))
+    |> put_field("config_cc", join_addresses(config["cc"]))
+    |> put_field("config_bcc", join_addresses(config["bcc"]))
+    |> put_field("config_subject", config["subject"])
+    |> put_field("config_html_body", config["html_body"])
+    |> put_field("config_text_body", config["text_body"])
+    |> put_field("config_max_per_minute", rate["max_per_minute"])
+    |> put_field("config_max_wait_ms", rate["max_wait_ms"])
+  end
+
   defp config_form_params("bigquery", config) do
     # credentials (service-account JSON) is secret — left blank on edit.
     %{}
@@ -1258,6 +1514,37 @@ defmodule FluxWeb.SinkLive.Form do
     |> Map.put("schema", schema)
   end
 
+  defp build_config(params, "email") do
+    rate_limit =
+      %{}
+      |> maybe_put("max_per_minute", parse_int(params["config_max_per_minute"]))
+      |> maybe_put("max_wait_ms", parse_int(params["config_max_wait_ms"]))
+
+    %{}
+    |> maybe_put("provider", params["config_provider"] || "smtp")
+    |> maybe_put("host", trim(params["config_host"]))
+    |> maybe_put("port", parse_int(params["config_port"]))
+    |> maybe_put("security", params["config_security"])
+    |> maybe_put("username", trim(params["config_username"]))
+    |> maybe_put("password", params["config_password"])
+    |> Map.put("tls_verify", params["config_tls_skip_verify"] != "true")
+    |> maybe_put("api_key", trim(params["config_api_key"]))
+    |> maybe_put("domain", trim(params["config_domain"]))
+    |> maybe_put("region", trim(params["config_region"]))
+    |> maybe_put("access_key", trim(params["config_access_key"]))
+    |> maybe_put("secret_access_key", trim(params["config_secret_access_key"]))
+    |> maybe_put("from", trim(params["config_from"]))
+    |> maybe_put("from_name", trim(params["config_from_name"]))
+    |> maybe_put("reply_to", trim(params["config_reply_to"]))
+    |> Map.put("to", address_list(params["config_to"]))
+    |> Map.put("cc", address_list(params["config_cc"]))
+    |> Map.put("bcc", address_list(params["config_bcc"]))
+    |> maybe_put("subject", params["config_subject"])
+    |> maybe_put("html_body", params["config_html_body"])
+    |> maybe_put("text_body", params["config_text_body"])
+    |> then(&if(rate_limit == %{}, do: &1, else: Map.put(&1, "rate_limit", rate_limit)))
+  end
+
   defp build_config(params, "bigquery") do
     %{}
     |> maybe_put("project_id", params["config_project_id"])
@@ -1344,6 +1631,46 @@ defmodule FluxWeb.SinkLive.Form do
 
   defp blank_to_nil(value) when value in [nil, ""], do: nil
   defp blank_to_nil(value), do: value
+
+  # Valid addresses are stored normalized; an invalid entry is kept verbatim so
+  # the adapter's validation reports it by name instead of it silently vanishing.
+  defp address_list(nil), do: []
+
+  defp address_list(value) when is_binary(value) do
+    case Flux.EmailAddress.validate_list(value) do
+      {:ok, addresses} -> addresses
+      {:error, _} -> Flux.EmailAddress.split_list(value)
+    end
+  end
+
+  defp join_addresses(list) when is_list(list) and list != [], do: Enum.join(list, ", ")
+  defp join_addresses(_), do: nil
+
+  defp recipient_fields do
+    [
+      {:config_to, "To", true},
+      {:config_cc, "Cc (optional)", false},
+      {:config_bcc, "Bcc (optional)", false}
+    ]
+  end
+
+  # Per-address problems for a recipient field, shown live under the textarea
+  # as the user types (the changeset only carries them as one :config error).
+  defp recipient_errors(form, field) do
+    case form.params[Atom.to_string(field)] do
+      value when is_binary(value) and value != "" ->
+        case Flux.EmailAddress.validate_list(value) do
+          {:ok, _} -> []
+          {:error, messages} -> messages
+        end
+
+      _ ->
+        []
+    end
+  end
+
+  defp trim(value) when is_binary(value), do: String.trim(value)
+  defp trim(value), do: value
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, _key, ""), do: map

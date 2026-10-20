@@ -300,6 +300,129 @@ defmodule FluxWeb.SinkLive.FormTest do
     end
   end
 
+  describe "email sink" do
+    test "is a Community type: selecting it shows its config, not an upgrade prompt",
+         %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "email"})
+
+      refute html =~ "Flux Pro"
+      assert html =~ "SMTP Host"
+      assert html =~ "From Address"
+      assert html =~ "Subject"
+    end
+
+    test "switching provider swaps the credential fields", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "email"})
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_provider" => "sendgrid"}})
+        |> render_change()
+
+      assert html =~ "API Key"
+      refute html =~ "SMTP Host"
+    end
+
+    test "creates an SMTP email sink with normalized recipients", %{conn: conn, scope: scope} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "email"})
+
+      result =
+        lv
+        |> form("form", %{
+          "sink" => %{
+            "name" => "Order alerts",
+            "config_provider" => "smtp",
+            "config_host" => "smtp.example.com",
+            "config_port" => "587",
+            "config_security" => "starttls",
+            "config_username" => "mailer",
+            "config_password" => "smtp-s3cr3t",
+            "config_from" => "alerts@example.com",
+            "config_to" => "ops@EXAMPLE.com,\noncall@example.com",
+            "config_subject" => "Order {order.id} failed",
+            "config_max_per_minute" => "10"
+          }
+        })
+        |> render_submit()
+
+      assert {:error, {:live_redirect, %{to: "/sinks"}}} = result
+
+      [sink] = Flux.Sinks.list_sinks(scope.organization_id) |> Enum.filter(&(&1.type == "email"))
+      assert sink.config["to"] == ["ops@example.com", "oncall@example.com"]
+      assert sink.config["password"] == "smtp-s3cr3t"
+      assert sink.config["tls_verify"] == true
+      assert sink.config["rate_limit"] == %{"max_per_minute" => 10}
+    end
+
+    test "shows each invalid recipient as the user types", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "email"})
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_to" => "ok@example.com, bob@@example.com"}})
+        |> render_change()
+
+      assert html =~ "bob@@example.com"
+      assert html =~ "exactly one @"
+    end
+
+    test "refuses to save an invalid sender", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "email"})
+
+      html =
+        lv
+        |> form("form", %{
+          "sink" => %{
+            "name" => "Bad sender",
+            "config_host" => "smtp.example.com",
+            "config_from" => "alerts@localhost",
+            "config_to" => "ops@example.com",
+            "config_subject" => "hi"
+          }
+        })
+        |> render_submit()
+
+      assert html =~ "Couldn&#39;t save sink" or html =~ "Couldn't save sink"
+      assert html =~ "at least two labels"
+    end
+
+    test "editing without re-entering the password keeps it and hydrates recipients",
+         %{conn: conn, scope: scope} do
+      sink =
+        email_sink_fixture(scope.organization_id, %{
+          config: %{
+            "provider" => "smtp",
+            "host" => "smtp.example.com",
+            "username" => "mailer",
+            "password" => "smtp-s3cr3t",
+            "from" => "alerts@example.com",
+            "to" => ["ops@example.com", "oncall@example.com"],
+            "subject" => "hi"
+          }
+        })
+
+      {:ok, lv, html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      assert html =~ "ops@example.com, oncall@example.com"
+      refute html =~ "smtp-s3cr3t"
+
+      lv
+      |> form("form", %{"sink" => %{"config_subject" => "Updated {id}"}})
+      |> render_submit()
+
+      updated = Flux.Sinks.get_sink(sink.id, scope.organization_id)
+      assert updated.config["subject"] == "Updated {id}"
+      assert updated.config["password"] == "smtp-s3cr3t"
+      assert updated.config["to"] == ["ops@example.com", "oncall@example.com"]
+    end
+  end
+
   defp postgres_sink_fixture(scope) do
     sink_fixture(scope.organization_id, %{
       name: "pg-#{System.unique_integer([:positive])}",

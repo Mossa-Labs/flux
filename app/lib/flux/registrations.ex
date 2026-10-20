@@ -55,6 +55,7 @@ defmodule Flux.Registrations do
     Flux.Sink.Registry.register("postgres", Flux.Sink.Adapters.Postgres)
     Flux.Sink.Registry.register("mysql", Flux.Sink.Adapters.MySQL)
     Flux.Sink.Registry.register("parquet", Flux.Sink.Adapters.Parquet)
+    Flux.Sink.Registry.register("email", Flux.Sink.Adapters.Email)
     Flux.Sink.Registry.register("s3", Flux.Sink.Adapters.Stub)
     Flux.Sink.Registry.register("bigquery", Flux.Sink.Adapters.Stub)
     # Pro connectors — the commercial edition registers the real adapters over these stubs.
