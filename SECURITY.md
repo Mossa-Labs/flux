@@ -76,7 +76,7 @@ false confidence.
 
 ### On signatures
 
-Releases **after v0.2.4** carry a signed **GitHub artifact attestation**. It is
+Tagged releases **after v0.2.4** carry a signed **GitHub artifact attestation**. It is
 signed keylessly through Sigstore's public-good instance, against the identity of
 this repository's release workflow, and recorded in the public Rekor transparency
 log. There is no long-lived signing key to leak or rotate.
@@ -88,13 +88,19 @@ gh attestation verify oci://ghcr.io/mossa-labs/flux/community:<version> \
   --owner Mossa-Labs
 ```
 
-To also pin the exact repository and workflow that must have signed it:
+The stricter form below is recommended. It also requires that the signature was
+issued by this repository's release workflow running for that version's tag, not
+from some other branch or workflow:
 
 ```bash
 gh attestation verify oci://ghcr.io/mossa-labs/flux/community:<version> \
   --repo Mossa-Labs/flux \
-  --signer-workflow Mossa-Labs/flux/.github/workflows/release.yml
+  --signer-workflow Mossa-Labs/flux/.github/workflows/release.yml \
+  --source-ref refs/tags/v<version>
 ```
+
+Only tag-triggered releases are signed. Images built by a manual run of the
+release workflow are published unsigned and will fail verification.
 
 Use `@sha256:<digest>` in place of `:<version>` to verify exactly what you deploy.
 

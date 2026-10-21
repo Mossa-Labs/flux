@@ -54,6 +54,14 @@ jobs:
 
     runs-on: ${{ matrix.runner }}
 
+    # Each leg sets only its own key, so the two legs do not overwrite each
+    # other. The manifest job composes from these digests, never from the
+    # per-arch tags: a tag can be repointed between this job and that one, and
+    # the release workflow would then attest whatever it had been pointed at.
+    outputs:
+      digest-amd64: ${{ steps.digest.outputs.amd64 }}
+      digest-arm64: ${{ steps.digest.outputs.arm64 }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -128,6 +136,18 @@ jobs:
           # is what actually catches it if it recurs.
           cache-from: type=gha,scope=${{ matrix.arch }}-attest
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}-attest
+
+      - name: Export the ${{ matrix.arch }} digest
+        id: digest
+        env:
+          ARCH: ${{ matrix.arch }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          case "$DIGEST" in
+            sha256:[0-9a-f]*) ;;
+            *) echo "::error::refusing an unexpected digest '$DIGEST'"; exit 1 ;;
+          esac
+          echo "$ARCH=$DIGEST" >> "$GITHUB_OUTPUT"
 
       # The version appears in four places and nothing ever compared them, so
       # 0.2.1 published an image whose label said 0.2.1 while the app, the boot
@@ -225,9 +245,18 @@ jobs:
         id: merge
         env:
           V: ${{ steps.meta.outputs.version }}
+          AMD64: ${{ needs.build.outputs.digest-amd64 }}
+          ARM64: ${{ needs.build.outputs.digest-arm64 }}
         run: |
+          for d in "$AMD64" "$ARM64"; do
+            case "$d" in
+              sha256:[0-9a-f]*) ;;
+              *) echo "::error::build did not hand over a per-arch digest (got '$d')"; exit 1 ;;
+            esac
+          done
+
           docker buildx imagetools create -t "$IMAGE:$V" \
-            "$IMAGE:$V-amd64" "$IMAGE:$V-arm64"
+            "$IMAGE@$AMD64" "$IMAGE@$ARM64"
 
           # The index digest is what a deployment pins to and what the attestation
           # below is issued over.
@@ -237,13 +266,26 @@ jobs:
             *) echo "::error::refusing an unexpected digest '$DIGEST'"; exit 1 ;;
           esac
 
+          # DIGEST was read back through a tag, which can be repointed between
+          # the create above and the inspect. Before it is attested, check that
+          # the index at that (immutable) digest holds exactly the children of
+          # the two builds and nothing else.
+          children() { docker buildx imagetools inspect --raw "$1" | jq -r '.manifests[].digest'; }
+          WANT="$( { children "$IMAGE@$AMD64"; children "$IMAGE@$ARM64"; } | sort)"
+          GOT="$(children "$IMAGE@$DIGEST" | sort)"
+          [ -n "$WANT" ] && [ "$WANT" = "$GOT" ] || {
+            echo "::error::index $DIGEST is not the merge of $AMD64 and $ARM64"
+            printf 'want:\n%s\ngot:\n%s\n' "$WANT" "$GOT"
+            exit 1
+          }
+
           # `latest` only ever moves for a real release. A -rc / -beta build is
           # pullable by its exact version but must not become the default tag.
           case "$V" in
             *-*) echo "Pre-release $V — leaving :latest where it is" ;;
             *)
               docker buildx imagetools create -t "$IMAGE:latest" \
-                "$IMAGE:$V-amd64" "$IMAGE:$V-arm64"
+                "$IMAGE@$AMD64" "$IMAGE@$ARM64"
 
               # :latest and :$V are the same index only because two identical
               # merges produce identical bytes. Asserted rather than assumed:
@@ -272,7 +314,14 @@ jobs:
       # GitHub API. GHCR has no referrers API, so it lands under the fallback
       # `sha256-<hex>` tag; that tag is part of the release and must not be
       # pruned as an orphan.
+      #
+      # ONLY TAG PUSHES SIGN. A dispatch runs the workflow file from whatever
+      # ref it is started on, edits included, yet would carry the same
+      # signer-workflow identity. Its image is published but unsigned, and the
+      # signature that is issued names refs/tags/v<version>, which is what
+      # SECURITY.md tells users to pin with --source-ref.
       - name: Attest the published index
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ env.IMAGE }}
@@ -286,10 +335,13 @@ jobs:
       # negative controls prove the verifier is actually discriminating — a
       # check that passes for a wrong identity or an unsigned image is no check.
       - name: Verify the attestation the way a user will
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
           V: ${{ steps.meta.outputs.version }}
           DIGEST: ${{ steps.merge.outputs.digest }}
+          AMD64: ${{ needs.build.outputs.digest-amd64 }}
+          REF: ${{ github.ref }}
           REPO: ${{ github.repository }}
           WORKFLOW: ${{ github.repository }}/.github/workflows/release.yml
         run: |
@@ -303,12 +355,13 @@ jobs:
             || bad "attestation does not verify for $IMAGE@$DIGEST"
 
           gh attestation verify "oci://$IMAGE@$DIGEST" \
-              --repo "$REPO" --signer-workflow "$WORKFLOW" \
-            && ok "pinned to $WORKFLOW" \
-            || bad "attestation was not signed by $WORKFLOW"
+              --repo "$REPO" --signer-workflow "$WORKFLOW" --source-ref "$REF" \
+            && ok "pinned to $WORKFLOW at $REF" \
+            || bad "attestation was not signed by $WORKFLOW at $REF"
 
           gh attestation verify "oci://$IMAGE@$DIGEST" \
-              --repo "$REPO" --signer-workflow "$WORKFLOW" --bundle-from-oci \
+              --repo "$REPO" --signer-workflow "$WORKFLOW" --source-ref "$REF" \
+              --bundle-from-oci \
             && ok "bundle fetched from the registry" \
             || bad "no attestation bundle in the registry; push-to-registry did not land"
 
@@ -316,7 +369,7 @@ jobs:
             *-*) ;;
             *)
               gh attestation verify "oci://$IMAGE:latest" \
-                  --repo "$REPO" --signer-workflow "$WORKFLOW" \
+                  --repo "$REPO" --signer-workflow "$WORKFLOW" --source-ref "$REF" \
                 && ok ":latest is covered" \
                 || bad ":latest does not verify"
               ;;
@@ -330,7 +383,14 @@ jobs:
             ok "rejects the wrong signer workflow"
           fi
 
-          if gh attestation verify "oci://$IMAGE:$V-amd64" \
+          if gh attestation verify "oci://$IMAGE@$DIGEST" \
+               --repo "$REPO" --signer-workflow "$WORKFLOW" --source-ref refs/heads/main >/dev/null 2>&1; then
+            bad "verified against the wrong source ref; the ref is not being checked"
+          else
+            ok "rejects the wrong source ref"
+          fi
+
+          if gh attestation verify "oci://$IMAGE@$AMD64" \
                --repo "$REPO" --signer-workflow "$WORKFLOW" >/dev/null 2>&1; then
             bad "an unattested per-arch image verified; the check proves nothing"
           else
