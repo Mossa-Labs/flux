@@ -247,6 +247,7 @@ jobs:
           V: ${{ steps.meta.outputs.version }}
           AMD64: ${{ needs.build.outputs.digest-amd64 }}
           ARM64: ${{ needs.build.outputs.digest-arm64 }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           for d in "$AMD64" "$ARM64"; do
             case "$d" in
@@ -254,6 +255,24 @@ jobs:
               *) echo "::error::build did not hand over a per-arch digest (got '$d')"; exit 1 ;;
             esac
           done
+
+          # A manual run publishes unsigned (see the attest step), so it must not
+          # take over a name users already trust: replacing an existing version
+          # or moving :latest would swap a signed index for an unsigned one.
+          #
+          # Fails closed: only an explicit "not found" counts as absent. An auth
+          # or network error must not read as "safe to publish".
+          if [ "$EVENT_NAME" != "push" ]; then
+            rc=0
+            out="$(docker buildx imagetools inspect "$IMAGE:$V" 2>&1)" || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              echo "::error::$IMAGE:$V already exists; a manual run will not overwrite a published version"
+              exit 1
+            elif ! printf '%s' "$out" | grep -qi 'not found'; then
+              echo "::error::cannot tell whether $IMAGE:$V exists: $out"
+              exit 1
+            fi
+          fi
 
           docker buildx imagetools create -t "$IMAGE:$V" \
             "$IMAGE@$AMD64" "$IMAGE@$ARM64"
@@ -279,11 +298,12 @@ jobs:
             exit 1
           }
 
-          # `latest` only ever moves for a real release. A -rc / -beta build is
-          # pullable by its exact version but must not become the default tag.
-          case "$V" in
-            *-*) echo "Pre-release $V — leaving :latest where it is" ;;
-            *)
+          # `latest` only ever moves for a real, tagged (and so signed) release.
+          # A -rc / -beta build is pullable by its exact version but must not
+          # become the default tag, and neither may a manual run.
+          case "$EVENT_NAME:$V" in
+            push:*-*) echo "Pre-release $V — leaving :latest where it is" ;;
+            push:*)
               docker buildx imagetools create -t "$IMAGE:latest" \
                 "$IMAGE@$AMD64" "$IMAGE@$ARM64"
 
@@ -297,6 +317,7 @@ jobs:
                 exit 1
               }
               ;;
+            *) echo "Manual run — leaving :latest where it is" ;;
           esac
 
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
