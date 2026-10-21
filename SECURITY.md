@@ -76,17 +76,45 @@ false confidence.
 
 ### On signatures
 
-These images are **not signed yet**. The provenance above tells you how an image
-was built; it is not by itself proof of origin, because nothing countersigns it.
+Releases **after v0.2.4** carry a signed **GitHub artifact attestation**. It is
+signed keylessly through Sigstore's public-good instance, against the identity of
+this repository's release workflow, and recorded in the public Rekor transparency
+log. There is no long-lived signing key to leak or rotate.
 
-Signed provenance is planned, using GitHub's artifact attestations, once this
-repository is public — the identity that signs them is tied to the repository
-being public, so it is not something that can be switched on earlier. Until then,
-the assurance you have is that the image came from this registry.
+Verify it with the [GitHub CLI](https://cli.github.com/):
 
-If you need a stronger guarantee today, build from source: everything in the
-image is produced from this repository, with no external revision to resolve, so
-a release is reproducible from its tag.
+```bash
+gh attestation verify oci://ghcr.io/mossa-labs/flux/community:<version> \
+  --owner Mossa-Labs
+```
+
+To also pin the exact repository and workflow that must have signed it:
+
+```bash
+gh attestation verify oci://ghcr.io/mossa-labs/flux/community:<version> \
+  --repo Mossa-Labs/flux \
+  --signer-workflow Mossa-Labs/flux/.github/workflows/release.yml
+```
+
+Use `@sha256:<digest>` in place of `:<version>` to verify exactly what you deploy.
+
+The attestation is issued over the multi-arch image index, which commits to every
+platform image and to the provenance and SBOM inside it, so one verification
+covers all of them. The attestation bundle is also stored in the registry next to
+the image (`--bundle-from-oci` reads it from there).
+
+What it proves: the index at that digest was built by this repository's release
+workflow, from the commit recorded in the provenance. What it does not prove: that
+the code at that commit is free of defects, or anything about the Elixir
+dependencies beyond the SBOM caveat above.
+
+Verification contacts both the registry and the GitHub API, so it needs network
+access and cannot be done offline. Releases up to and including v0.2.4 are not
+signed.
+
+If you want an assurance that does not depend on this pipeline, build from
+source: everything in the image is produced from this repository, with no
+external revision to resolve, so a release is reproducible from its tag.
 
 ## Scope
 
