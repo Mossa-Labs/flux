@@ -4,9 +4,9 @@ name: Release (flux Community)
 #
 #   git tag v0.2.0 && git push origin v0.2.0
 #
-# The published package inherits this repository's visibility, so the image is as
-# public or private as the repo is. Changing that later is a visibility toggle on
-# the package rather than new pipeline work.
+# The package took this repository's visibility once, when it was first created,
+# and does not follow it afterwards. Its visibility is a setting on the package
+# itself (public as of MOS-604) and is not something this pipeline controls.
 #
 # ONE ARCH PER NATIVE RUNNER, then a manifest merge. QEMU is not an option: the
 # BEAM fails to boot under it ("failed_to_start_child,user,nouser" at the first
@@ -183,6 +183,18 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
 
+    # A job-level block REPLACES the workflow-level one rather than adding to it,
+    # so the two grants above are restated. The rest is for the attestation:
+    # `id-token` mints the OIDC token Sigstore issues the certificate against,
+    # `attestations` stores it, `artifact-metadata` records where the image lives.
+    # Only this job signs; `build` keeps the narrower workflow-level grant.
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+
     steps:
       - name: Resolve version
         id: meta
@@ -217,9 +229,8 @@ jobs:
           docker buildx imagetools create -t "$IMAGE:$V" \
             "$IMAGE:$V-amd64" "$IMAGE:$V-arm64"
 
-          # Until now nothing here surfaced a digest as a value — only as text
-          # buried in the inspect dump. It is what a deployment pins to, and what
-          # a future attestation will be issued over.
+          # The index digest is what a deployment pins to and what the attestation
+          # below is issued over.
           DIGEST="$(docker buildx imagetools inspect --format '{{ .Manifest.Digest }}' "$IMAGE:$V")"
           case "$DIGEST" in
             sha256:[0-9a-f]*) ;;
@@ -247,6 +258,86 @@ jobs:
           esac
 
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      # Keyless: signed through Sigstore's public-good instance against this
+      # workflow's OIDC identity, with an entry in the public transparency log.
+      # No key or secret lives in this repository.
+      #
+      # Issued over the INDEX digest because that is what a tag resolves to, so
+      # it is what a user verifies. The index commits to its children, so this
+      # one attestation also covers both architectures and the BuildKit
+      # provenance and SBOM attached to them.
+      #
+      # push-to-registry stores the bundle next to the image, not only in the
+      # GitHub API. GHCR has no referrers API, so it lands under the fallback
+      # `sha256-<hex>` tag; that tag is part of the release and must not be
+      # pruned as an orphan.
+      - name: Attest the published index
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.merge.outputs.digest }}
+          push-to-registry: true
+
+      # Same discipline as the build job: every guarantee here fails silently,
+      # so each one is checked, and each check is shown to be able to fail.
+      #
+      # The first command is the one SECURITY.md tells users to run. The
+      # negative controls prove the verifier is actually discriminating — a
+      # check that passes for a wrong identity or an unsigned image is no check.
+      - name: Verify the attestation the way a user will
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.meta.outputs.version }}
+          DIGEST: ${{ steps.merge.outputs.digest }}
+          REPO: ${{ github.repository }}
+          WORKFLOW: ${{ github.repository }}/.github/workflows/release.yml
+        run: |
+          fail=0
+          ok()  { echo "  ok: $1"; }
+          bad() { echo "::error::$1"; fail=1; }
+
+          # --- must pass ---------------------------------------------------
+          gh attestation verify "oci://$IMAGE@$DIGEST" --owner "${REPO%%/*}" \
+            && ok "documented command (--owner)" \
+            || bad "attestation does not verify for $IMAGE@$DIGEST"
+
+          gh attestation verify "oci://$IMAGE@$DIGEST" \
+              --repo "$REPO" --signer-workflow "$WORKFLOW" \
+            && ok "pinned to $WORKFLOW" \
+            || bad "attestation was not signed by $WORKFLOW"
+
+          gh attestation verify "oci://$IMAGE@$DIGEST" \
+              --repo "$REPO" --signer-workflow "$WORKFLOW" --bundle-from-oci \
+            && ok "bundle fetched from the registry" \
+            || bad "no attestation bundle in the registry; push-to-registry did not land"
+
+          case "$V" in
+            *-*) ;;
+            *)
+              gh attestation verify "oci://$IMAGE:latest" \
+                  --repo "$REPO" --signer-workflow "$WORKFLOW" \
+                && ok ":latest is covered" \
+                || bad ":latest does not verify"
+              ;;
+          esac
+
+          # --- must fail ---------------------------------------------------
+          if gh attestation verify "oci://$IMAGE@$DIGEST" \
+               --repo "$REPO" --signer-workflow "$REPO/.github/workflows/test.yml" >/dev/null 2>&1; then
+            bad "verified against the wrong signer workflow; identity is not being checked"
+          else
+            ok "rejects the wrong signer workflow"
+          fi
+
+          if gh attestation verify "oci://$IMAGE:$V-amd64" \
+               --repo "$REPO" --signer-workflow "$WORKFLOW" >/dev/null 2>&1; then
+            bad "an unattested per-arch image verified; the check proves nothing"
+          else
+            ok "rejects an image that was never attested"
+          fi
+
+          exit $fail
 
       - name: Verify the published manifest
         env:
