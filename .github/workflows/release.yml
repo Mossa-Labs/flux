@@ -36,6 +36,16 @@ permissions:
   contents: read
   packages: write
 
+# One release of a given version at a time. A manual run checks that its
+# version does not exist yet and then writes it; without this, a tag push for
+# the same version could publish its signed index in between, and the manual
+# run would overwrite it with an unsigned one. Keyed per version (a tag push
+# and a dispatch of the same version normalise to the same group), so releases
+# of different versions never queue behind, or cancel, one another.
+concurrency:
+  group: release-${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}
+  cancel-in-progress: false
+
 env:
   IMAGE: ghcr.io/mossa-labs/flux/community
 
@@ -298,28 +308,6 @@ jobs:
             exit 1
           }
 
-          # `latest` only ever moves for a real, tagged (and so signed) release.
-          # A -rc / -beta build is pullable by its exact version but must not
-          # become the default tag, and neither may a manual run.
-          case "$EVENT_NAME:$V" in
-            push:*-*) echo "Pre-release $V — leaving :latest where it is" ;;
-            push:*)
-              docker buildx imagetools create -t "$IMAGE:latest" \
-                "$IMAGE@$AMD64" "$IMAGE@$ARM64"
-
-              # :latest and :$V are the same index only because two identical
-              # merges produce identical bytes. Asserted rather than assumed:
-              # attesting or signing one digest covers both tags only while that
-              # holds, and if it stopped, :latest would silently be uncovered.
-              L="$(docker buildx imagetools inspect --format '{{ .Manifest.Digest }}' "$IMAGE:latest")"
-              [ "$L" = "$DIGEST" ] || {
-                echo "::error::latest=$L differs from $V=$DIGEST; one attestation would not cover both"
-                exit 1
-              }
-              ;;
-            *) echo "Manual run — leaving :latest where it is" ;;
-          esac
-
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       # Keyless: signed through Sigstore's public-good instance against this
@@ -386,16 +374,6 @@ jobs:
             && ok "bundle fetched from the registry" \
             || bad "no attestation bundle in the registry; push-to-registry did not land"
 
-          case "$V" in
-            *-*) ;;
-            *)
-              gh attestation verify "oci://$IMAGE:latest" \
-                  --repo "$REPO" --signer-workflow "$WORKFLOW" --source-ref "$REF" \
-                && ok ":latest is covered" \
-                || bad ":latest does not verify"
-              ;;
-          esac
-
           # --- must fail ---------------------------------------------------
           if gh attestation verify "oci://$IMAGE@$DIGEST" \
                --repo "$REPO" --signer-workflow "$REPO/.github/workflows/test.yml" >/dev/null 2>&1; then
@@ -446,3 +424,41 @@ jobs:
             docker buildx imagetools inspect "$IMAGE:$V" \
               | grep -q "linux/$arch" || { echo "::error::manifest is missing linux/$arch"; exit 1; }
           done
+
+      # `latest` moves LAST, and only once the index it will point at is signed
+      # and verified. Moving it earlier meant a Sigstore outage or a cancelled
+      # run left the default tag on an unsigned image, with no rollback.
+      #
+      # Only for a real, tagged release. A -rc / -beta build is pullable by its
+      # exact version but must not become the default tag, and neither may a
+      # manual run (which is never signed).
+      - name: Move latest to the signed release
+        if: >-
+          github.event_name == 'push'
+          && startsWith(github.ref, 'refs/tags/v')
+          && !contains(steps.meta.outputs.version, '-')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.meta.outputs.version }}
+          DIGEST: ${{ steps.merge.outputs.digest }}
+          AMD64: ${{ needs.build.outputs.digest-amd64 }}
+          ARM64: ${{ needs.build.outputs.digest-arm64 }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+          WORKFLOW: ${{ github.repository }}/.github/workflows/release.yml
+        run: |
+          docker buildx imagetools create -t "$IMAGE:latest" \
+            "$IMAGE@$AMD64" "$IMAGE@$ARM64"
+
+          # :latest and :$V are the same index only because two identical
+          # merges produce identical bytes. Asserted rather than assumed: the
+          # one attestation covers both tags only while that holds, and if it
+          # stopped, :latest would silently be uncovered.
+          L="$(docker buildx imagetools inspect --format '{{ .Manifest.Digest }}' "$IMAGE:latest")"
+          [ "$L" = "$DIGEST" ] || {
+            echo "::error::latest=$L differs from $V=$DIGEST; one attestation would not cover both"
+            exit 1
+          }
+
+          gh attestation verify "oci://$IMAGE:latest" \
+            --repo "$REPO" --signer-workflow "$WORKFLOW" --source-ref "$REF"
