@@ -77,6 +77,11 @@ jobs:
       - name: Install dependencies
         run: mix deps.get
 
+      # Fails when a locked package has a known security advisory (Hex 2.5+
+      # reads them from OSV) or has been retired by its maintainers.
+      - name: Check Hex packages for advisories and retirements
+        run: mix hex.audit
+
       - name: Compile
         run: mix compile --warnings-as-errors
 

@@ -616,6 +616,7 @@ The repository includes a CI workflow at `.github/workflows/test.yml` that runs 
 | Setup Beam | `erlef/setup-beam` (v1.24.1) | Install Elixir 1.19.6 + OTP 28.5.0.8 |
 | Cache | `actions/cache` (v4.3.0) | Cache `app/deps` and `app/_build` by `mix.lock` hash |
 | Dependencies | `mix deps.get` | Fetch Elixir dependencies |
+| Hex audit | `mix hex.audit` | Fail if a locked Hex package has a security advisory or has been retired |
 | Compile | `mix compile --warnings-as-errors` | Strict compilation (warnings fail the build) |
 | Test | `mix test` | Run the full test suite |
 
