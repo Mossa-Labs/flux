@@ -209,6 +209,50 @@ defmodule FluxWeb.SinkLive.FormProTest do
     end
   end
 
+  describe "editing a GCS sink" do
+    # The public build backs "gcs" with the Pro stub, which rejects every save;
+    # a permissive adapter stands in for the licensed one.
+    setup do
+      Flux.Sink.Registry.register("gcs", Flux.Test.PermissiveSinkAdapter)
+      on_exit(fn -> Flux.Sink.Registry.register("gcs", Flux.Sink.Adapters.Stub) end)
+      :ok
+    end
+
+    defp gcs_sink(org_id, config) do
+      sink_fixture(org_id, %{
+        type: "gcs",
+        config: Map.merge(%{"bucket" => "lake-bucket", "format" => "ndjson"}, config)
+      })
+    end
+
+    defp submit_gcs(lv, params), do: lv |> form("form", %{"sink" => params}) |> render_submit()
+
+    test "an unrelated edit keeps an exact byte threshold the MB field can't show",
+         %{conn: conn, scope: scope} do
+      sink = gcs_sink(scope.organization_id, %{"max_bytes" => 500_000})
+      {:ok, lv, html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      # Shown rounded up to the smallest whole MB.
+      assert html =~ ~s(value="1")
+
+      submit_gcs(lv, %{"name" => "renamed"})
+
+      sink = Flux.Sinks.get_sink(sink.id, scope.organization_id)
+      assert sink.name == "renamed"
+      assert sink.config["max_bytes"] == 500_000
+    end
+
+    test "changing the MB value saves the new threshold", %{conn: conn, scope: scope} do
+      sink = gcs_sink(scope.organization_id, %{"max_bytes" => 500_000})
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      submit_gcs(lv, %{"config_max_mb" => "2"})
+
+      assert Flux.Sinks.get_sink(sink.id, scope.organization_id).config["max_bytes"] ==
+               2 * 1024 * 1024
+    end
+  end
+
   describe "editing a DynamoDB sink" do
     # The public build backs "dynamodb" with the Pro stub, which rejects every
     # save; a permissive adapter stands in for the licensed one.

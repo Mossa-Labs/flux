@@ -21,7 +21,7 @@ records and writes them as one object per batch (see [Batching](#batching)).
 | Field | Required | Description |
 | --- | --- | --- |
 | `bucket` | yes | Destination bucket name. |
-| `object_template` | no | Object-name template (default `{pipeline_id}/{date}/{timestamp}-{uid}`). The file extension is appended for you. |
+| `object_template` | no | Object-name template (default `{pipeline_id}/{date}/{timestamp}-{uid}`). Must include `{uid}`. The file extension is appended for you. |
 | `format` | no | `ndjson` (default) or `parquet`. |
 | `compression` | no | For `ndjson`: `gzip` (default) or `none`. For `parquet`: `snappy` (default), `zstd`, `gzip` or `none`. |
 | `credentials` | no | Service-account key JSON. If blank, Flux falls back to Application Default Credentials (see [Authentication](#authentication)). |
@@ -40,7 +40,10 @@ The `object_template` is rendered once per batch, when it is flushed:
 - `{timestamp}` — UTC flush time, compact ISO-8601 (e.g. `20261022T093015Z`)
 - `{uid}` — a random, unique token
 
-Include `{uid}` or `{timestamp}` so successive batches don't overwrite each other.
+The template **must include `{uid}`**: every batch is a new object, and a name shared
+by two batches would let the later upload overwrite the earlier one's records
+(`{timestamp}` alone is not enough, since two batches can flush in the same second).
+The rendered name, extension included, must fit GCS's 1,024-byte limit.
 The extension is added from the format: `.ndjson`, `.ndjson.gz` or `.parquet`.
 
 Example — Hive-style daily folders:
@@ -88,9 +91,8 @@ Provide a **service-account key** in `credentials`, or leave it blank to use
    server).
 
 Grant the identity **`storage.objects.create`** on the bucket, for example with the
-**Storage Object Creator** role (`roles/storage.objectCreator`). If you overwrite
-objects with a fixed `object_template`, it also needs `storage.objects.delete`
-(**Storage Object User**).
+**Storage Object Creator** role (`roles/storage.objectCreator`). Every batch is a new
+object, so the sink never needs to overwrite or delete.
 
 ### GCS sink or S3 sink?
 
@@ -117,6 +119,7 @@ open. Flux's **egress** must be allowed to reach them:
 - With workload identity, the pod must also reach the metadata server
   (`169.254.169.254`).
 
-Use **Test connection** on the sink form to check reachability and permissions
-before saving. It asks GCS whether the identity can create objects in the bucket and
-reports `access_denied` (no permission) and `bucket_not_found` (404) distinctly.
+To check reachability and permissions, save the sink, then use **Test connection**
+on its row in the **Sinks** list. It asks GCS whether the identity can create objects
+in the bucket and reports `access_denied` (no permission) and `bucket_not_found` (404)
+distinctly.
