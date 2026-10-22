@@ -31,7 +31,8 @@ defmodule Flux.Sink.Adapters.StubTest do
           {"redis", :redis_sink},
           {"mongodb", :mongodb_sink},
           {"slack", :slack_sink},
-          {"dynamodb", :dynamodb_sink}
+          {"dynamodb", :dynamodb_sink},
+          {"gcs", :gcs_sink}
         ] do
       assert {:error, {:pro_required, ^feature}} = Stub.deliver(%{}, %{"type" => type}, [])
     end

@@ -103,6 +103,7 @@ defmodule FluxWeb.Components.UpgradePrompt do
   defp feature_label(:mongodb_sink), do: "MongoDB sink"
   defp feature_label(:slack_sink), do: "Slack sink"
   defp feature_label(:dynamodb_sink), do: "Amazon DynamoDB sink"
+  defp feature_label(:gcs_sink), do: "Google Cloud Storage sink"
   defp feature_label(:kafka_source), do: "Kafka source"
   defp feature_label(:mqtt_source), do: "MQTT source"
   defp feature_label(:sqs_source), do: "Amazon SQS source"

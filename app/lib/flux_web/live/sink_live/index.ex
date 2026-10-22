@@ -151,6 +151,7 @@ defmodule FluxWeb.SinkLive.Index do
       case assigns.type do
         "http" -> "hero-globe-alt"
         "s3" -> "hero-cloud-arrow-up"
+        "gcs" -> "hero-cloud"
         "postgres" -> "hero-circle-stack"
         "parquet" -> "hero-document-chart-bar"
         "email" -> "hero-envelope"
@@ -175,6 +176,7 @@ defmodule FluxWeb.SinkLive.Index do
       case assigns.type do
         "http" -> {"badge-info", "HTTP"}
         "s3" -> {"badge-secondary", "S3"}
+        "gcs" -> {"badge-secondary", "GCS"}
         "postgres" -> {"badge-accent", "Postgres"}
         "parquet" -> {"badge-primary", "Parquet"}
         "email" -> {"badge-neutral", "Email"}

@@ -309,6 +309,22 @@ defmodule Flux.SinksTest do
       refute changeset.errors[:type]
     end
 
+    test "with gcs type in Community is rejected (Pro feature)", %{org_id: org_id} do
+      attrs = %{
+        name: "my-gcs-sink",
+        type: "gcs",
+        config: %{"bucket" => "my-bucket", "format" => "ndjson"},
+        organization_id: org_id
+      }
+
+      # gcs is an accepted type (passes inclusion); the Community stub
+      # rejects it at config validation with the upgrade prompt.
+      assert {:error, %Ecto.Changeset{} = changeset} = Sinks.create_sink(attrs)
+      assert {msg, _} = changeset.errors[:config]
+      assert msg =~ "Flux Pro"
+      refute changeset.errors[:type]
+    end
+
     test "with valid postgres type creates a sink", %{org_id: org_id} do
       attrs = %{
         name: "my-pg-sink",

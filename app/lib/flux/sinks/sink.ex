@@ -4,7 +4,7 @@ defmodule Flux.Sinks.Sink do
 
   A sink represents an output destination for pipeline data. Each sink
   has a type (http, s3, postgres, mysql, parquet, email, bigquery, kafka,
-  snowflake, redis, mongodb, slack, dynamodb) and a configuration map specific to that type.
+  snowflake, redis, mongodb, slack, dynamodb, gcs) and a configuration map specific to that type.
   """
 
   use Ecto.Schema
@@ -12,7 +12,7 @@ defmodule Flux.Sinks.Sink do
 
   alias Flux.Structure.Organization
 
-  @sink_types ~w(http s3 postgres mysql parquet email bigquery kafka snowflake redis mongodb slack dynamodb)
+  @sink_types ~w(http s3 postgres mysql parquet email bigquery kafka snowflake redis mongodb slack dynamodb gcs)
 
   schema "sinks" do
     field :name, :string

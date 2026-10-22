@@ -172,6 +172,7 @@ defmodule FluxWeb.PipelineLive.Builder do
       case assigns.sink.type do
         "http" -> "hero-globe-alt"
         "s3" -> "hero-cloud-arrow-up"
+        "gcs" -> "hero-cloud"
         "postgres" -> "hero-circle-stack"
         "email" -> "hero-envelope"
         _ -> "hero-server-stack"
@@ -1794,6 +1795,7 @@ defmodule FluxWeb.PipelineLive.Builder do
 
   defp sink_icon("http"), do: "hero-globe-alt"
   defp sink_icon("s3"), do: "hero-cloud-arrow-up"
+  defp sink_icon("gcs"), do: "hero-cloud"
   defp sink_icon("postgres"), do: "hero-circle-stack"
   defp sink_icon("parquet"), do: "hero-document-chart-bar"
   defp sink_icon("email"), do: "hero-envelope"
