@@ -604,7 +604,7 @@ defmodule FluxWeb.SinkLive.Form do
       />
       <p class="text-xs text-base-content/60 -mt-2">
         Placeholders: {"{pipeline_id}"}, {"{sink_id}"}, {"{date}"}, {"{hour}"}, {"{timestamp}"}, {"{uid}"}.
-        The file extension is added for you.
+        Must include {"{uid}"}; the file extension is added for you.
       </p>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <.input
@@ -1907,7 +1907,7 @@ defmodule FluxWeb.SinkLive.Form do
   # builder puts as nil was cleared on purpose and is removed. When the type
   # changes we start from an empty base so stale keys aren't carried over.
   defp merge_config_params(params, type, sink) do
-    built = build_config(params, type)
+    built = params |> build_config(type) |> keep_exact_values(type, sink)
     base = if type == sink.type, do: carried_config(type, sink.config || %{}, built), else: %{}
 
     config =
@@ -1954,6 +1954,18 @@ defmodule FluxWeb.SinkLive.Form do
   end
 
   defp carried_config(_type, config, _built), do: config
+
+  # A GCS sink's byte threshold is edited in whole MB, so the field shows a
+  # rounded value. While that value is unchanged, keep the exact stored byte
+  # count rather than saving the rounding (500 000 bytes would become 1 MB).
+  defp keep_exact_values(built, "gcs", %Sink{type: "gcs", config: %{"max_bytes" => bytes}})
+       when is_integer(bytes) do
+    if built["max_bytes"] == mb_to_bytes(bytes_to_mb(bytes)),
+      do: Map.put(built, "max_bytes", bytes),
+      else: built
+  end
+
+  defp keep_exact_values(built, _type, _sink), do: built
 
   # Reverse of build_config/2: hydrate the virtual config_* form fields from a
   # sink's stored config on edit so non-secret values render pre-filled. Secret
