@@ -133,7 +133,7 @@ defmodule Flux.MixProject do
       {:broadway, "~> 1.0"},
       {:nx, "~> 0.9"},
       # Columnar DataFrames + Parquet writer for the Parquet file sink (MOS-515)
-      {:explorer, "~> 0.11.1"},
+      {:explorer, "~> 0.13.0"},
       {:luerl, "~> 1.2"},
       # Trustworthy client IP behind proxies + CIDR matching for the IP allowlist
       {:remote_ip, "~> 1.2"},
