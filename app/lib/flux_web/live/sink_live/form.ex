@@ -137,7 +137,7 @@ defmodule FluxWeb.SinkLive.Form do
               class="rounded-xl border border-hairline bg-surface-1 p-5 sm:p-6"
             >
               <.section_heading step={2} title="Connection" />
-              <.type_config_fields type={@selected_type} form={@form} />
+              <.type_config_fields type={@selected_type} form={@form} sink={@sink} />
             </section>
 
             <section
@@ -1532,6 +1532,17 @@ defmodule FluxWeb.SinkLive.Form do
           label="Session Token (optional)"
           placeholder="For temporary credentials"
         />
+        <.input
+          :if={stored_session_token?(@sink)}
+          field={@form[:config_clear_session_token]}
+          type="checkbox"
+          label="Remove the stored session token"
+        />
+        <p class="text-xs text-base-content/60 -mt-2">
+          Leave the secrets blank to keep the stored ones. Entering a new secret access key
+          without a session token also removes the stored token, which only works with the
+          key pair it was issued for.
+        </p>
       </div>
       <div :if={cfg(@form, "config_auth_mode") == "assume_role"} class="space-y-4">
         <.input
@@ -1774,8 +1785,9 @@ defmodule FluxWeb.SinkLive.Form do
   defp displayed_fields(_form, nil), do: [:name, :description]
 
   defp displayed_fields(form, type) do
+    # No stored sink: only edit-only controls depend on it, and none carry errors.
     html =
-      %{type: type, form: form, __changed__: nil}
+      %{type: type, form: form, sink: nil, __changed__: nil}
       |> type_config_fields()
       |> Phoenix.HTML.Safe.to_iodata()
       |> IO.iodata_to_binary()
@@ -1844,6 +1856,26 @@ defmodule FluxWeb.SinkLive.Form do
     if config["provider"] == built["provider"],
       do: config,
       else: Map.drop(config, @email_secret_keys)
+  end
+
+  # A DynamoDB sink's stored AWS secrets belong to static auth. On a switch to
+  # another mode they are dropped (access_key_id is cleared by build_config/2),
+  # so the adapter can't go on signing with the old keys. A session token only
+  # works with the key pair it was issued for, so a new secret entered without
+  # a new token drops the stored token.
+  @aws_static_secret_keys ~w(secret_access_key session_token)
+
+  defp carried_config("dynamodb", config, built) do
+    cond do
+      Map.get(built, "auth_mode", "iam_role") != "static" ->
+        Map.drop(config, @aws_static_secret_keys)
+
+      Map.has_key?(built, "secret_access_key") and not Map.has_key?(built, "session_token") ->
+        Map.delete(config, "session_token")
+
+      true ->
+        config
+    end
   end
 
   defp carried_config(_type, config, _built), do: config
@@ -2241,26 +2273,54 @@ defmodule FluxWeb.SinkLive.Form do
     |> maybe_put("blocks_template", params["config_blocks_template"])
   end
 
+  # Settings are clearable (a blank field removes the stored value), and a
+  # mode-specific field is cleared whenever its mode isn't selected, whatever
+  # the submitted form still held. Only the secrets keep "blank means
+  # unchanged" — see carried_config/3.
   defp build_config(params, "dynamodb") do
+    auth_mode = params["config_auth_mode"]
+    if_newer? = params["config_write_mode"] == "if_newer"
+
     %{}
-    |> maybe_put("table_name", params["config_table_name"])
-    |> maybe_put("partition_key", params["config_partition_key"])
-    |> maybe_put("sort_key", params["config_sort_key"])
-    |> maybe_put("region", params["config_region"])
-    |> maybe_put("endpoint", params["config_endpoint"])
-    |> maybe_put("auth_mode", params["config_auth_mode"])
-    |> maybe_put("access_key_id", params["config_access_key_id"])
-    |> maybe_put("secret_access_key", params["config_secret_access_key"])
-    |> maybe_put("session_token", params["config_session_token"])
-    |> maybe_put("role_arn", params["config_role_arn"])
-    |> maybe_put("external_id", params["config_external_id"])
+    |> put_clearable("table_name", params["config_table_name"])
+    |> put_clearable("partition_key", params["config_partition_key"])
+    |> put_clearable("sort_key", params["config_sort_key"])
+    |> put_clearable("region", params["config_region"])
+    |> put_clearable("endpoint", params["config_endpoint"])
+    |> maybe_put("auth_mode", auth_mode)
+    |> put_clearable(
+      "access_key_id",
+      if(auth_mode == "static", do: params["config_access_key_id"])
+    )
+    |> maybe_put("secret_access_key", trim(params["config_secret_access_key"]))
+    |> put_session_token(params)
+    |> put_clearable("role_arn", if(auth_mode == "assume_role", do: params["config_role_arn"]))
+    |> put_clearable(
+      "external_id",
+      if(auth_mode == "assume_role", do: params["config_external_id"])
+    )
     |> maybe_put("write_mode", params["config_write_mode"])
-    |> maybe_put("version_attribute", params["config_version_attribute"])
-    |> maybe_put("ttl_attribute", params["config_ttl_attribute"])
-    |> maybe_put("ttl_seconds", parse_int(params["config_ttl_seconds"]))
+    |> put_clearable("version_attribute", if(if_newer?, do: params["config_version_attribute"]))
+    |> put_clearable("ttl_attribute", params["config_ttl_attribute"])
+    |> Map.put("ttl_seconds", parse_int(params["config_ttl_seconds"]))
   end
 
   defp build_config(_params, _type), do: %{}
+
+  # A new token wins; otherwise the "remove" checkbox clears the stored one (nil
+  # overrides it in merge_config_params/3); otherwise it is left unchanged.
+  defp put_session_token(map, params) do
+    case {trim(params["config_session_token"]), params["config_clear_session_token"]} do
+      {token, _} when token not in [nil, ""] -> Map.put(map, "session_token", token)
+      {_, "true"} -> Map.put(map, "session_token", nil)
+      _ -> map
+    end
+  end
+
+  defp stored_session_token?(%Sink{type: "dynamodb", config: %{"session_token" => token}}),
+    do: is_binary(token) and token != ""
+
+  defp stored_session_token?(_sink), do: false
 
   defp blank_to_nil(value) when value in [nil, ""], do: nil
   defp blank_to_nil(value), do: value
