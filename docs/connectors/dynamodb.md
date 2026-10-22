@@ -23,6 +23,11 @@ with optional idempotent (conditional) writes and TTL expiry.
 `iam_role` or `assume_role` in AWS-hosted deployments so no long-lived secrets are
 stored.
 
+When editing a sink, leave the secrets blank to keep the stored ones. Switching the
+auth mode away from `static` removes the stored keys and session token. Entering a
+new `secret_access_key` without a new `session_token` also removes the stored token,
+since a token is only valid with the key pair it was issued for.
+
 AWS SSO (IAM Identity Center) is an interactive, browser-based login unsuited to a
 headless server, so it is not supported; use `iam_role` (or cross-account
 `assume_role`) instead.
