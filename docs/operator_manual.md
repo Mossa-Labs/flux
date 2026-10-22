@@ -606,15 +606,15 @@ These events are attached by `Flux.Pipeline.Metrics` at startup and can also be 
 
 ### GitHub Actions
 
-The repository includes a CI workflow at `.github/workflows/test.yml` that runs on every pull request to `main`.
+The repository includes a CI workflow at `.github/workflows/test.yml` that runs on every pull request to `main`. Every third-party action is pinned to a full commit SHA, with the release tag in a trailing comment.
 
 **Pipeline steps:**
 
 | Step | Command | Purpose |
 |------|---------|---------|
-| Checkout | `actions/checkout@v4` | Clone the repository |
-| Setup Beam | `erlef/setup-beam@v1` | Install Elixir 1.19.6 + OTP 28.5.0.8 |
-| Cache | `actions/cache@v4` | Cache `app/deps` and `app/_build` by `mix.lock` hash |
+| Checkout | `actions/checkout` (v4.4.0) | Clone the repository |
+| Setup Beam | `erlef/setup-beam` (v1.24.1) | Install Elixir 1.19.6 + OTP 28.5.0.8 |
+| Cache | `actions/cache` (v4.3.0) | Cache `app/deps` and `app/_build` by `mix.lock` hash |
 | Dependencies | `mix deps.get` | Fetch Elixir dependencies |
 | Compile | `mix compile --warnings-as-errors` | Strict compilation (warnings fail the build) |
 | Test | `mix test` | Run the full test suite |
