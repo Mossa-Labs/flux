@@ -24,6 +24,7 @@ defmodule Flux.License.FeaturesTest do
     assert :mongodb_sink in pro
     assert :slack_sink in pro
     assert :dynamodb_sink in pro
+    assert :gcs_sink in pro
     assert :kafka_source in pro
     assert :mqtt_source in pro
     assert :sqs_source in pro

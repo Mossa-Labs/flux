@@ -16,7 +16,8 @@ defmodule FluxWeb.SinkLive.Form do
     "redis" => :redis_sink,
     "mongodb" => :mongodb_sink,
     "slack" => :slack_sink,
-    "dynamodb" => :dynamodb_sink
+    "dynamodb" => :dynamodb_sink,
+    "gcs" => :gcs_sink
   }
 
   # Picker tiles in display order: Community destinations, then the Pro/EE ones.
@@ -37,6 +38,7 @@ defmodule FluxWeb.SinkLive.Form do
     },
     %{type: "email", icon: "hero-envelope", label: "Email", sublabel: "Notifications"},
     %{type: "s3", icon: "hero-cloud-arrow-up", label: "S3", sublabel: "Object storage"},
+    %{type: "gcs", icon: "hero-cloud", label: "GCS", sublabel: "Google Cloud Storage"},
     %{type: "bigquery", icon: "hero-table-cells", label: "BigQuery", sublabel: "Warehouse"},
     %{type: "snowflake", icon: "hero-cube", label: "Snowflake", sublabel: "Warehouse"},
     %{type: "kafka", icon: "hero-queue-list", label: "Kafka", sublabel: "Event streaming"},
@@ -577,6 +579,78 @@ defmodule FluxWeb.SinkLive.Form do
         label="Secret Access Key"
         placeholder="Optional - uses env if empty"
       />
+    </div>
+    """
+  end
+
+  # Rendered only on a licensed build (Community shows the upgrade prompt instead).
+  defp type_config_fields(%{type: "gcs"} = assigns) do
+    assigns = assign(assigns, format: cfg(assigns.form, "config_format") || "ndjson")
+
+    ~H"""
+    <div class="space-y-4">
+      <.input
+        field={@form[:config_bucket]}
+        type="text"
+        label="Bucket Name"
+        placeholder="my-bucket"
+        required
+      />
+      <.input
+        field={@form[:config_object_template]}
+        type="text"
+        label="Object Name Template"
+        placeholder="{pipeline_id}/{date}/{timestamp}-{uid}"
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Placeholders: {"{pipeline_id}"}, {"{sink_id}"}, {"{date}"}, {"{hour}"}, {"{timestamp}"}, {"{uid}"}.
+        The file extension is added for you.
+      </p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <.input
+          field={@form[:config_format]}
+          type="select"
+          label="Format"
+          options={[{"Newline-delimited JSON", "ndjson"}, {"Parquet", "parquet"}]}
+        />
+        <.input
+          field={@form[:config_compression]}
+          type="select"
+          label="Compression"
+          options={gcs_compression_options(@format)}
+        />
+      </div>
+      <.input
+        field={@form[:config_credentials]}
+        type="textarea"
+        label="Service Account JSON"
+        placeholder="Leave blank to use GOOGLE_APPLICATION_CREDENTIALS / Workload Identity"
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Paste a service-account key with <code>storage.objects.create</code>
+        on the bucket, or leave blank to fall back to Application Default Credentials
+        (e.g. Workload Identity on GKE).
+      </p>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <.input
+          field={@form[:config_max_records]}
+          type="number"
+          label="Flush After Records"
+          placeholder="Default: 10000"
+        />
+        <.input
+          field={@form[:config_max_mb]}
+          type="number"
+          label="Flush After MB"
+          placeholder="Default: 100"
+        />
+        <.input
+          field={@form[:config_max_interval_seconds]}
+          type="number"
+          label="Flush After Seconds"
+          placeholder="Default: 60"
+        />
+      </div>
     </div>
     """
   end
@@ -1725,6 +1799,7 @@ defmodule FluxWeb.SinkLive.Form do
     {"http", "timeout_ms"} => :config_timeout,
     {"s3", "access_key_id"} => :config_access_key,
     {"s3", "secret_access_key"} => :config_secret_key,
+    {"gcs", "max_bytes"} => :config_max_mb,
     {"email", "rate_limit.max_per_minute"} => :config_max_per_minute,
     {"email", "rate_limit.max_wait_ms"} => :config_max_wait_ms,
     {"email", "tls_verify"} => :config_tls_skip_verify
@@ -1973,6 +2048,18 @@ defmodule FluxWeb.SinkLive.Form do
     |> put_field("config_location", config["location"])
   end
 
+  defp config_form_params("gcs", config) do
+    # credentials (service-account JSON) is secret — left blank on edit.
+    %{}
+    |> put_field("config_bucket", config["bucket"])
+    |> put_field("config_object_template", config["object_template"])
+    |> put_field("config_format", config["format"])
+    |> put_field("config_compression", config["compression"])
+    |> put_field("config_max_records", config["max_records"])
+    |> put_field("config_max_mb", bytes_to_mb(config["max_bytes"]))
+    |> put_field("config_max_interval_seconds", config["max_interval_seconds"])
+  end
+
   defp config_form_params("kafka", config) do
     # sasl_password / ssl_keyfile are secret — left blank on edit.
     %{}
@@ -2200,6 +2287,21 @@ defmodule FluxWeb.SinkLive.Form do
     |> maybe_put("location", params["config_location"])
   end
 
+  # Optional fields that can be cleared are always written (as nil), so clearing
+  # them on edit isn't undone by merge_config_params/3. Only the secret keeps
+  # "blank means unchanged".
+  defp build_config(params, "gcs") do
+    %{}
+    |> maybe_put("bucket", params["config_bucket"])
+    |> maybe_put("credentials", params["config_credentials"])
+    |> maybe_put("format", params["config_format"])
+    |> maybe_put("compression", params["config_compression"])
+    |> put_clearable("object_template", params["config_object_template"])
+    |> Map.put("max_records", parse_int(params["config_max_records"]))
+    |> Map.put("max_bytes", mb_to_bytes(parse_int(params["config_max_mb"])))
+    |> Map.put("max_interval_seconds", parse_int(params["config_max_interval_seconds"]))
+  end
+
   defp build_config(params, "kafka") do
     %{}
     |> maybe_put("bootstrap_servers", params["config_bootstrap_servers"])
@@ -2390,6 +2492,20 @@ defmodule FluxWeb.SinkLive.Form do
 
   defp parse_int(val), do: val
 
+  @mb 1024 * 1024
+
+  defp mb_to_bytes(mb) when is_integer(mb), do: mb * @mb
+  defp mb_to_bytes(_), do: nil
+
+  defp bytes_to_mb(bytes) when is_integer(bytes) and bytes > 0, do: max(div(bytes, @mb), 1)
+  defp bytes_to_mb(_), do: nil
+
+  defp gcs_compression_options("parquet") do
+    [{"Snappy (default)", "snappy"}, {"Zstandard", "zstd"}, {"Gzip", "gzip"}, {"None", "none"}]
+  end
+
+  defp gcs_compression_options(_ndjson), do: [{"Gzip (default)", "gzip"}, {"None", "none"}]
+
   # A Pro sink type is "locked" when the current license isn't entitled to it.
   # Community always returns false from entitled?/1, so the upgrade prompt shows;
   # a licensed EE build resolves to true and the config fields render.
@@ -2430,5 +2546,6 @@ defmodule FluxWeb.SinkLive.Form do
   defp pro_label("mongodb"), do: "MongoDB sinks"
   defp pro_label("slack"), do: "Slack sinks"
   defp pro_label("dynamodb"), do: "DynamoDB sinks"
+  defp pro_label("gcs"), do: "Google Cloud Storage sinks"
   defp pro_label(type), do: "#{type} sinks"
 end

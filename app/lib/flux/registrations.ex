@@ -65,6 +65,7 @@ defmodule Flux.Registrations do
     Flux.Sink.Registry.register("mongodb", Flux.Sink.Adapters.Stub)
     Flux.Sink.Registry.register("slack", Flux.Sink.Adapters.Stub)
     Flux.Sink.Registry.register("dynamodb", Flux.Sink.Adapters.Stub)
+    Flux.Sink.Registry.register("gcs", Flux.Sink.Adapters.Stub)
     :ok
   end
 

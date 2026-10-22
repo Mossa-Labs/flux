@@ -125,6 +125,60 @@ defmodule FluxWeb.SinkLive.FormProTest do
 
       assert html =~ ~s{Version Attribute<span class="text-error}
     end
+
+    test "selecting GCS renders the config fields instead of the upgrade prompt",
+         %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "gcs"})
+
+      assert html =~ ~s(Bucket Name<span class="text-error)
+      assert html =~ "Object Name Template"
+      assert html =~ "Service Account JSON"
+      assert html =~ "Flush After MB"
+      refute html =~ "are part of Flux Pro"
+    end
+
+    test "GCS compression choices follow the selected format", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "gcs"})
+      assert html =~ "Gzip (default)"
+      refute html =~ "Snappy"
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_format" => "parquet"}})
+        |> render_change()
+
+      assert html =~ "Snappy (default)"
+      assert html =~ "Zstandard"
+    end
+
+    test "editing a GCS sink pre-fills settings, shows bytes as MB and never echoes credentials",
+         %{conn: conn, scope: scope} do
+      # Inserted directly: the Community stub (still registered in core tests)
+      # would reject a GCS config at validation.
+      sink =
+        Flux.Repo.insert!(%Flux.Sinks.Sink{
+          name: "lake",
+          type: "gcs",
+          organization_id: scope.organization_id,
+          config: %{
+            "bucket" => "lake-bucket",
+            "format" => "parquet",
+            "compression" => "zstd",
+            "max_bytes" => 50 * 1024 * 1024,
+            "credentials" => ~s({"private_key":"super-secret"})
+          }
+        })
+
+      {:ok, _lv, html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      assert html =~ ~s(value="lake-bucket")
+      assert html =~ ~s(value="50")
+      refute html =~ "super-secret"
+    end
   end
 
   describe "required-field markers" do

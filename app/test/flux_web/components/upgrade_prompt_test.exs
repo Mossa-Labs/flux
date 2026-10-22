@@ -78,6 +78,12 @@ defmodule FluxWeb.Components.UpgradePromptTest do
     assert html =~ "Flux Pro"
   end
 
+  test "renders the Google Cloud Storage sink label" do
+    html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :gcs_sink)
+    assert html =~ "Google Cloud Storage sink"
+    assert html =~ "Flux Pro"
+  end
+
   test "unknown feature atom falls back to a human-readable label" do
     html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :mystery_future_feature)
     assert html =~ "mystery future feature"

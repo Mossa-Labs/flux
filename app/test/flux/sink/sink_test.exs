@@ -47,6 +47,7 @@ defmodule Flux.SinkTest do
                  "bigquery",
                  "dynamodb",
                  "email",
+                 "gcs",
                  "http",
                  "kafka",
                  "mongodb",
