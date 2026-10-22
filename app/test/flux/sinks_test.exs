@@ -289,6 +289,26 @@ defmodule Flux.SinksTest do
       refute changeset.errors[:type]
     end
 
+    test "with dynamodb type in Community is rejected (Pro feature)", %{org_id: org_id} do
+      attrs = %{
+        name: "my-dynamodb-sink",
+        type: "dynamodb",
+        config: %{
+          "table_name" => "events",
+          "partition_key" => "pk",
+          "auth_mode" => "iam_role"
+        },
+        organization_id: org_id
+      }
+
+      # dynamodb is an accepted type (passes inclusion); the Community stub
+      # rejects it at config validation with the upgrade prompt.
+      assert {:error, %Ecto.Changeset{} = changeset} = Sinks.create_sink(attrs)
+      assert {msg, _} = changeset.errors[:config]
+      assert msg =~ "Flux Pro"
+      refute changeset.errors[:type]
+    end
+
     test "with valid postgres type creates a sink", %{org_id: org_id} do
       attrs = %{
         name: "my-pg-sink",
@@ -488,12 +508,14 @@ defmodule Flux.SinksTest do
         "ssl_keyfile" => "/etc/flux/certs/client.key",
         "uri" => "mongodb+srv://flux:s3cr3t@cluster0.mongodb.net",
         "webhook_url" => "https://hooks.slack.com/services/T0/B0/s3cr3t",
-        "bot_token" => "xoxb-super-secret"
+        "bot_token" => "xoxb-super-secret",
+        "session_token" => "FwoGZXIvYXdzEXAMPLESESSIONTOKEN"
       }
 
       redacted = Sinks.redact_config(config)
 
       assert redacted["secret_access_key"] == "[REDACTED]"
+      assert redacted["session_token"] == "[REDACTED]"
       assert redacted["credentials"] == "[REDACTED]"
       assert redacted["database_url"] == "[REDACTED]"
       assert redacted["sasl_password"] == "[REDACTED]"

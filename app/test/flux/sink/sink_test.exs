@@ -45,6 +45,7 @@ defmodule Flux.SinkTest do
       assert Sink.available_types() ==
                [
                  "bigquery",
+                 "dynamodb",
                  "email",
                  "http",
                  "kafka",
