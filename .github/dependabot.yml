@@ -1,0 +1,29 @@
+# Dependency update PRs. Security updates (from Dependabot alerts) use the same
+# settings. The Docker base images are not covered here: the Dockerfiles select
+# them through ARGs (BUILDER_IMAGE / RUNNER_IMAGE), which Dependabot cannot
+# follow, so bump ELIXIR_VERSION / OTP_VERSION / UBUNTU_VERSION by hand.
+version: 2
+updates:
+  - package-ecosystem: mix
+    directory: /app
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # Patch releases only: a 0.x "minor" bump (req 0.5 -> 0.7) can be breaking,
+      # so those arrive as their own PRs.
+      mix-patch:
+        update-types: [patch]
+
+  - package-ecosystem: npm
+    directory: /app/assets
+    schedule:
+      interval: weekly
+    groups:
+      npm-patch:
+        update-types: [patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
