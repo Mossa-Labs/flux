@@ -1,0 +1,64 @@
+name: Dependency audit
+
+# Checks dependencies against OSV.dev, which covers the GitHub Advisory Database
+# and the Erlang Ecosystem Foundation's advisories for Hex packages (the EEF feed
+# lists issues the GitHub database does not). Runs on PRs and on main, and weekly
+# so that a new advisory against an unchanged lockfile still turns something red.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lockfiles:
+    name: Lockfiles (mix, npm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Scan lockfiles
+        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+        with:
+          scan-args: |-
+            --lockfile=app/mix.lock
+            --lockfile=app/assets/package-lock.json
+
+  # Report-only: most OS-package findings in the Ubuntu base have no fix
+  # published yet, so failing on them would keep this red with nothing to do.
+  # The release image applies available Ubuntu updates at build time; this
+  # report shows what is left and when a base-image bump is worth doing.
+  image:
+    name: Release image (OS packages)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Build release image
+        run: |
+          docker build -f app/Dockerfile.release -t flux-audit:scan app/
+          docker save flux-audit:scan -o flux-image.tar
+
+      - name: Scan release image
+        continue-on-error: true
+        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+        with:
+          scan-args: |-
+            image
+            --archive
+            --format=markdown
+            --output-file=osv-image.md
+            flux-image.tar
+
+      - name: Publish report
+        if: always()
+        run: |
+          if [ -f osv-image.md ]; then cat osv-image.md >> "$GITHUB_STEP_SUMMARY"; fi
