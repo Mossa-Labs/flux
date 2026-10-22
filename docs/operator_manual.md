@@ -622,6 +622,19 @@ The repository includes a CI workflow at `.github/workflows/test.yml` that runs 
 
 **Services:** PostgreSQL 18-alpine runs as a sidecar with health checks. All mix commands execute in the `app/` working directory.
 
+### Dependency audit
+
+`.github/workflows/audit.yml` checks dependencies against [OSV.dev](https://osv.dev), which combines the GitHub Advisory Database with the Erlang Ecosystem Foundation's advisories for Hex packages.
+
+| Job | Runs on | Blocking | What it checks |
+|-----|---------|----------|----------------|
+| Lockfiles | Pull requests, pushes to `main`, weekly | Yes | `app/mix.lock` and `app/assets/package-lock.json` |
+| Release image | Weekly, manual dispatch | No (report in the job summary) | OS packages in the image built from `app/Dockerfile.release` |
+
+The weekly run matters: a new advisory against a lockfile that has not changed only shows up there. The image job is report-only because most Ubuntu findings have no published fix; the release image already applies every available Ubuntu update at build time.
+
+`.github/dependabot.yml` opens weekly update PRs for mix, npm and GitHub Actions. The Docker base images (`ELIXIR_VERSION`, `OTP_VERSION`, `UBUNTU_VERSION` in the Dockerfiles, plus `.tool-versions` and the CI env) are not covered and are bumped by hand; keep them in step.
+
 **Note:** There is no automated deployment step. Production releases are built manually with `MIX_ENV=prod mix release` (see [Running in Production](#running-in-production)).
 
 ---
