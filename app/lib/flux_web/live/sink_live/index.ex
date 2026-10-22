@@ -157,6 +157,7 @@ defmodule FluxWeb.SinkLive.Index do
         "redis" -> "hero-bolt"
         "mongodb" -> "hero-document-text"
         "slack" -> "hero-chat-bubble-left-right"
+        "dynamodb" -> "hero-square-3-stack-3d"
         _ -> "hero-server-stack"
       end
 
@@ -180,6 +181,7 @@ defmodule FluxWeb.SinkLive.Index do
         "redis" -> {"badge-error", "Redis"}
         "mongodb" -> {"badge-success", "MongoDB"}
         "slack" -> {"badge-warning", "Slack"}
+        "dynamodb" -> {"badge-secondary", "DynamoDB"}
         _ -> {"badge-ghost", String.upcase(assigns.type)}
       end
 

@@ -62,6 +62,16 @@ defmodule FluxWeb.SinkLive.FormTest do
       refute html =~ "Collection"
     end
 
+    test "selecting DynamoDB shows the Pro upgrade prompt in Community", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "dynamodb"})
+
+      # Community is not entitled, so the config form is replaced by the upgrade prompt.
+      assert html =~ "Flux Pro"
+      refute html =~ "Partition Key"
+    end
+
     test "selecting Parquet shows its config fields (Community, no upgrade prompt)", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
 

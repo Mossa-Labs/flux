@@ -31,6 +31,10 @@ defmodule Flux.Sink.RegistryTest do
       assert {:ok, Flux.Sink.Adapters.Stub} = Registry.lookup("slack")
     end
 
+    test "dynamodb resolves to Stub in Community" do
+      assert {:ok, Flux.Sink.Adapters.Stub} = Registry.lookup("dynamodb")
+    end
+
     test "unknown type returns error" do
       assert {:error, :unknown_type} = Registry.lookup("does-not-exist")
     end

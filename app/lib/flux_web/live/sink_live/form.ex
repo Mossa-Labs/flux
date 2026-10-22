@@ -15,7 +15,8 @@ defmodule FluxWeb.SinkLive.Form do
     "snowflake" => :snowflake_sink,
     "redis" => :redis_sink,
     "mongodb" => :mongodb_sink,
-    "slack" => :slack_sink
+    "slack" => :slack_sink,
+    "dynamodb" => :dynamodb_sink
   }
 
   # Picker tiles in display order: Community destinations, then the Pro/EE ones.
@@ -46,6 +47,12 @@ defmodule FluxWeb.SinkLive.Form do
       icon: "hero-chat-bubble-left-right",
       label: "Slack",
       sublabel: "Messaging"
+    },
+    %{
+      type: "dynamodb",
+      icon: "hero-square-3-stack-3d",
+      label: "DynamoDB",
+      sublabel: "NoSQL key-value"
     }
   ]
 
@@ -1458,6 +1465,132 @@ defmodule FluxWeb.SinkLive.Form do
     """
   end
 
+  # Rendered only on a licensed build (Community shows the upgrade prompt instead).
+  defp type_config_fields(%{type: "dynamodb"} = assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <.input
+        field={@form[:config_table_name]}
+        type="text"
+        label="Table Name"
+        placeholder="events"
+        required
+      />
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <.input
+          field={@form[:config_partition_key]}
+          type="text"
+          label="Partition Key"
+          placeholder="pk"
+          required
+        />
+        <.input
+          field={@form[:config_sort_key]}
+          type="text"
+          label="Sort Key (optional)"
+          placeholder="sk"
+        />
+      </div>
+      <p class="text-xs text-base-content/60 -mt-2">
+        The table's key attributes. Every record must carry them; they are checked against the
+        table's key schema by Test connection.
+      </p>
+      <.input field={@form[:config_region]} type="text" label="Region" placeholder="us-east-1" />
+      <.input
+        field={@form[:config_endpoint]}
+        type="url"
+        label="Custom Endpoint (optional)"
+        placeholder="http://localhost:4566"
+      />
+      <.input
+        field={@form[:config_auth_mode]}
+        type="select"
+        label="Auth Mode"
+        options={[
+          {"IAM role (ambient credentials)", "iam_role"},
+          {"Static access key", "static"},
+          {"Assume role (cross-account)", "assume_role"}
+        ]}
+      />
+      <div :if={cfg(@form, "config_auth_mode") == "static"} class="space-y-4">
+        <.input
+          field={@form[:config_access_key_id]}
+          type="text"
+          label="Access Key ID"
+          placeholder="AKIA…"
+          required
+        />
+        <.input
+          field={@form[:config_secret_access_key]}
+          type="password"
+          label="Secret Access Key"
+          required
+        />
+        <.input
+          field={@form[:config_session_token]}
+          type="password"
+          label="Session Token (optional)"
+          placeholder="For temporary credentials"
+        />
+      </div>
+      <div :if={cfg(@form, "config_auth_mode") == "assume_role"} class="space-y-4">
+        <.input
+          field={@form[:config_role_arn]}
+          type="text"
+          label="Role ARN"
+          placeholder="arn:aws:iam::123456789012:role/flux-dynamodb"
+          required
+        />
+        <.input
+          field={@form[:config_external_id]}
+          type="text"
+          label="External ID (optional)"
+        />
+      </div>
+      <.input
+        field={@form[:config_write_mode]}
+        type="select"
+        label="Write Mode"
+        options={[
+          {"Put (overwrite by key)", "put"},
+          {"Insert if absent (first write wins)", "if_absent"},
+          {"Put if newer (version attribute)", "if_newer"}
+        ]}
+      />
+      <.input
+        :if={cfg(@form, "config_write_mode") == "if_newer"}
+        field={@form[:config_version_attribute]}
+        type="text"
+        label="Version Attribute"
+        placeholder="version"
+        required
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Conditional modes make redelivery idempotent: a duplicate or older record is skipped
+        rather than overwriting newer data.
+      </p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <.input
+          field={@form[:config_ttl_attribute]}
+          type="text"
+          label="TTL Attribute (optional)"
+          placeholder="expires_at"
+        />
+        <.input
+          field={@form[:config_ttl_seconds]}
+          type="number"
+          label="TTL (seconds)"
+          placeholder="Expire items after N seconds"
+        />
+      </div>
+      <p class="text-xs text-base-content/60 -mt-2">
+        When both are set, each item gets an epoch expiry. Enable TTL on that attribute in the
+        table settings so DynamoDB deletes expired items.
+      </p>
+    </div>
+    """
+  end
+
   defp type_config_fields(assigns) do
     ~H"""
     <p class="text-base-content/60">Select a sink type to configure.</p>
@@ -1876,6 +2009,24 @@ defmodule FluxWeb.SinkLive.Form do
     |> put_field("config_blocks_template", config["blocks_template"])
   end
 
+  defp config_form_params("dynamodb", config) do
+    # secret_access_key and session_token are secret — left blank on edit.
+    %{}
+    |> put_field("config_table_name", config["table_name"])
+    |> put_field("config_partition_key", config["partition_key"])
+    |> put_field("config_sort_key", config["sort_key"])
+    |> put_field("config_region", config["region"])
+    |> put_field("config_endpoint", config["endpoint"])
+    |> put_field("config_auth_mode", config["auth_mode"])
+    |> put_field("config_access_key_id", config["access_key_id"])
+    |> put_field("config_role_arn", config["role_arn"])
+    |> put_field("config_external_id", config["external_id"])
+    |> put_field("config_write_mode", config["write_mode"])
+    |> put_field("config_version_attribute", config["version_attribute"])
+    |> put_field("config_ttl_attribute", config["ttl_attribute"])
+    |> put_field("config_ttl_seconds", config["ttl_seconds"])
+  end
+
   defp config_form_params(_type, _config), do: %{}
 
   defp put_field(map, _key, nil), do: map
@@ -2090,6 +2241,25 @@ defmodule FluxWeb.SinkLive.Form do
     |> maybe_put("blocks_template", params["config_blocks_template"])
   end
 
+  defp build_config(params, "dynamodb") do
+    %{}
+    |> maybe_put("table_name", params["config_table_name"])
+    |> maybe_put("partition_key", params["config_partition_key"])
+    |> maybe_put("sort_key", params["config_sort_key"])
+    |> maybe_put("region", params["config_region"])
+    |> maybe_put("endpoint", params["config_endpoint"])
+    |> maybe_put("auth_mode", params["config_auth_mode"])
+    |> maybe_put("access_key_id", params["config_access_key_id"])
+    |> maybe_put("secret_access_key", params["config_secret_access_key"])
+    |> maybe_put("session_token", params["config_session_token"])
+    |> maybe_put("role_arn", params["config_role_arn"])
+    |> maybe_put("external_id", params["config_external_id"])
+    |> maybe_put("write_mode", params["config_write_mode"])
+    |> maybe_put("version_attribute", params["config_version_attribute"])
+    |> maybe_put("ttl_attribute", params["config_ttl_attribute"])
+    |> maybe_put("ttl_seconds", parse_int(params["config_ttl_seconds"]))
+  end
+
   defp build_config(_params, _type), do: %{}
 
   defp blank_to_nil(value) when value in [nil, ""], do: nil
@@ -2199,5 +2369,6 @@ defmodule FluxWeb.SinkLive.Form do
   defp pro_label("redis"), do: "Redis sinks"
   defp pro_label("mongodb"), do: "MongoDB sinks"
   defp pro_label("slack"), do: "Slack sinks"
+  defp pro_label("dynamodb"), do: "DynamoDB sinks"
   defp pro_label(type), do: "#{type} sinks"
 end

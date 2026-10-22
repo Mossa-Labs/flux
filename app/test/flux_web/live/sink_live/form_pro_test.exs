@@ -71,6 +71,59 @@ defmodule FluxWeb.SinkLive.FormProTest do
       assert html =~ "Block Kit"
       refute html =~ "is a Flux Pro feature"
     end
+
+    test "selecting DynamoDB renders the config fields instead of the upgrade prompt",
+         %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "dynamodb"})
+
+      assert html =~ "Table Name"
+      assert html =~ "Partition Key"
+      assert html =~ "Write Mode"
+      refute html =~ "are part of Flux Pro"
+    end
+
+    test "DynamoDB reveals credential fields for the chosen auth mode", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      html = render_click(lv, "select_type", %{"type" => "dynamodb"})
+
+      # IAM role (the default) needs no credential inputs.
+      refute html =~ "Secret Access Key"
+      refute html =~ "Role ARN"
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_auth_mode" => "static"}})
+        |> render_change()
+
+      assert html =~ ~s{Access Key ID<span class="text-error}
+      assert html =~ ~s{Secret Access Key<span class="text-error}
+      assert html =~ "Session Token (optional)"
+      refute html =~ "Role ARN"
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_auth_mode" => "assume_role"}})
+        |> render_change()
+
+      assert html =~ ~s{Role ARN<span class="text-error}
+      refute html =~ "Secret Access Key"
+    end
+
+    test "DynamoDB asks for a version attribute only in if_newer mode", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      html = render_click(lv, "select_type", %{"type" => "dynamodb"})
+
+      refute html =~ "Version Attribute"
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_write_mode" => "if_newer"}})
+        |> render_change()
+
+      assert html =~ ~s{Version Attribute<span class="text-error}
+    end
   end
 
   describe "required-field markers" do
