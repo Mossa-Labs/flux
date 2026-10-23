@@ -32,6 +32,10 @@ defmodule Flux.SourceTest do
       assert {:ok, Flux.Source.Adapters.Stub} = Source.adapter_for_type("rabbitmq_external")
     end
 
+    test "returns Stub adapter for \"grpc\" in Community (real gRPC source is Enterprise)" do
+      assert {:ok, Flux.Source.Adapters.Stub} = Source.adapter_for_type("grpc")
+    end
+
     test "returns error for unknown type" do
       assert {:error, :unknown_type} = Source.adapter_for_type("unknown")
     end
@@ -81,6 +85,10 @@ defmodule Flux.SourceTest do
                  "type" => "rabbitmq_external",
                  "queue" => "orders"
                })
+    end
+
+    test "the Enterprise gRPC stub starts nothing in Community" do
+      assert nil == Source.ingestion_spec("grpc", %{"type" => "grpc", "mode" => "client"})
     end
   end
 
@@ -134,6 +142,14 @@ defmodule Flux.SourceTest do
       assert msg =~ "Flux Pro"
     end
 
+    test "Community grpc delegates to Stub and names Flux Enterprise" do
+      config = %{"type" => "grpc", "mode" => "server", "auth_mode" => "bearer"}
+
+      assert {:error, [msg]} = Source.validate_config("grpc", config)
+      assert msg =~ "Flux Enterprise"
+      refute msg =~ "Flux Pro"
+    end
+
     test "returns error for unknown source type" do
       assert {:error, ["unknown source type: nope"]} = Source.validate_config("nope", %{})
     end
@@ -167,6 +183,11 @@ defmodule Flux.SourceTest do
     test "Community rabbitmq_external stub surfaces a structured pro_required tuple" do
       assert {:error, {:pro_required, :rabbitmq_source}} =
                Source.test_connection("rabbitmq_external", %{"type" => "rabbitmq_external"})
+    end
+
+    test "Community grpc stub surfaces a structured pro_required tuple" do
+      assert {:error, {:pro_required, :grpc_source}} =
+               Source.test_connection("grpc", %{"type" => "grpc"})
     end
   end
 end

@@ -54,6 +54,14 @@ defmodule FluxWeb.Components.UpgradePromptTest do
     assert html =~ "Flux Pro"
   end
 
+  test "names Flux Enterprise for the gRPC source" do
+    html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :grpc_source)
+    assert html =~ "gRPC source"
+    assert html =~ "Flux Enterprise feature"
+    assert html =~ "rest of the Enterprise suite"
+    refute html =~ "Flux Pro"
+  end
+
   test "compact prompt names Flux Enterprise for Enterprise features" do
     html =
       render_component(&UpgradePrompt.upgrade_prompt/1, feature: :sso, size: :compact)

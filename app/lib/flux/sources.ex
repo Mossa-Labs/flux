@@ -13,8 +13,9 @@ defmodule Flux.Sources do
 
   @redacted "[REDACTED]"
   # Secret config paths masked before a source leaves the system (e.g. API GETs).
-  # SFTP creds (private_key/passphrase/certificate) live at the config top level.
-  @secret_top_keys ~w(password sasl_password private_key passphrase certificate)
+  # SFTP creds (private_key/passphrase/certificate) and gRPC creds
+  # (bearer_token/client_key) live at the config top level.
+  @secret_top_keys ~w(password sasl_password private_key passphrase certificate bearer_token client_key)
   @secret_auth_keys ~w(token password username key)
 
   @doc """
