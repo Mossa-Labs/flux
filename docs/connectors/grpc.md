@@ -209,12 +209,12 @@ metadata. `request` accepts either spelling of field names.
 | `endpoint` | yes | `host:port` of the gRPC server |
 | `method` | yes | Fully-qualified RPC path, e.g. `/telemetry.v1.Telemetry/StreamReadings` |
 | `rpc_type` | no | `server_streaming` (default) or `bidi` |
-| `request` | no | JSON request message sent when the stream opens (default `{}`) |
+| `request` | no | JSON request sent when the stream opens (default `{}`). Usually an object; for a well-known input type, its JSON form (e.g. a timestamp string or a list) |
 | `schema_source` | no | `reflection` (default) or `descriptor` |
 | `descriptor_set` | conditional | Base64 `.protoset`; required when `schema_source` is `descriptor` |
 | `transport_security` | no | `tls` (default), `mtls`, or `none` (plaintext h2c) |
 | `ca_cert` | no | PEM CA bundle that verifies the server; defaults to the system trust store |
-| `client_cert` / `client_key` | conditional | PEM client certificate and key; required for `mtls` |
+| `client_cert` / `client_key` | conditional | PEM client certificate (followed by any intermediate CA certificates) and key; required for `mtls` |
 | `bearer_token` | no | Sent as `authorization: Bearer <token>` metadata |
 | `metadata` | no | Map of extra request metadata (string values) |
 | `deadline_ms` | no | Time allowed to connect and receive the first message (default `10000`) |
