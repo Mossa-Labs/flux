@@ -305,7 +305,9 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
       assert html =~ "gRPC (Enterprise)"
       assert html =~ "requires an Enterprise license"
       assert html =~ "x-flux-source"
-      # Default auth mode (mtls) requires a client-subject allowlist.
+      # Server mode names its queue; the default auth mode (mtls) requires a
+      # client-subject allowlist.
+      assert html =~ ~s(Channel<span class="text-error)
       assert html =~ ~s(Allowed Client Subjects<span class="text-error)
       refute html =~ ~s(name="sourceConfig[bearerToken]")
       # Client-mode fields stay hidden in server mode.
@@ -518,6 +520,7 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
       render_hook(lv, "update_ir", %{"ir" => Jason.encode!(ir)})
       html = render_click(lv, "save")
 
+      assert html =~ "Channel"
       assert html =~ "Bearer Token"
       refute html =~ "Pipeline saved"
     end

@@ -66,16 +66,28 @@ message PublishResponse {
 }
 ```
 
-**Payloads.** A `json` payload becomes the event map as-is. A `raw` payload is
-parsed as JSON when it is valid JSON. Otherwise it arrives as
-`{"raw": "<base64>"}` with `content_type` in the event metadata.
+**Payloads.** A `json` payload becomes the event map as-is. It travels as a
+`google.protobuf.Struct`, whose numbers are all doubles, so `42` arrives as
+`42.0`; send the JSON as `raw` bytes to keep integers. A `raw` payload is
+parsed as JSON: an object becomes the event map, and any other JSON value
+arrives as `{"value": ...}`. Bytes that aren't JSON arrive as
+`{"raw": "<base64>"}`. Each event's metadata carries a `grpc` map with the
+source ID, `message_id`, `content_type`, `attributes`, and the caller's
+certificate subjects.
+
+The listener also serves [gRPC server reflection](https://grpc.io/docs/guides/reflection/),
+so tools such as `grpcurl` can call it without a copy of the `.proto`.
 
 ### Routing: `x-flux-source`
 
 One gRPC listener serves every server-mode source on a node. Each call names its
 target source in the **`x-flux-source`** metadata header, set to the **source's
-ID**. A call naming an unknown source fails with `NOT_FOUND`, and a call to a
-disabled source fails with `FAILED_PRECONDITION`.
+ID**. A call without the header fails with `INVALID_ARGUMENT`, a call naming an
+unknown (or client-mode) source fails with `NOT_FOUND`, and a call to a disabled
+source fails with `FAILED_PRECONDITION`.
+
+Messages land on the internal queue `grpc.<channel>`, where `channel` is set on
+the source. Point the pipeline that should process them at that queue.
 
 ### Deployment settings
 
@@ -110,6 +122,7 @@ return `UNAUTHENTICATED` (missing or invalid credentials) or `PERMISSION_DENIED`
 | Field | Required | Description |
 | --- | --- | --- |
 | `mode` | no | `server` (default) |
+| `channel` | yes | Names the internal queue the source feeds: `grpc.<channel>` |
 | `auth_mode` | no | One of the auth modes above (default `mtls`) |
 | `allowed_client_subjects` | conditional | List of allowed certificate CNs / SANs; required for `mtls` and `mtls_bearer` |
 | `bearer_token` | conditional | Shared secret; required for `bearer` and `mtls_bearer` |
@@ -119,6 +132,7 @@ return `UNAUTHENTICATED` (missing or invalid credentials) or `PERMISSION_DENIED`
 {
   "type": "grpc",
   "mode": "server",
+  "channel": "orders",
   "auth_mode": "mtls",
   "allowed_client_subjects": ["orders-service"]
 }
@@ -140,11 +154,12 @@ grpcurl \
 | --- | --- |
 | `OK` + `ACCEPTED` | The message was enqueued |
 | `OK` + `REJECTED` | The message was refused (e.g. undecodable payload); the stream stays open |
+| `INVALID_ARGUMENT` | The call has no `x-flux-source` header |
 | `NOT_FOUND` / `FAILED_PRECONDITION` | Unknown or disabled source |
 | `UNAUTHENTICATED` / `PERMISSION_DENIED` | Auth failed (see the auth matrix) |
 | `RESOURCE_EXHAUSTED` | The organization is over its usage quota, or the message exceeds `max_message_bytes` |
 | `DEADLINE_EXCEEDED` | The caller's deadline passed before the message was enqueued |
-| `UNAVAILABLE` | The node is shutting down; retry (the load balancer routes to another node) |
+| `UNAVAILABLE` | The node is shutting down, or the internal queue is unavailable; retry (the load balancer routes to another node) |
 
 ## Client mode
 
@@ -173,16 +188,24 @@ responses. Set `schema_source` to choose where they come from:
 
 Validation and **Test connection** resolve `method` against the schema and check
 that `rpc_type` matches its streaming shape. Responses are decoded with the
-proto3 JSON mapping, with one change: field names stay as written in the
-`.proto` (`device_id`, not `deviceId`). Enums decode to their names,
-`Timestamp` / `Duration` to strings, and `bytes` to base64. `request` accepts
-either spelling of field names.
+proto3 JSON mapping, with a few changes that suit pipelines:
+
+- Field names stay as written in the `.proto` (`device_id`, not `deviceId`).
+- 64-bit integers decode to numbers, not strings.
+- Fields without presence always appear, holding their default value. Unset
+  message fields, `oneof` members and `optional` fields are left out.
+
+Enums decode to their names, `Timestamp` / `Duration` to strings, `bytes` to
+base64, and `Struct` / `Value` to plain JSON. A response that doesn't match the
+schema still lands, as `{"raw": "<base64>"}` with a `decode_error` in its
+metadata. `request` accepts either spelling of field names.
 
 ### Client-mode configuration
 
 | Field | Required | Description |
 | --- | --- | --- |
 | `mode` | yes | `client` |
+| `channel` | no | Names the internal queue the source feeds, `grpc.<channel>`; defaults to one derived from `method` |
 | `endpoint` | yes | `host:port` of the gRPC server |
 | `method` | yes | Fully-qualified RPC path, e.g. `/telemetry.v1.Telemetry/StreamReadings` |
 | `rpc_type` | no | `server_streaming` (default) or `bidi` |
@@ -204,6 +227,7 @@ leaves the system.
 {
   "type": "grpc",
   "mode": "client",
+  "channel": "telemetry",
   "endpoint": "telemetry.example.com:443",
   "method": "/telemetry.v1.Telemetry/StreamReadings",
   "rpc_type": "server_streaming",

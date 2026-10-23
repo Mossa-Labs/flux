@@ -78,6 +78,7 @@ export interface SourceConfig {
   clientKey?: string;
   // gRPC source (Enterprise). `authMode` is mtls | bearer | mtls_bearer in server mode.
   mode?: 'server' | 'client';
+  channel?: string;
   bearerToken?: string;
   allowedClientSubjects?: string;
   maxMessageBytes?: number;
