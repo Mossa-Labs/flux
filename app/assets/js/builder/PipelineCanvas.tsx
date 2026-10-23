@@ -257,9 +257,11 @@ const PipelineCanvasInner = forwardRef<PipelineCanvasHandle, PipelineCanvasInner
           style: { strokeWidth: 2 },
           markerEnd: { type: MarkerType.ArrowClosed, width: 20, height: 20 },
         }}
-        className="bg-base-200"
+        className="bg-base-200 flux-canvas"
+        // React Flow is MIT-licensed; hiding the corner attribution link is permitted.
+        proOptions={{ hideAttribution: true }}
       >
-        <Controls className="!bg-base-100 !border-base-300 !shadow-lg" />
+        <Controls />
         <Background
           variant={BackgroundVariant.Dots}
           gap={20}
