@@ -69,7 +69,8 @@ pipeline's source. SLO configuration lives on the standalone Observability page.
 
 Detectors don't notify on their own — they feed the
 [alerting](user_guide.md) engine. On **Alerts**, create a rule with one of the
-observability trigger types and attach email / webhook / Slack channels:
+observability trigger types and attach email / webhook / Slack channels (or
+[PagerDuty](connectors/pagerduty.md#pagerduty-as-an-alert-channel) on Enterprise):
 
 - **Source freshness SLO missed** (`freshness_slo`)
 - **Source volume anomaly** (`volume_anomaly`)
