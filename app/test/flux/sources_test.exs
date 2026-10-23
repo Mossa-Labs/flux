@@ -125,6 +125,18 @@ defmodule Flux.SourcesTest do
       assert Enum.any?(errors_on(changeset).config, &(&1 =~ "Flux Pro"))
     end
 
+    test "gates the Enterprise grpc source with an Enterprise config error", %{org_id: org_id} do
+      attrs = %{
+        "name" => "orders-grpc",
+        "type" => "grpc",
+        "config" => %{"mode" => "server", "auth_mode" => "bearer", "bearer_token" => "t0k"},
+        "organization_id" => org_id
+      }
+
+      assert {:error, changeset} = Sources.create_source(attrs)
+      assert Enum.any?(errors_on(changeset).config, &(&1 =~ "Flux Enterprise"))
+    end
+
     test "enforces unique name per organization", %{org_id: org_id} do
       assert {:ok, _} = Sources.create_source(webhook_attrs(org_id))
       assert {:error, changeset} = Sources.create_source(webhook_attrs(org_id))
@@ -161,6 +173,24 @@ defmodule Flux.SourcesTest do
       # Non-secret fields are untouched.
       assert redacted["host"] == "sftp.example.com"
       assert redacted["username"] == "flux"
+    end
+
+    test "masks gRPC secret fields (bearer token, client key)" do
+      config = %{
+        "mode" => "client",
+        "endpoint" => "telemetry.example.com:443",
+        "bearer_token" => "t0k",
+        "client_cert" => "-----BEGIN CERTIFICATE-----",
+        "client_key" => "-----BEGIN PRIVATE KEY-----"
+      }
+
+      redacted = Sources.redact_config(config)
+
+      assert redacted["bearer_token"] == "[REDACTED]"
+      assert redacted["client_key"] == "[REDACTED]"
+      # The public client certificate and endpoint are untouched.
+      assert redacted["client_cert"] == "-----BEGIN CERTIFICATE-----"
+      assert redacted["endpoint"] == "telemetry.example.com:443"
     end
   end
 

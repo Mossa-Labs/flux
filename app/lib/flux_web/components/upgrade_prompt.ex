@@ -115,6 +115,7 @@ defmodule FluxWeb.Components.UpgradePrompt do
   defp feature_label(:kinesis_source), do: "Amazon Kinesis source"
   defp feature_label(:pubsub_source), do: "Google Pub/Sub source"
   defp feature_label(:rabbitmq_source), do: "RabbitMQ (External) source"
+  defp feature_label(:grpc_source), do: "gRPC source"
   defp feature_label(:rabbit_mq_queue), do: "RabbitMQ queue backend"
   defp feature_label(:dlq), do: "Dead-letter queue"
   defp feature_label(:advanced_ai), do: "Advanced anomaly detection"

@@ -48,6 +48,8 @@ defmodule Flux.License.Features do
       default; the real enforcement ships in the commercial edition.
     * `:pii_redaction` - in-flight PII redaction (`redact`) + sensitivity
       classification (`classify`) pipeline steps
+    * `:grpc_source` - gRPC source connector: a Flux-hosted ingest service
+      (server mode) or a consumer of an external streaming RPC (client mode)
   """
 
   @type tier :: :community | :pro | :enterprise
@@ -118,7 +120,10 @@ defmodule Flux.License.Features do
       # In-flight PII redaction + sensitivity classification steps (MOS-480).
       # The real detectors ship in the Enterprise edition; the Community build
       # registers a pass-through stub for the `redact`/`classify` operations.
-      :pii_redaction
+      :pii_redaction,
+      # gRPC source connector (MOS-509) — server mode exposes a Flux ingest
+      # service; client mode consumes an external streaming RPC (see `Flux.Source`).
+      :grpc_source
     ]
   }
 
