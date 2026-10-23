@@ -54,6 +54,14 @@ defmodule FluxWeb.Components.UpgradePromptTest do
     assert html =~ "Flux Pro"
   end
 
+  test "compact prompt names Flux Enterprise for Enterprise features" do
+    html =
+      render_component(&UpgradePrompt.upgrade_prompt/1, feature: :sso, size: :compact)
+
+    assert html =~ "requires Flux Enterprise."
+    refute html =~ "Flux Pro"
+  end
+
   test "renders the Redis sink label" do
     html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :redis_sink)
     assert html =~ "Redis sink"

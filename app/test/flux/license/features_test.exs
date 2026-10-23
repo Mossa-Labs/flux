@@ -59,6 +59,13 @@ defmodule Flux.License.FeaturesTest do
     assert Features.tier_for_feature(:nonexistent) == nil
   end
 
+  test "edition_for_feature/1 names the edition an upgrade prompt should show" do
+    assert Features.edition_for_feature(:kafka_source) == "Pro"
+    assert Features.edition_for_feature(:pii_redaction) == "Enterprise"
+    # Generic placeholders aren't in the catalog and read as Pro.
+    assert Features.edition_for_feature(:pro_source) == "Pro"
+  end
+
   test "all/0 equals the enterprise feature set" do
     assert Features.all() == Features.for_tier(:enterprise)
   end
