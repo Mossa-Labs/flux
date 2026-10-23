@@ -289,6 +289,54 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
       assert html =~ ~s(name="sourceConfig[archivePath]")
     end
 
+    test "grpc source renders its Enterprise server-mode form with required markers", %{
+      conn: conn
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      html =
+        render_hook(lv, "select_node", %{
+          "nodeId" => "node_1",
+          "nodeType" => "source",
+          "nodeData" => %{"label" => "My Source", "sourceConfig" => %{"type" => "grpc"}}
+        })
+
+      # The gRPC type is offered but gated at the Enterprise tier.
+      assert html =~ "gRPC (Enterprise)"
+      assert html =~ "requires an Enterprise license"
+      assert html =~ "x-flux-source"
+      # Default auth mode (mtls) requires a client-subject allowlist.
+      assert html =~ ~s(Allowed Client Subjects<span class="text-error)
+      refute html =~ ~s(name="sourceConfig[bearerToken]")
+      # Client-mode fields stay hidden in server mode.
+      refute html =~ ~s(name="sourceConfig[endpoint]")
+    end
+
+    test "grpc client mode reveals the endpoint, method and schema fields", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      html =
+        render_hook(lv, "select_node", %{
+          "nodeId" => "node_1",
+          "nodeType" => "source",
+          "nodeData" => %{
+            "label" => "My Source",
+            "sourceConfig" => %{
+              "type" => "grpc",
+              "mode" => "client",
+              "schemaSource" => "descriptor",
+              "transportSecurity" => "mtls"
+            }
+          }
+        })
+
+      assert html =~ ~s(Endpoint<span class="text-error)
+      assert html =~ ~s(Method<span class="text-error)
+      assert html =~ ~s(Descriptor Set<span class="text-error)
+      assert html =~ ~s(Client Key<span class="text-error)
+      refute html =~ ~s(name="sourceConfig[allowedClientSubjects]")
+    end
+
     test "empty select_node clears the config panel back to the empty state", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
 
@@ -450,6 +498,44 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
 
       assert html =~ "Host"
       assert html =~ "Remote Path"
+      refute html =~ "Pipeline saved"
+    end
+
+    test "saving a bearer-auth gRPC server source missing the token shows an error", %{
+      conn: conn
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      ir = %{
+        "nodes" => [
+          %{
+            "type" => "source",
+            "sourceConfig" => %{"type" => "grpc", "mode" => "server", "authMode" => "bearer"}
+          }
+        ]
+      }
+
+      render_hook(lv, "update_ir", %{"ir" => Jason.encode!(ir)})
+      html = render_click(lv, "save")
+
+      assert html =~ "Bearer Token"
+      refute html =~ "Pipeline saved"
+    end
+
+    test "saving a gRPC client source missing endpoint/method shows an error", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      ir = %{
+        "nodes" => [
+          %{"type" => "source", "sourceConfig" => %{"type" => "grpc", "mode" => "client"}}
+        ]
+      }
+
+      render_hook(lv, "update_ir", %{"ir" => Jason.encode!(ir)})
+      html = render_click(lv, "save")
+
+      assert html =~ "Endpoint"
+      assert html =~ "Method"
       refute html =~ "Pipeline saved"
     end
 

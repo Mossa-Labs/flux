@@ -32,6 +32,7 @@ defmodule FluxWeb.PipelineLive.Builder do
      |> assign(:rabbitmq_source, Flux.License.has_feature?(:rabbitmq_source))
      |> assign(:mqtt_source, Flux.License.has_feature?(:mqtt_source))
      |> assign(:sftp_source, Flux.License.has_feature?(:sftp_source))
+     |> assign(:grpc_source, Flux.License.has_feature?(:grpc_source))
      |> assign(:pii_redaction, Flux.License.has_feature?(:pii_redaction))
      |> assign(:page_title, "Pipeline Builder")}
   end
@@ -140,6 +141,7 @@ defmodule FluxWeb.PipelineLive.Builder do
                 rabbitmq_source={@rabbitmq_source}
                 mqtt_source={@mqtt_source}
                 sftp_source={@sftp_source}
+                grpc_source={@grpc_source}
               />
             <% @selected_edge -> %>
               <.edge_config_form edge={@selected_edge} ir={@initial_ir} />
@@ -294,6 +296,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   rabbitmq_source={@rabbitmq_source}
   mqtt_source={@mqtt_source}
   sftp_source={@sftp_source}
+  grpc_source={@grpc_source}
 />"
 
   defp node_config_form(%{node: %{type: "step"}} = assigns),
@@ -382,6 +385,9 @@ defmodule FluxWeb.PipelineLive.Builder do
             <option value="sftp" selected={@source_type == "sftp"} disabled={!@sftp_source}>
               SFTP {pro_suffix(@sftp_source)}
             </option>
+            <option value="grpc" selected={@source_type == "grpc"} disabled={!@grpc_source}>
+              gRPC {enterprise_suffix(@grpc_source)}
+            </option>
           </select>
         </div>
 
@@ -411,6 +417,8 @@ defmodule FluxWeb.PipelineLive.Builder do
             <.mqtt_source_config config={@source_config} mqtt_source={@mqtt_source} />
           <% "sftp" -> %>
             <.sftp_source_config config={@source_config} sftp_source={@sftp_source} />
+          <% "grpc" -> %>
+            <.grpc_source_config config={@source_config} grpc_source={@grpc_source} />
           <% _ -> %>
             <.queue_source_config config={@source_config} />
         <% end %>
@@ -425,6 +433,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp source_icon("rabbitmq_external"), do: "hero-inbox-stack"
   defp source_icon("mqtt"), do: "hero-signal"
   defp source_icon("sftp"), do: "hero-folder-arrow-down"
+  defp source_icon("grpc"), do: "hero-arrows-right-left"
   defp source_icon(_), do: "hero-arrow-down-tray"
 
   defp queue_source_config(assigns) do
@@ -1722,6 +1731,328 @@ defmodule FluxWeb.PipelineLive.Builder do
     """
   end
 
+  # gRPC is an Enterprise source connector with two modes: `server` (Flux hosts
+  # the ingest service and callers push to it) and `client` (Flux consumes an
+  # external streaming RPC). Each mode reveals its own fields, following the
+  # RabbitMQ (External) conditional-reveal pattern.
+  defp grpc_source_config(assigns) do
+    assigns =
+      assigns
+      |> assign(:mode, assigns.config["mode"] || "server")
+      |> assign(:auth_mode, assigns.config["authMode"] || "mtls")
+      |> assign(:schema_source, assigns.config["schemaSource"] || "reflection")
+      |> assign(:transport_security, assigns.config["transportSecurity"] || "tls")
+
+    ~H"""
+    <div class="space-y-3">
+      <div class="form-control">
+        <.field_label
+          text="Mode"
+          tooltip="Server: Flux hosts the ingest service and callers push to it. Client: Flux consumes an external streaming RPC."
+        />
+        <select
+          name="sourceConfig[mode]"
+          disabled={!@grpc_source}
+          class="select select-bordered select-sm w-full"
+        >
+          <option value="server" selected={@mode == "server"}>Server — callers push to Flux</option>
+          <option value="client" selected={@mode == "client"}>
+            Client — Flux consumes a stream
+          </option>
+        </select>
+      </div>
+
+      <div :if={@mode == "server"} class="space-y-3">
+        <p class="text-xs text-base-content/50">
+          Callers invoke <span class="font-mono">flux.ingest.v1.Ingest</span>
+          on the deployment's gRPC port and send this source's ID in the
+          <span class="font-mono">x-flux-source</span>
+          metadata header.
+        </p>
+
+        <div class="form-control">
+          <.field_label text="Auth Mode" tooltip="How callers authenticate to Flux" />
+          <select
+            name="sourceConfig[authMode]"
+            disabled={!@grpc_source}
+            class="select select-bordered select-sm w-full"
+          >
+            <option value="mtls" selected={@auth_mode == "mtls"}>
+              X.509 client certificate (mTLS)
+            </option>
+            <option value="bearer" selected={@auth_mode == "bearer"}>Bearer token</option>
+            <option value="mtls_bearer" selected={@auth_mode == "mtls_bearer"}>
+              mTLS + bearer token
+            </option>
+          </select>
+        </div>
+
+        <div :if={@auth_mode in ["mtls", "mtls_bearer"]} class="form-control">
+          <.field_label
+            text="Allowed Client Subjects"
+            tooltip="Comma-separated certificate CNs or SANs allowed to publish to this source"
+            required
+          />
+          <input
+            type="text"
+            name="sourceConfig[allowedClientSubjects]"
+            value={@config["allowedClientSubjects"] || ""}
+            placeholder="orders-service, billing.internal"
+            disabled={!@grpc_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+
+        <div :if={@auth_mode in ["bearer", "mtls_bearer"]} class="form-control">
+          <.field_label
+            text="Bearer Token"
+            tooltip="Callers send it as authorization: Bearer <token> metadata"
+            required
+          />
+          <input
+            type="password"
+            name="sourceConfig[bearerToken]"
+            value={@config["bearerToken"] || ""}
+            disabled={!@grpc_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+
+        <div class="form-control">
+          <.field_label
+            text="Max Message Bytes"
+            tooltip="Largest accepted request message (default 4 MiB)"
+          />
+          <input
+            type="text"
+            name="sourceConfig[maxMessageBytes]"
+            value={@config["maxMessageBytes"] || ""}
+            placeholder="4194304"
+            disabled={!@grpc_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+      </div>
+
+      <div :if={@mode == "client"} class="space-y-3">
+        <div class="form-control">
+          <.field_label text="Endpoint" tooltip="host:port of the external gRPC server" required />
+          <input
+            type="text"
+            name="sourceConfig[endpoint]"
+            value={@config["endpoint"] || ""}
+            placeholder="telemetry.example.com:443"
+            disabled={!@grpc_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+
+        <div class="form-control">
+          <.field_label
+            text="Method"
+            tooltip="Fully-qualified RPC path, /package.Service/Method"
+            required
+          />
+          <input
+            type="text"
+            name="sourceConfig[method]"
+            value={@config["method"] || ""}
+            placeholder="/telemetry.v1.Telemetry/StreamReadings"
+            disabled={!@grpc_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+
+        <div class="form-control">
+          <.field_label text="RPC Type" tooltip="Must match the method's streaming shape" />
+          <select
+            name="sourceConfig[rpcType]"
+            disabled={!@grpc_source}
+            class="select select-bordered select-sm w-full"
+          >
+            <option
+              value="server_streaming"
+              selected={(@config["rpcType"] || "server_streaming") == "server_streaming"}
+            >
+              Server streaming
+            </option>
+            <option value="bidi" selected={@config["rpcType"] == "bidi"}>
+              Bidirectional streaming
+            </option>
+          </select>
+        </div>
+
+        <div class="form-control">
+          <.field_label
+            text="Request"
+            tooltip="JSON request message sent when the stream opens (proto3 JSON mapping)"
+          />
+          <textarea
+            name="sourceConfig[request]"
+            rows="3"
+            placeholder={~s({"deviceId": "line-4"})}
+            disabled={!@grpc_source}
+            class="textarea textarea-bordered textarea-sm w-full font-mono"
+          >{@config["request"] || ""}</textarea>
+        </div>
+
+        <div class="form-control">
+          <.field_label
+            text="Schema Source"
+            tooltip="Where Flux reads the message definitions used to encode the request and decode responses"
+          />
+          <select
+            name="sourceConfig[schemaSource]"
+            disabled={!@grpc_source}
+            class="select select-bordered select-sm w-full"
+          >
+            <option value="reflection" selected={@schema_source == "reflection"}>
+              Server reflection
+            </option>
+            <option value="descriptor" selected={@schema_source == "descriptor"}>
+              Descriptor set (.protoset)
+            </option>
+          </select>
+        </div>
+
+        <div :if={@schema_source == "descriptor"} class="form-control">
+          <.field_label
+            text="Descriptor Set"
+            tooltip="Base64 of protoc --descriptor_set_out --include_imports output"
+            required
+          />
+          <textarea
+            name="sourceConfig[descriptorSet]"
+            rows="3"
+            placeholder="CpQBChVnb29nbGUvcHJvdG9idWYv..."
+            disabled={!@grpc_source}
+            class="textarea textarea-bordered textarea-sm w-full font-mono"
+          >{@config["descriptorSet"] || ""}</textarea>
+        </div>
+
+        <div class="form-control">
+          <.field_label text="Transport Security" tooltip="How Flux connects to the server" />
+          <select
+            name="sourceConfig[transportSecurity]"
+            disabled={!@grpc_source}
+            class="select select-bordered select-sm w-full"
+          >
+            <option value="tls" selected={@transport_security == "tls"}>TLS</option>
+            <option value="mtls" selected={@transport_security == "mtls"}>
+              TLS + client certificate (mTLS)
+            </option>
+            <option value="none" selected={@transport_security == "none"}>Plaintext (h2c)</option>
+          </select>
+        </div>
+
+        <div :if={@transport_security in ["tls", "mtls"]} class="form-control">
+          <.field_label
+            text="CA Certificate"
+            tooltip="PEM CA bundle used to verify the server (defaults to system CAs)"
+          />
+          <textarea
+            name="sourceConfig[caCert]"
+            rows="2"
+            placeholder="-----BEGIN CERTIFICATE-----"
+            disabled={!@grpc_source}
+            class="textarea textarea-bordered textarea-sm w-full font-mono"
+          >{@config["caCert"] || ""}</textarea>
+        </div>
+
+        <div :if={@transport_security == "mtls"} class="space-y-3">
+          <div class="form-control">
+            <.field_label text="Client Certificate" tooltip="PEM client certificate" required />
+            <textarea
+              name="sourceConfig[clientCert]"
+              rows="2"
+              placeholder="-----BEGIN CERTIFICATE-----"
+              disabled={!@grpc_source}
+              class="textarea textarea-bordered textarea-sm w-full font-mono"
+            >{@config["clientCert"] || ""}</textarea>
+          </div>
+          <div class="form-control">
+            <.field_label
+              text="Client Key"
+              tooltip="PEM client private key (stored encrypted)"
+              required
+            />
+            <textarea
+              name="sourceConfig[clientKey]"
+              rows="2"
+              placeholder="-----BEGIN PRIVATE KEY-----"
+              disabled={!@grpc_source}
+              class="textarea textarea-bordered textarea-sm w-full font-mono"
+            >{@config["clientKey"] || ""}</textarea>
+          </div>
+        </div>
+
+        <div class="form-control">
+          <.field_label
+            text="Bearer Token"
+            tooltip="Optional; sent as authorization: Bearer <token> metadata"
+          />
+          <input
+            type="password"
+            name="sourceConfig[bearerToken]"
+            value={@config["bearerToken"] || ""}
+            disabled={!@grpc_source}
+            class="input input-bordered input-sm w-full font-mono"
+          />
+        </div>
+
+        <div class="form-control">
+          <.field_label
+            text="Metadata"
+            tooltip="Extra request metadata as a JSON object of string values"
+          />
+          <textarea
+            name="sourceConfig[metadata]"
+            rows="2"
+            placeholder={~s({"x-tenant": "acme"})}
+            disabled={!@grpc_source}
+            class="textarea textarea-bordered textarea-sm w-full font-mono"
+          >{@config["metadata"] || ""}</textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div class="form-control">
+            <.field_label
+              text="Deadline (ms)"
+              tooltip="Time allowed to connect and receive the first message"
+            />
+            <input
+              type="text"
+              name="sourceConfig[deadlineMs]"
+              value={@config["deadlineMs"] || ""}
+              placeholder="10000"
+              disabled={!@grpc_source}
+              class="input input-bordered input-sm w-full font-mono"
+            />
+          </div>
+          <div class="form-control">
+            <.field_label
+              text="Idle Timeout (ms)"
+              tooltip="Reconnect when no message arrives for this long (blank = never)"
+            />
+            <input
+              type="text"
+              name="sourceConfig[idleTimeoutMs]"
+              value={@config["idleTimeoutMs"] || ""}
+              placeholder="300000"
+              disabled={!@grpc_source}
+              class="input input-bordered input-sm w-full font-mono"
+            />
+          </div>
+        </div>
+      </div>
+
+      <p :if={!@grpc_source} class="text-xs text-base-content/50 mt-1">
+        The gRPC source connector requires an Enterprise license.
+      </p>
+    </div>
+    """
+  end
+
   defp format_content_types(nil), do: ""
   defp format_content_types(types) when is_list(types), do: Enum.join(types, ", ")
   defp format_content_types(types), do: to_string(types)
@@ -2405,6 +2736,9 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp pro_suffix(true), do: ""
   defp pro_suffix(false), do: "(Pro)"
 
+  defp enterprise_suffix(true), do: ""
+  defp enterprise_suffix(false), do: "(Enterprise)"
+
   # Default algorithm wire value per mode (the picker's first option).
   defp default_algorithm("multivariate"), do: "ensemble"
   defp default_algorithm("seasonal"), do: "decomposition"
@@ -2869,6 +3203,18 @@ defmodule FluxWeb.PipelineLive.Builder do
       sftp_archive_fields(config)
   end
 
+  defp missing_source_fields("grpc", config) do
+    case config["mode"] || "server" do
+      "client" ->
+        blank_fields(config, [{"endpoint", "Endpoint"}, {"method", "Method"}]) ++
+          grpc_descriptor_fields(config) ++
+          grpc_client_tls_fields(config)
+
+      _server ->
+        grpc_server_auth_fields(config)
+    end
+  end
+
   defp missing_source_fields(_type, _config), do: []
 
   # AWS `static` auth requires an access key pair; only enforced in that mode.
@@ -2928,6 +3274,40 @@ defmodule FluxWeb.PipelineLive.Builder do
     do: blank_fields(config, [{"archivePath", "Archive Path"}])
 
   defp sftp_archive_fields(_config), do: []
+
+  # gRPC server-mode credentials depend on the auth mode (default mtls). An mTLS
+  # source needs a subject allowlist, or any cert the deployment CA signed could
+  # publish into it.
+  defp grpc_server_auth_fields(config) do
+    case config["authMode"] || "mtls" do
+      "mtls" ->
+        blank_fields(config, [{"allowedClientSubjects", "Allowed Client Subjects"}])
+
+      "bearer" ->
+        blank_fields(config, [{"bearerToken", "Bearer Token"}])
+
+      "mtls_bearer" ->
+        blank_fields(config, [
+          {"allowedClientSubjects", "Allowed Client Subjects"},
+          {"bearerToken", "Bearer Token"}
+        ])
+
+      _ ->
+        []
+    end
+  end
+
+  # gRPC client mode reads message definitions from a pasted descriptor set
+  # unless it relies on server reflection (the default).
+  defp grpc_descriptor_fields(%{"schemaSource" => "descriptor"} = config),
+    do: blank_fields(config, [{"descriptorSet", "Descriptor Set"}])
+
+  defp grpc_descriptor_fields(_config), do: []
+
+  defp grpc_client_tls_fields(%{"transportSecurity" => "mtls"} = config),
+    do: blank_fields(config, [{"clientCert", "Client Certificate"}, {"clientKey", "Client Key"}])
+
+  defp grpc_client_tls_fields(_config), do: []
 
   defp blank_fields(config, fields) do
     for {key, label} <- fields, blank?(config[key]), do: label
