@@ -3,9 +3,11 @@
 # review that PR as a batch: it can include 0.x "minor" bumps that are breaking
 # (req 0.5 -> 0.7 was), so read the changelogs of anything below 1.0.
 #
-# The group covers version updates. Security updates follow Dependabot alerts,
-# which come per ecosystem and never for mix: GitHub's dependency graph does
-# not parse mix.lock, so Hex advisories are caught by .github/workflows/audit.yml.
+# Security updates (raised from Dependabot alerts) are grouped too, into one PR
+# per package manager and directory, via each entry's `security-updates` group.
+# That mirrors the repo's "Grouped security updates" setting in config. mix gets
+# none in practice: GitHub's dependency graph does not parse mix.lock, so Hex
+# advisories are caught by .github/workflows/audit.yml instead.
 #
 # The Docker base images are not covered here: the Dockerfiles select them
 # through ARGs (BUILDER_IMAGE / RUNNER_IMAGE), which Dependabot cannot follow,
@@ -22,13 +24,25 @@ updates:
     directory: /app
     multi-ecosystem-group: all-dependencies
     patterns: ["*"]
+    groups:
+      security-updates:
+        applies-to: security-updates
+        patterns: ["*"]
 
   - package-ecosystem: npm
     directory: /app/assets
     multi-ecosystem-group: all-dependencies
     patterns: ["*"]
+    groups:
+      security-updates:
+        applies-to: security-updates
+        patterns: ["*"]
 
   - package-ecosystem: github-actions
     directory: /
     multi-ecosystem-group: all-dependencies
     patterns: ["*"]
+    groups:
+      security-updates:
+        applies-to: security-updates
+        patterns: ["*"]
