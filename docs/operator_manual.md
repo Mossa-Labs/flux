@@ -633,7 +633,7 @@ The repository includes a CI workflow at `.github/workflows/test.yml` that runs 
 
 The weekly run matters: a new advisory against a lockfile that has not changed only shows up there. The image job is report-only because most Ubuntu findings have no published fix; the release image already applies every available Ubuntu update at build time. It still fails when the scan produces no report, so a green run always means the image was checked.
 
-`.github/dependabot.yml` opens one weekly PR that groups every version update for mix, npm and GitHub Actions; review it as a batch, since it can include breaking 0.x bumps. The Docker base images (`ELIXIR_VERSION`, `OTP_VERSION`, `UBUNTU_VERSION` in the Dockerfiles, plus `.tool-versions` and the CI env) are not covered and are bumped by hand; keep them in step.
+`.github/dependabot.yml` opens one weekly PR that groups every version update for mix, npm and GitHub Actions; review it as a batch, since it can include breaking 0.x bumps. Security updates are grouped too, into one PR per package manager and directory. The Docker base images (`ELIXIR_VERSION`, `OTP_VERSION`, `UBUNTU_VERSION` in the Dockerfiles, plus `.tool-versions` and the CI env) are not covered and are bumped by hand; keep them in step.
 
 **Note:** There is no automated deployment step. Production releases are built manually with `MIX_ENV=prod mix release` (see [Running in Production](#running-in-production)).
 
