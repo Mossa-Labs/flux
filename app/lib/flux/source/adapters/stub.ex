@@ -15,6 +15,10 @@ defmodule Flux.Source.Adapters.Stub do
   @feature :pro_source
 
   @impl Flux.Source.Adapter
+  # gRPC's naming is shared with the adapter that serves it, so a pipeline saved
+  # before the source is licensed still points at the right queue.
+  def queue_name(%{"type" => "grpc"} = config), do: Flux.Source.GRPC.queue_name(config)
+
   def queue_name(config) do
     # Deterministic name so a stored config still round-trips; nothing consumes
     # it in Community because the source never ingests.

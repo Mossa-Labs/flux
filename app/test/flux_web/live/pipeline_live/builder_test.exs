@@ -595,6 +595,60 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
   end
 
   describe "source queue derivation" do
+    test "a gRPC source node persists its grpc.<channel> queue", %{conn: conn, scope: scope} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      ir = %{
+        "nodes" => [
+          %{
+            "type" => "source",
+            "label" => "Orders",
+            "sourceConfig" => %{
+              "type" => "grpc",
+              "mode" => "server",
+              "channel" => "EU Orders",
+              "authMode" => "bearer",
+              "bearerToken" => "t0k"
+            }
+          }
+        ]
+      }
+
+      render_hook(lv, "update_ir", %{"ir" => Jason.encode!(ir)})
+      assert render_click(lv, "save") =~ "Pipeline saved"
+
+      pipeline = List.last(Flux.Pipelines.list_pipelines(scope.organization_id))
+      assert pipeline.source_queue == "grpc.eu-orders"
+    end
+
+    test "a client-mode gRPC node without a channel derives the queue from its method", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      ir = %{
+        "nodes" => [
+          %{
+            "type" => "source",
+            "label" => "Telemetry",
+            "sourceConfig" => %{
+              "type" => "grpc",
+              "mode" => "client",
+              "endpoint" => "telemetry.example.com:443",
+              "method" => "/telemetry.v1.Telemetry/StreamReadings"
+            }
+          }
+        ]
+      }
+
+      render_hook(lv, "update_ir", %{"ir" => Jason.encode!(ir)})
+      assert render_click(lv, "save") =~ "Pipeline saved"
+
+      pipeline = List.last(Flux.Pipelines.list_pipelines(scope.organization_id))
+      assert pipeline.source_queue == "grpc.telemetry-v1-telemetry-streamreadings"
+    end
+
     test "a webhook source node persists the webhooks.<path> queue", %{conn: conn, scope: scope} do
       {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
 
