@@ -151,3 +151,26 @@
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
 /* This file is for your main application CSS */
+
+/* Pipeline builder canvas (React Flow): theme the zoom / fit / lock controls
+   from the daisyUI palette instead of React Flow's built-in white buttons.
+   The two-class selector outranks React Flow's own `.react-flow` defaults,
+   whichever stylesheet loads last. */
+.react-flow.flux-canvas {
+  --xy-controls-button-background-color: var(--color-base-100);
+  --xy-controls-button-background-color-hover: var(--color-base-300);
+  --xy-controls-button-color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+  --xy-controls-button-color-hover: var(--color-primary);
+  --xy-controls-button-border-color: var(--color-base-300);
+  --xy-controls-box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+}
+
+.react-flow.flux-canvas .react-flow__controls {
+  border: 1px solid var(--color-base-300);
+  border-radius: var(--radius-field);
+  overflow: hidden;
+}
+
+.react-flow.flux-canvas .react-flow__controls-button {
+  transition: background-color 150ms ease, color 150ms ease;
+}
