@@ -1762,6 +1762,22 @@ defmodule FluxWeb.PipelineLive.Builder do
         </select>
       </div>
 
+      <div class="form-control">
+        <.field_label
+          text="Channel"
+          tooltip="Names the internal queue this source feeds (grpc.<channel>). Optional in client mode, where it defaults from the method."
+          required={@mode == "server"}
+        />
+        <input
+          type="text"
+          name="sourceConfig[channel]"
+          value={@config["channel"] || ""}
+          placeholder="orders"
+          disabled={!@grpc_source}
+          class="input input-bordered input-sm w-full font-mono"
+        />
+      </div>
+
       <div :if={@mode == "server"} class="space-y-3">
         <p class="text-xs text-base-content/50">
           Callers invoke <span class="font-mono">flux.ingest.v1.Ingest</span>
@@ -3211,7 +3227,7 @@ defmodule FluxWeb.PipelineLive.Builder do
           grpc_client_tls_fields(config)
 
       _server ->
-        grpc_server_auth_fields(config)
+        blank_fields(config, [{"channel", "Channel"}]) ++ grpc_server_auth_fields(config)
     end
   end
 
