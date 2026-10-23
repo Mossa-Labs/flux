@@ -4,7 +4,7 @@ defmodule Flux.Sinks.Sink do
 
   A sink represents an output destination for pipeline data. Each sink
   has a type (http, s3, postgres, mysql, parquet, email, bigquery, kafka,
-  snowflake, redis, mongodb, slack, dynamodb, gcs) and a configuration map specific to that type.
+  snowflake, redis, mongodb, slack, dynamodb, gcs, pagerduty) and a configuration map specific to that type.
   """
 
   use Ecto.Schema
@@ -12,7 +12,7 @@ defmodule Flux.Sinks.Sink do
 
   alias Flux.Structure.Organization
 
-  @sink_types ~w(http s3 postgres mysql parquet email bigquery kafka snowflake redis mongodb slack dynamodb gcs)
+  @sink_types ~w(http s3 postgres mysql parquet email bigquery kafka snowflake redis mongodb slack dynamodb gcs pagerduty)
 
   schema "sinks" do
     field :name, :string
@@ -63,7 +63,9 @@ defmodule Flux.Sinks.Sink do
 
   defp validate_config_for_type(type, config) do
     case Flux.Sink.adapter_for_type(type) do
-      {:ok, adapter} -> adapter.validate_config(config)
+      # The type travels with the config (as it does at delivery time) so the
+      # Community stub can name the type and the edition that entitles it.
+      {:ok, adapter} -> adapter.validate_config(Map.put(config, "type", type))
       {:error, _} -> {:error, ["unknown sink type"]}
     end
   end

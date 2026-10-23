@@ -325,6 +325,22 @@ defmodule Flux.SinksTest do
       refute changeset.errors[:type]
     end
 
+    test "with pagerduty type in Community is rejected (Enterprise feature)", %{org_id: org_id} do
+      attrs = %{
+        name: "my-pagerduty-sink",
+        type: "pagerduty",
+        config: %{"routing_key" => "R0123456789ABCDEF0123456789ABCDE"},
+        organization_id: org_id
+      }
+
+      # pagerduty is an accepted type (passes inclusion); the Community stub
+      # rejects it at config validation, naming the Enterprise edition.
+      assert {:error, %Ecto.Changeset{} = changeset} = Sinks.create_sink(attrs)
+      assert {msg, _} = changeset.errors[:config]
+      assert msg =~ "Flux Enterprise"
+      refute changeset.errors[:type]
+    end
+
     test "with valid postgres type creates a sink", %{org_id: org_id} do
       attrs = %{
         name: "my-pg-sink",
@@ -525,7 +541,8 @@ defmodule Flux.SinksTest do
         "uri" => "mongodb+srv://flux:s3cr3t@cluster0.mongodb.net",
         "webhook_url" => "https://hooks.slack.com/services/T0/B0/s3cr3t",
         "bot_token" => "xoxb-super-secret",
-        "session_token" => "FwoGZXIvYXdzEXAMPLESESSIONTOKEN"
+        "session_token" => "FwoGZXIvYXdzEXAMPLESESSIONTOKEN",
+        "routing_key" => "R0123456789ABCDEF0123456789ABCDE"
       }
 
       redacted = Sinks.redact_config(config)
@@ -539,6 +556,7 @@ defmodule Flux.SinksTest do
       assert redacted["uri"] == "[REDACTED]"
       assert redacted["webhook_url"] == "[REDACTED]"
       assert redacted["bot_token"] == "[REDACTED]"
+      assert redacted["routing_key"] == "[REDACTED]"
       # Non-secret fields pass through untouched.
       assert redacted["bucket"] == "my-bucket"
     end

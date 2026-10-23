@@ -18,6 +18,11 @@ defmodule Flux.Sink.Adapters.StubTest do
     assert msg =~ "Flux Pro"
   end
 
+  test "validate_config/1 names Flux Enterprise for Enterprise sink types" do
+    assert {:error, [msg]} = Stub.validate_config(%{"type" => "pagerduty"})
+    assert msg =~ "pagerduty sink requires Flux Enterprise"
+  end
+
   test "test_connection/1 also returns pro_required" do
     assert {:error, {:pro_required, :s3_sink}} = Stub.test_connection(%{"type" => "s3"})
   end
@@ -32,7 +37,8 @@ defmodule Flux.Sink.Adapters.StubTest do
           {"mongodb", :mongodb_sink},
           {"slack", :slack_sink},
           {"dynamodb", :dynamodb_sink},
-          {"gcs", :gcs_sink}
+          {"gcs", :gcs_sink},
+          {"pagerduty", :pagerduty_sink}
         ] do
       assert {:error, {:pro_required, ^feature}} = Stub.deliver(%{}, %{"type" => type}, [])
     end

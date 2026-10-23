@@ -70,6 +70,13 @@ defmodule Flux.License.FeaturesTest do
     assert Features.edition_for_feature(:pro_source) == "Pro"
   end
 
+  test "the PagerDuty integration is Enterprise-only" do
+    refute :pagerduty_sink in Features.for_tier(:pro)
+    assert :pagerduty_sink in Features.for_tier(:enterprise)
+    assert Features.tier_for_feature(:pagerduty_sink) == :enterprise
+    assert Features.edition_for_feature(:pagerduty_sink) == "Enterprise"
+  end
+
   test "all/0 equals the enterprise feature set" do
     assert Features.all() == Features.for_tier(:enterprise)
   end
