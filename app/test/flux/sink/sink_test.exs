@@ -52,6 +52,7 @@ defmodule Flux.SinkTest do
                  "kafka",
                  "mongodb",
                  "mysql",
+                 "pagerduty",
                  "parquet",
                  "postgres",
                  "redis",

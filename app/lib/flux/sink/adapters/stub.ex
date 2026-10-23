@@ -1,9 +1,10 @@
 defmodule Flux.Sink.Adapters.Stub do
   @moduledoc """
-  Placeholder sink adapter registered against Pro-only sink types in
+  Placeholder sink adapter registered against Pro/Enterprise sink types in
   Community builds. Every callback returns a structured
-  `{:error, {:pro_required, feature_atom}}` tuple so the UI can render
-  an upgrade prompt instead of crashing.
+  `{:error, {:pro_required, feature_atom}}` tuple (and `validate_config/1`
+  names the edition that entitles the type) so the UI can render an upgrade
+  prompt instead of crashing.
 
   EE builds replace the registration with the real adapter (e.g.
   `Flux.Sink.Adapters.S3`) at boot.
@@ -19,7 +20,9 @@ defmodule Flux.Sink.Adapters.Stub do
   @impl Flux.Sink.Adapter
   def validate_config(config) do
     type = Map.get(config, "type", "unknown")
-    {:error, ["#{type} sink requires Flux Pro — see #{Flux.Marketing.pricing_url()}"]}
+    edition = Flux.License.Features.edition_for_feature(feature_for_type(type))
+
+    {:error, ["#{type} sink requires Flux #{edition} — see #{Flux.Marketing.pricing_url()}"]}
   end
 
   @impl Flux.Sink.Adapter
@@ -39,5 +42,6 @@ defmodule Flux.Sink.Adapters.Stub do
   defp feature_for_type("slack"), do: :slack_sink
   defp feature_for_type("dynamodb"), do: :dynamodb_sink
   defp feature_for_type("gcs"), do: :gcs_sink
+  defp feature_for_type("pagerduty"), do: :pagerduty_sink
   defp feature_for_type(_), do: @feature
 end

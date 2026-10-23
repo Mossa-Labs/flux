@@ -22,6 +22,8 @@ defmodule Flux.License.Features do
     * `:slack_sink` - Slack sink connector (Incoming Webhook / bot-token messaging)
     * `:dynamodb_sink` - Amazon DynamoDB sink connector (AWS NoSQL key-value store)
     * `:gcs_sink` - Google Cloud Storage sink connector (batched object uploads)
+    * `:pagerduty_sink` - PagerDuty integration (Events API v2): the PagerDuty
+      sink connector and the PagerDuty alert-rule channel
     * `:kafka_source` - Kafka topic source connector (see `Flux.Source`)
     * `:mqtt_source` - MQTT topic source connector for IoT/industrial ingestion
     * `:sqs_source` - Amazon SQS source connector (AWS managed queue)
@@ -106,6 +108,10 @@ defmodule Flux.License.Features do
       :observability
     ],
     enterprise: [
+      # PagerDuty integration (MOS-508) — the PagerDuty sink connector (Events API
+      # v2 trigger/acknowledge/resolve, see `Flux.Sink`) and the PagerDuty
+      # alert-rule channel (see `Flux.Alerts`).
+      :pagerduty_sink,
       :sso,
       :audit_log,
       :white_label,

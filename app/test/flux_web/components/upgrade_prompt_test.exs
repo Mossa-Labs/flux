@@ -100,6 +100,13 @@ defmodule FluxWeb.Components.UpgradePromptTest do
     assert html =~ "Flux Pro"
   end
 
+  test "renders the PagerDuty label and names Flux Enterprise" do
+    html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :pagerduty_sink)
+    assert html =~ "PagerDuty integration"
+    assert html =~ "Flux Enterprise"
+    refute html =~ "Flux Pro"
+  end
+
   test "unknown feature atom falls back to a human-readable label" do
     html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :mystery_future_feature)
     assert html =~ "mystery future feature"
