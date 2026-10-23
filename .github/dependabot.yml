@@ -8,6 +8,16 @@
 # closing that batch dropped the action bumps with it and left CI on releases
 # that target the deprecated Node.js 20 runtime.
 #
+# Version updates are limited to minor and patch releases (the `allow` rule on
+# each entry): Dependabot cannot tell whether a major release breaks us, so
+# majors are bumped by hand, with the changelog read and the code adapted in the
+# same PR. `allow` update-types do not filter security updates, so for npm and
+# GitHub Actions a security fix still arrives even when it is only in a new
+# major. mix never gets security updates (see below): a vulnerable Hex package
+# fails the OSV lockfile scan in audit.yml (every PR, push to main, and weekly)
+# and is upgraded by hand, major or not. A 0.x "minor" bump (0.8 -> 0.9) still
+# counts as minor although it is often breaking.
+#
 # Security updates (raised from Dependabot alerts) are grouped too, into one PR
 # per package manager and directory, via each entry's `security-updates` group.
 # That mirrors the repo's "Grouped security updates" setting in config. mix gets
@@ -27,6 +37,11 @@ multi-ecosystem-groups:
 updates:
   - package-ecosystem: mix
     directory: /app
+    allow:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
     multi-ecosystem-group: all-dependencies
     patterns: ["*"]
     groups:
@@ -36,6 +51,11 @@ updates:
 
   - package-ecosystem: npm
     directory: /app/assets
+    allow:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
     multi-ecosystem-group: all-dependencies
     patterns: ["*"]
     groups:
@@ -45,6 +65,11 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
+    allow:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
     schedule:
       interval: weekly
     groups:
