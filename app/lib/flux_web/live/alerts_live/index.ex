@@ -3,7 +3,8 @@ defmodule FluxWeb.AlertsLive.Index do
   Owner-only, Pro-gated alerting & notifications (MOS-452).
 
   Create alert rules (anomaly / failure-rate / pipeline-stopped / DLQ-depth) with
-  email, webhook, and Slack channels, toggle them, and review the fire history.
+  email, webhook, and Slack channels (plus PagerDuty on Enterprise), toggle
+  them, and review the fire history.
   Real data is served by the active `Flux.Alerts.Provider` (the Pro Postgres
   provider + a minute-by-minute evaluator); Community builds surface an upgrade
   prompt. Non-owners get a 403 with a redirect back to the dashboard.
@@ -16,6 +17,12 @@ defmodule FluxWeb.AlertsLive.Index do
   @redirect_after_ms 20_000
   @tick_ms 1_000
   @default_cooldown 15
+  @pagerduty_severities [
+    {"Critical", "critical"},
+    {"Error", "error"},
+    {"Warning", "warning"},
+    {"Info", "info"}
+  ]
 
   @impl true
   def mount(_params, _session, socket) do
@@ -49,10 +56,12 @@ defmodule FluxWeb.AlertsLive.Index do
     |> assign(:page_title, "Alerts")
     |> assign(:authorized, true)
     |> assign(:alerting_entitled, entitled?)
+    |> assign(:pagerduty_entitled, Flux.License.has_feature?(:pagerduty_sink))
     |> assign(:rules, [])
     |> assign(:history, [])
     |> assign(:show_form, false)
     |> assign(:editing_id, nil)
+    |> assign(:pagerduty_stored, false)
     |> assign(:form, blank_form())
   end
 
@@ -107,6 +116,7 @@ defmodule FluxWeb.AlertsLive.Index do
          socket
          |> assign(:show_form, true)
          |> assign(:editing_id, rule.id)
+         |> assign(:pagerduty_stored, stored_pagerduty(rule) != nil)
          |> assign(:form, to_form(rule_to_params(rule), as: :rule))}
     end
   end
@@ -121,7 +131,8 @@ defmodule FluxWeb.AlertsLive.Index do
 
   def handle_event("save_rule", %{"rule" => params}, socket) do
     org_id = socket.assigns.current_scope.organization_id
-    attrs = build_attrs(params)
+    editing = Enum.find(socket.assigns.rules, &(&1.id == socket.assigns.editing_id))
+    attrs = build_attrs(params, editing, socket.assigns.pagerduty_entitled)
 
     result =
       case socket.assigns.editing_id do
@@ -200,7 +211,8 @@ defmodule FluxWeb.AlertsLive.Index do
 
   # -- Form helpers --
 
-  defp reset_form(socket), do: assign(socket, :form, blank_form())
+  defp reset_form(socket),
+    do: socket |> assign(:form, blank_form()) |> assign(:pagerduty_stored, false)
 
   defp blank_form do
     to_form(
@@ -211,7 +223,9 @@ defmodule FluxWeb.AlertsLive.Index do
         "cooldown_minutes" => Integer.to_string(@default_cooldown),
         "email_to" => "",
         "webhook_url" => "",
-        "slack_url" => ""
+        "slack_url" => "",
+        "pagerduty_routing_key" => "",
+        "pagerduty_severity" => "error"
       },
       as: :rule
     )
@@ -227,7 +241,11 @@ defmodule FluxWeb.AlertsLive.Index do
       "cooldown_minutes" => Integer.to_string(rule.cooldown_minutes || @default_cooldown),
       "email_to" => get_in(channels, ["email", "to"]) || "",
       "webhook_url" => get_in(channels, ["webhook", "url"]) || "",
-      "slack_url" => get_in(channels, ["slack", "url"]) || ""
+      "slack_url" => get_in(channels, ["slack", "url"]) || "",
+      # The PagerDuty integration key is write-only: never echoed back into the
+      # form. A blank field on save keeps the stored key.
+      "pagerduty_routing_key" => "",
+      "pagerduty_severity" => get_in(channels, ["pagerduty", "severity"]) || "error"
     }
   end
 
@@ -241,12 +259,12 @@ defmodule FluxWeb.AlertsLive.Index do
   defp threshold_string(%{"threshold" => t}) when not is_nil(t), do: to_string(t)
   defp threshold_string(_), do: ""
 
-  defp build_attrs(params) do
+  defp build_attrs(params, editing, pagerduty_entitled?) do
     %{
       "name" => String.trim(params["name"] || ""),
       "trigger_type" => params["trigger_type"],
       "trigger_config" => build_trigger_config(params),
-      "channels" => build_channels(params),
+      "channels" => build_channels(params, stored_pagerduty(editing), pagerduty_entitled?),
       "cooldown_minutes" => parse_int(params["cooldown_minutes"], @default_cooldown)
     }
   end
@@ -258,14 +276,48 @@ defmodule FluxWeb.AlertsLive.Index do
     end
   end
 
-  defp build_channels(params) do
+  defp build_channels(params, stored_pagerduty, pagerduty_entitled?) do
     [
       channel("email", "to", params["email_to"]),
       channel("webhook", "url", params["webhook_url"]),
-      channel("slack", "url", params["slack_url"])
+      channel("slack", "url", params["slack_url"]),
+      pagerduty_channel(params, stored_pagerduty, pagerduty_entitled?)
     ]
     |> Enum.reject(&is_nil/1)
   end
+
+  # Without the entitlement the PagerDuty fields aren't shown, so a stored
+  # channel is carried over untouched rather than silently dropped. Otherwise a
+  # new key replaces the stored one, a blank key keeps it, and "remove" drops it.
+  defp pagerduty_channel(_params, stored, false), do: stored
+
+  defp pagerduty_channel(params, stored, true) do
+    key = String.trim(params["pagerduty_routing_key"] || "")
+    severity = params["pagerduty_severity"] || "error"
+
+    cond do
+      params["pagerduty_remove"] == "true" ->
+        nil
+
+      key != "" ->
+        %{"type" => "pagerduty", "config" => %{"routing_key" => key, "severity" => severity}}
+
+      stored != nil ->
+        put_in(stored, ["config", "severity"], severity)
+
+      true ->
+        nil
+    end
+  end
+
+  defp stored_pagerduty(%{channels: channels}) when is_list(channels) do
+    Enum.find_value(channels, fn ch ->
+      if (ch["type"] || ch[:type]) == "pagerduty",
+        do: %{"type" => "pagerduty", "config" => ch["config"] || ch[:config] || %{}}
+    end)
+  end
+
+  defp stored_pagerduty(_rule), do: nil
 
   defp channel(type, key, value) do
     case value && String.trim(value) do
@@ -307,7 +359,9 @@ defmodule FluxWeb.AlertsLive.Index do
     |> Enum.join("; ")
   end
 
-  defp format_error({:pro_required, _}), do: "requires Flux Pro"
+  defp format_error({:pro_required, feature}),
+    do: "requires Flux #{Flux.License.Features.edition_for_feature(feature)}"
+
   defp format_error(reason), do: inspect(reason)
 
   # -- Render --
@@ -408,6 +462,41 @@ defmodule FluxWeb.AlertsLive.Index do
                 type="text"
                 label="Slack webhook URL"
                 placeholder="https://hooks.slack.com/…"
+              />
+            </div>
+
+            <div id="alert-pagerduty-channel" class="mt-4">
+              <div :if={@pagerduty_entitled} class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="md:col-span-2">
+                  <.input
+                    field={@form[:pagerduty_routing_key]}
+                    type="password"
+                    label="PagerDuty integration key"
+                    placeholder={
+                      if @pagerduty_stored,
+                        do: "Stored — leave blank to keep it",
+                        else: "Events API v2 integration key"
+                    }
+                  />
+                </div>
+                <.input
+                  field={@form[:pagerduty_severity]}
+                  type="select"
+                  label="PagerDuty severity"
+                  options={pagerduty_severities()}
+                />
+                <div :if={@pagerduty_stored} class="md:col-span-3 -mt-2">
+                  <.input
+                    field={@form[:pagerduty_remove]}
+                    type="checkbox"
+                    label="Remove the PagerDuty channel from this rule"
+                  />
+                </div>
+              </div>
+              <UpgradePrompt.upgrade_prompt
+                :if={!@pagerduty_entitled}
+                feature={:pagerduty_sink}
+                size={:compact}
               />
             </div>
 
@@ -521,6 +610,8 @@ defmodule FluxWeb.AlertsLive.Index do
   end
 
   # -- View helpers --
+
+  defp pagerduty_severities, do: @pagerduty_severities
 
   defp trigger_options do
     Enum.map(Alerts.trigger_types(), fn t -> {trigger_label(t), to_string(t)} end)

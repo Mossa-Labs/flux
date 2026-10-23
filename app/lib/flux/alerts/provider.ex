@@ -31,7 +31,10 @@ defmodule Flux.Alerts.Provider do
         updated_at: DateTime.t()
       }
 
-  A `channel()` is `%{"type" => "email" | "webhook" | "slack", "config" => map()}`.
+  A `channel()` is
+  `%{"type" => "email" | "webhook" | "slack" | "pagerduty", "config" => map()}`.
+  A PagerDuty channel's config is `%{"routing_key" => key, "severity" => severity}`;
+  the routing key is the service's Events API v2 integration key.
   A `history_entry()` is
   `%{id: ..., trigger_type: ..., trigger_data: map(), channels_sent: map(), inserted_at: DateTime.t()}`.
   """
