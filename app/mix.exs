@@ -131,7 +131,7 @@ defmodule Flux.MixProject do
       {:bandit, "~> 1.5"},
       {:oban, "~> 2.17"},
       {:broadway, "~> 1.0"},
-      {:nx, "~> 0.9"},
+      {:nx, "~> 1.0"},
       # Columnar DataFrames + Parquet writer for the Parquet file sink (MOS-515)
       {:explorer, "~> 0.13.0"},
       {:luerl, "~> 1.2"},
