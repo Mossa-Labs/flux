@@ -1989,7 +1989,7 @@ defmodule FluxWeb.PipelineLive.Builder do
           <div class="form-control">
             <.field_label
               text="Client Key"
-              tooltip="PEM client private key (stored encrypted)"
+              tooltip="PEM client private key (masked when the config is read back)"
               required
             />
             <textarea
