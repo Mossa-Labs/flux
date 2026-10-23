@@ -147,4 +147,17 @@ defmodule Flux.License.Features do
       true -> nil
     end
   end
+
+  @doc """
+  The edition name an upgrade prompt should name for `feature`: `"Enterprise"`
+  for Enterprise-tier features, `"Pro"` otherwise (including the generic
+  `:pro_sink` / `:pro_source` placeholders, which aren't in the catalog).
+  """
+  @spec edition_for_feature(feature()) :: String.t()
+  def edition_for_feature(feature) when is_atom(feature) do
+    case tier_for_feature(feature) do
+      :enterprise -> "Enterprise"
+      _ -> "Pro"
+    end
+  end
 end

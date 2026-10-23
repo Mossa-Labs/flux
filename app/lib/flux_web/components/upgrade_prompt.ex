@@ -12,6 +12,7 @@ defmodule FluxWeb.Components.UpgradePrompt do
 
   use Phoenix.Component
 
+  alias Flux.License.Features
   alias FluxWeb.CoreComponents
 
   attr :feature, :atom,
@@ -35,14 +36,17 @@ defmodule FluxWeb.Components.UpgradePrompt do
         "so the \"Activate it\" link is hidden."
 
   def upgrade_prompt(%{size: :compact} = assigns) do
-    assigns = assign(assigns, :label, feature_label(assigns.feature))
+    assigns =
+      assigns
+      |> assign(:label, feature_label(assigns.feature))
+      |> assign(:edition, Features.edition_for_feature(assigns.feature))
 
     ~H"""
     <div class="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
       <CoreComponents.icon name="hero-sparkles" class="size-4 shrink-0" />
       <span>
         <span class="font-medium">{@label}</span>
-        requires Flux Pro.
+        requires Flux {@edition}.
         <.link href={@upgrade_url} class="font-semibold underline hover:no-underline">Upgrade</.link>
       </span>
     </div>
@@ -59,6 +63,7 @@ defmodule FluxWeb.Components.UpgradePrompt do
     assigns =
       assigns
       |> assign(:label, feature_label(assigns.feature))
+      |> assign(:edition, Features.edition_for_feature(assigns.feature))
       |> assign(:activation_supported, activation_supported)
 
     ~H"""
@@ -69,10 +74,10 @@ defmodule FluxWeb.Components.UpgradePrompt do
         </div>
         <div class="flex-1">
           <h3 class="text-base font-semibold text-amber-950">
-            {@label} is a Flux Pro feature
+            {@label} is a Flux {@edition} feature
           </h3>
           <p class="mt-1 text-sm text-amber-900/80">
-            Unlock {@label} and the rest of the Pro suite to scale your pipelines beyond the Community tier.
+            Unlock {@label} and the rest of the {@edition} suite to scale your pipelines beyond the Community tier.
           </p>
           <div class="mt-4 flex flex-wrap items-center gap-4">
             <.link

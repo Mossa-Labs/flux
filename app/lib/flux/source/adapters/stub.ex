@@ -1,9 +1,10 @@
 defmodule Flux.Source.Adapters.Stub do
   @moduledoc """
-  Placeholder source adapter registered against Pro-only source types in
+  Placeholder source adapter registered against Pro/Enterprise source types in
   Community builds. Config validation returns a structured
-  `{:error, {:pro_required, feature_atom}}`-style message so the UI can render
-  an upgrade prompt instead of crashing, and `ingestion_spec/2` starts nothing.
+  `{:error, {:pro_required, feature_atom}}`-style message (naming the edition
+  that entitles the type) so the UI can render an upgrade prompt instead of
+  crashing, and `ingestion_spec/2` starts nothing.
 
   EE builds replace the registration with the real adapter (e.g.
   `Flux.Source.Adapters.Kafka`) at boot.
@@ -28,7 +29,9 @@ defmodule Flux.Source.Adapters.Stub do
   @impl Flux.Source.Adapter
   def validate_config(config) do
     type = Map.get(config, "type", "unknown")
-    {:error, ["#{type} source requires Flux Pro — see #{Flux.Marketing.pricing_url()}"]}
+    edition = Flux.License.Features.edition_for_feature(feature_for_type(type))
+
+    {:error, ["#{type} source requires Flux #{edition} — see #{Flux.Marketing.pricing_url()}"]}
   end
 
   @impl Flux.Source.Adapter
