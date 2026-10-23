@@ -341,7 +341,7 @@ defmodule FluxWeb.PipelineLive.Show do
         "destination_queue" => assigns.snapshot.destination_queue,
         "sink_ids" => assigns.snapshot.sink_ids || [],
         "config" => assigns.snapshot.config,
-        "steps" => assigns.snapshot.steps
+        "steps" => Flux.Pipelines.StepSecrets.redact(assigns.snapshot.steps)
       }
       |> Jason.encode!(pretty: true)
 

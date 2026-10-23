@@ -812,7 +812,7 @@ defmodule FluxWeb.PipelineLive.Builder do
       <div class="form-control">
         <.field_label
           text="Secret Access Key"
-          tooltip="AWS secret access key (stored encrypted)"
+          tooltip="AWS secret access key (redacted from API reads and exports)"
           required
         />
         <input
@@ -1081,7 +1081,11 @@ defmodule FluxWeb.PipelineLive.Builder do
           />
         </div>
         <div class="form-control">
-          <.field_label text="Password" tooltip="Broker password (stored encrypted)" required />
+          <.field_label
+            text="Password"
+            tooltip="Broker password (redacted from API reads and exports)"
+            required
+          />
           <input
             type="password"
             name="sourceConfig[password]"
@@ -1104,7 +1108,11 @@ defmodule FluxWeb.PipelineLive.Builder do
           >{@config["sslCertfile"] || ""}</textarea>
         </div>
         <div class="form-control">
-          <.field_label text="Client Key" tooltip="PEM private key (mTLS, stored encrypted)" required />
+          <.field_label
+            text="Client Key"
+            tooltip="PEM private key for mTLS (redacted from API reads and exports)"
+            required
+          />
           <textarea
             name="sourceConfig[sslKeyfile]"
             rows="2"
@@ -1118,7 +1126,7 @@ defmodule FluxWeb.PipelineLive.Builder do
       <div :if={@config["authMode"] == "jwt"} class="form-control">
         <.field_label
           text="JWT"
-          tooltip="JSON Web Token presented to the broker (stored encrypted)"
+          tooltip="JSON Web Token presented to the broker (redacted from API reads and exports)"
           required
         />
         <textarea
@@ -1221,7 +1229,7 @@ defmodule FluxWeb.PipelineLive.Builder do
       <div :if={@config["authMode"] == "service_account"} class="form-control">
         <.field_label
           text="Credentials"
-          tooltip="Service-account JSON key (stored encrypted; masked on display)"
+          tooltip="Service-account JSON key (redacted from API reads and exports)"
         />
         <textarea
           name="sourceConfig[credentials]"
@@ -1413,7 +1421,11 @@ defmodule FluxWeb.PipelineLive.Builder do
           />
         </div>
         <div class="form-control">
-          <.field_label text="Password" tooltip="Broker password (stored encrypted)" required />
+          <.field_label
+            text="Password"
+            tooltip="Broker password (redacted from API reads and exports)"
+            required
+          />
           <input
             type="password"
             name="sourceConfig[password]"
@@ -1452,7 +1464,7 @@ defmodule FluxWeb.PipelineLive.Builder do
         <div class="form-control">
           <.field_label
             text="Client Key"
-            tooltip="PEM client private key (stored encrypted)"
+            tooltip="PEM client private key (redacted from API reads and exports)"
             required
           />
           <textarea
@@ -1989,7 +2001,7 @@ defmodule FluxWeb.PipelineLive.Builder do
           <div class="form-control">
             <.field_label
               text="Client Key"
-              tooltip="PEM client private key (masked when the config is read back)"
+              tooltip="PEM client private key (redacted from API reads and exports)"
               required
             />
             <textarea

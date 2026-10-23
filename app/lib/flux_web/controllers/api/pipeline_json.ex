@@ -36,7 +36,7 @@ defmodule FluxWeb.API.PipelineJSON do
       source_queue: p.source_queue,
       destination_queue: p.destination_queue,
       config: p.config,
-      steps: p.steps,
+      steps: Flux.Pipelines.StepSecrets.redact(p.steps),
       sink_ids: p.sink_ids || [],
       current_version: p.current_version,
       running_version: p.running_version,

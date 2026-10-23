@@ -31,6 +31,35 @@ defmodule FluxWeb.API.PipelineControllerTest do
     p
   end
 
+  # A builder-saved pipeline whose gRPC source node carries credentials.
+  defp pipeline_with_credentials(org_id) do
+    {:ok, p} =
+      Pipelines.create_pipeline(%{
+        "name" => "grpc-#{System.unique_integer([:positive])}",
+        "source_queue" => "grpc.orders",
+        "organization_id" => org_id,
+        "steps" => %{
+          "version" => "1.0",
+          "steps" => [],
+          "nodes" => [
+            %{
+              "id" => "source",
+              "type" => "source",
+              "sourceConfig" => %{
+                "type" => "grpc",
+                "mode" => "client",
+                "endpoint" => "telemetry.example.com:443",
+                "bearerToken" => "s3cret-token",
+                "clientKey" => "-----BEGIN PRIVATE KEY----- s3cret-token"
+              }
+            }
+          ]
+        }
+      })
+
+    p
+  end
+
   setup %{conn: conn} do
     o = org()
     other = org("Other")
@@ -71,6 +100,19 @@ defmodule FluxWeb.API.PipelineControllerTest do
 
       assert body["data"]["id"] == p.id
       assert body["data"]["steps"] == %{"version" => "1.0", "steps" => []}
+    end
+
+    test "masks source credentials from the builder's source node", %{conn: conn, org: o} do
+      p = pipeline_with_credentials(o.id)
+
+      body =
+        conn |> auth(key(o.id, "viewer")) |> get(~p"/api/pipelines/#{p.id}") |> json_response(200)
+
+      [%{"sourceConfig" => config}] = body["data"]["steps"]["nodes"]
+      assert config["bearerToken"] == "[REDACTED]"
+      assert config["clientKey"] == "[REDACTED]"
+      assert config["endpoint"] == "telemetry.example.com:443"
+      refute Jason.encode!(body) =~ "s3cret-token"
     end
 
     test "404 for another org's pipeline", %{conn: conn, org: o, other: other} do
@@ -162,6 +204,22 @@ defmodule FluxWeb.API.PipelineControllerTest do
       refute Map.has_key?(body["pipeline"], "sink_ids")
       assert [disposition] = get_resp_header(resp, "content-disposition")
       assert disposition =~ "exportable.flux.json"
+    end
+
+    test "drops source credentials from the envelope", %{conn: conn, org: o} do
+      p = pipeline_with_credentials(o.id)
+
+      body =
+        conn
+        |> auth(key(o.id, "viewer"))
+        |> get(~p"/api/pipelines/#{p.id}/export")
+        |> json_response(200)
+
+      [%{"sourceConfig" => config}] = body["pipeline"]["steps"]["nodes"]
+      refute Map.has_key?(config, "bearerToken")
+      refute Map.has_key?(config, "clientKey")
+      assert config["endpoint"] == "telemetry.example.com:443"
+      refute Jason.encode!(body) =~ "s3cret-token"
     end
 
     test "404 for another org's pipeline", %{conn: conn, org: o, other: other} do
