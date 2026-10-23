@@ -24,7 +24,8 @@ defmodule Flux.Alerts do
     :volume_anomaly,
     :schema_drift
   ]
-  @channel_types [:email, :webhook, :slack]
+  # :pagerduty is additionally gated on the Enterprise :pagerduty_sink feature.
+  @channel_types [:email, :webhook, :slack, :pagerduty]
 
   @doc "Trigger types an alert rule can use."
   @spec trigger_types() :: [atom()]

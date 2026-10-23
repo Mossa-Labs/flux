@@ -21,7 +21,7 @@ defmodule Flux.AlertsTest do
                :schema_drift
              ]
 
-      assert Alerts.channel_types() == [:email, :webhook, :slack]
+      assert Alerts.channel_types() == [:email, :webhook, :slack, :pagerduty]
     end
   end
 
