@@ -87,6 +87,11 @@ defmodule Flux.SourceTest do
                })
     end
 
+    test "the gRPC stub still names the source's grpc.<channel> queue" do
+      assert Source.queue_name("grpc", %{"type" => "grpc", "channel" => "orders"}) ==
+               "grpc.orders"
+    end
+
     test "the Enterprise gRPC stub starts nothing in Community" do
       assert nil == Source.ingestion_spec("grpc", %{"type" => "grpc", "mode" => "client"})
     end

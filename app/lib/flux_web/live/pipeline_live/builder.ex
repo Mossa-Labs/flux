@@ -3353,6 +3353,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   # name their upstream ingestion publishes to (`webhooks.<source>` /
   # `polling.<source_id>`, see `Flux.Source.queue_name/2`) so the pipeline
   # consumes real data instead of falling back to the shared "default" queue.
+  # gRPC sources publish to `grpc.<channel>` (see `Flux.Source.GRPC`).
   #
   # NOTE: this only wires the *consumer* side. To actually receive data the
   # upstream endpoint/poller must still be provisioned by creating a matching DB
@@ -3377,6 +3378,14 @@ defmodule FluxWeb.PipelineLive.Builder do
         else
           _ -> nil
         end
+
+      "grpc" ->
+        Flux.Source.queue_name("grpc", %{
+          "type" => "grpc",
+          "mode" => config["mode"],
+          "channel" => config["channel"],
+          "method" => config["method"]
+        })
 
       _ ->
         nil
