@@ -5,7 +5,8 @@ defmodule Flux.Pipelines.PortableConfig do
   The export envelope references sinks by **name**, never by id, and never
   includes sink `config` — so a config is portable across environments and
   carries no secrets (tokens/passwords live only in the sink config, which is
-  excluded). Import resolves the names back to sink ids within the target
+  excluded, and source credentials in the builder's source nodes are dropped;
+  see `Flux.Pipelines.StepSecrets`). Import resolves the names back to sink ids within the target
   organization, validates the steps IR, and always creates a **stopped**
   pipeline.
 
@@ -49,7 +50,8 @@ defmodule Flux.Pipelines.PortableConfig do
         "description" => pipeline.description,
         "source_queue" => pipeline.source_queue,
         "destination_queue" => pipeline.destination_queue,
-        "steps" => pipeline.steps,
+        # Source credentials never travel in an export (see StepSecrets).
+        "steps" => Flux.Pipelines.StepSecrets.strip(pipeline.steps),
         "config" => pipeline.config,
         "sink_names" => sink_names_for(pipeline)
       }
