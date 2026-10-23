@@ -47,7 +47,11 @@ jobs:
           docker build -f app/Dockerfile.release -t flux-audit:scan app/
           docker save flux-audit:scan -o flux-image.tar
 
+      # osv-scanner exits 1 when it finds vulnerabilities, which is expected
+      # here, so the step may fail. Whether a report was actually produced is
+      # checked in the next step.
       - name: Scan release image
+        id: scan
         continue-on-error: true
         uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
         with:
@@ -58,7 +62,23 @@ jobs:
             --output-file=osv-image.md
             flux-image.tar
 
+      # Findings stay report-only, but a run that produced no report did not
+      # check the image, so it must not look green: fail with an annotation.
       - name: Publish report
         if: always()
+        env:
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
         run: |
-          if [ -f osv-image.md ]; then cat osv-image.md >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ ! -s osv-image.md ]; then
+            echo "::error title=Image not scanned::osv-scanner produced no report (scan step: ${SCAN_OUTCOME:-did not run}). The release image was not checked."
+            {
+              echo "## Release image scan: no report"
+              echo
+              echo "osv-scanner produced no report (scan step: ${SCAN_OUTCOME:-did not run}), so the image was **not** checked. See the step logs."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [ "$SCAN_OUTCOME" = "failure" ]; then
+            echo "::warning title=Image findings::OS-package vulnerabilities reported; see the job summary (report-only)."
+          fi
+          cat osv-image.md >> "$GITHUB_STEP_SUMMARY"
