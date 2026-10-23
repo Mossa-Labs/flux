@@ -14,7 +14,8 @@ export interface SourceConfig {
     | 'pubsub'
     | 'rabbitmq_external'
     | 'mqtt'
-    | 'sftp';
+    | 'sftp'
+    | 'grpc';
   // Queue source
   queue?: string;
   prefetchCount?: number;
@@ -71,6 +72,25 @@ export interface SourceConfig {
   afterProcessing?: 'leave' | 'move' | 'delete';
   archivePath?: string;
   requireCompleteMarker?: boolean;
+  // TLS material shared by RabbitMQ (External) and gRPC client mode (PEM)
+  caCert?: string;
+  clientCert?: string;
+  clientKey?: string;
+  // gRPC source (Enterprise). `authMode` is mtls | bearer | mtls_bearer in server mode.
+  mode?: 'server' | 'client';
+  bearerToken?: string;
+  allowedClientSubjects?: string;
+  maxMessageBytes?: number;
+  endpoint?: string;
+  method?: string;
+  rpcType?: 'server_streaming' | 'bidi';
+  request?: string;
+  schemaSource?: 'reflection' | 'descriptor';
+  descriptorSet?: string;
+  transportSecurity?: 'tls' | 'mtls' | 'none';
+  metadata?: string;
+  deadlineMs?: number;
+  idleTimeoutMs?: number;
 }
 
 // IR node definition (source and sink nodes stored in IR)
