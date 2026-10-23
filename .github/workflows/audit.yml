@@ -49,13 +49,15 @@ jobs:
 
       # osv-scanner exits 1 when it finds vulnerabilities, which is expected
       # here, so the step may fail. Whether a report was actually produced is
-      # checked in the next step.
+      # checked in the next step. `image` is a subcommand of `scan`: on its own,
+      # osv-scanner reads it as a path for `scan source` and rejects --archive.
       - name: Scan release image
         id: scan
         continue-on-error: true
         uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         with:
           scan-args: |-
+            scan
             image
             --archive
             --format=markdown
