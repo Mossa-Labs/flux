@@ -177,6 +177,7 @@ defmodule FluxWeb.PipelineLive.Builder do
         "gcs" -> "hero-cloud"
         "postgres" -> "hero-circle-stack"
         "email" -> "hero-envelope"
+        "pagerduty" -> "hero-bell-alert"
         _ -> "hero-server-stack"
       end
 
@@ -2158,6 +2159,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   defp sink_icon("postgres"), do: "hero-circle-stack"
   defp sink_icon("parquet"), do: "hero-document-chart-bar"
   defp sink_icon("email"), do: "hero-envelope"
+  defp sink_icon("pagerduty"), do: "hero-bell-alert"
   defp sink_icon(_), do: "hero-queue-list"
 
   defp default_sink_label("queue"), do: "Queue Output"

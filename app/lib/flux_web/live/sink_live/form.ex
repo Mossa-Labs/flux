@@ -8,7 +8,9 @@ defmodule FluxWeb.SinkLive.Form do
   alias Flux.Sinks.Sink
 
   # Sink types gated behind a Pro/EE license, mapped to their entitlement feature.
-  @pro_sink_features %{
+  # The feature's tier decides which picker group (Flux Pro / Flux Enterprise)
+  # the type is listed under.
+  @gated_sink_features %{
     "s3" => :s3_sink,
     "bigquery" => :bigquery_sink,
     "kafka" => :kafka_sink,
@@ -17,8 +19,12 @@ defmodule FluxWeb.SinkLive.Form do
     "mongodb" => :mongodb_sink,
     "slack" => :slack_sink,
     "dynamodb" => :dynamodb_sink,
-    "gcs" => :gcs_sink
+    "gcs" => :gcs_sink,
+    "pagerduty" => :pagerduty_sink
   }
+
+  # Gated picker groups, in display order.
+  @editions ["Pro", "Enterprise"]
 
   # Picker tiles in display order: Community destinations, then the Pro/EE ones.
   @sink_type_options [
@@ -55,6 +61,12 @@ defmodule FluxWeb.SinkLive.Form do
       icon: "hero-square-3-stack-3d",
       label: "DynamoDB",
       sublabel: "NoSQL key-value"
+    },
+    %{
+      type: "pagerduty",
+      icon: "hero-bell-alert",
+      label: "PagerDuty",
+      sublabel: "Incidents"
     }
   ]
 
@@ -257,13 +269,23 @@ defmodule FluxWeb.SinkLive.Form do
   attr :selected_type, :string, default: nil
 
   defp type_picker(assigns) do
-    pro = Enum.filter(@sink_type_options, &Map.has_key?(@pro_sink_features, &1.type))
+    gated = Enum.filter(@sink_type_options, &Map.has_key?(@gated_sink_features, &1.type))
+
+    groups =
+      for edition <- @editions,
+          options = Enum.filter(gated, &(edition(&1.type) == edition)),
+          options != [] do
+        %{edition: edition, options: options, locked?: Enum.any?(options, &pro_locked?(&1.type))}
+      end
+
+    # Only the first locked group links to the pricing page, so the link (and
+    # its id) appears once however many editions are locked.
+    first_locked = Enum.find(groups, & &1.locked?)
 
     assigns =
       assign(assigns,
-        community: @sink_type_options -- pro,
-        pro: pro,
-        any_locked?: Enum.any?(pro, &pro_locked?(&1.type))
+        community: @sink_type_options -- gated,
+        groups: Enum.map(groups, &Map.put(&1, :compare?, &1 == first_locked))
       )
 
     ~H"""
@@ -284,18 +306,25 @@ defmodule FluxWeb.SinkLive.Form do
         </div>
       </div>
 
-      <div role="group" aria-labelledby="sink-types-pro" class="mt-6">
+      <div
+        :for={group <- @groups}
+        role="group"
+        aria-labelledby={"sink-types-#{String.downcase(group.edition)}"}
+        class="mt-6"
+      >
         <h3
-          id="sink-types-pro"
+          id={"sink-types-#{String.downcase(group.edition)}"}
           class="mb-2.5 flex items-center gap-2 text-sm font-semibold text-base-content/90"
         >
-          <.icon :if={@any_locked?} name="hero-lock-closed" class="size-3.5" /> Flux Pro
+          <.icon :if={group.locked?} name="hero-lock-closed" class="size-3.5" /> Flux {group.edition}
           <span class="hidden font-normal text-ink-subtle sm:inline">
-            {if @any_locked?, do: "· requires a Flux Pro license", else: "· included in your license"}
+            {if group.locked?,
+              do: "· requires a Flux #{group.edition} license",
+              else: "· included in your license"}
           </span>
           <%!-- New tab, so a half-filled form isn't lost. --%>
           <.link
-            :if={@any_locked?}
+            :if={group.compare?}
             id="sink-compare-plans"
             href={Flux.Marketing.pricing_url()}
             target="_blank"
@@ -308,7 +337,7 @@ defmodule FluxWeb.SinkLive.Form do
         </h3>
         <div class="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] sm:gap-3">
           <.sink_type_option
-            :for={option <- @pro}
+            :for={option <- group.options}
             option={option}
             selected={@selected_type == option.type}
             locked={pro_locked?(option.type)}
@@ -352,8 +381,10 @@ defmodule FluxWeb.SinkLive.Form do
         class="col-start-3 row-start-1 inline-flex items-center gap-1 text-ink-subtle sm:row-span-2 sm:rounded-full sm:border sm:border-hairline-strong sm:px-2 sm:py-0.5 sm:text-[11px] sm:font-semibold sm:tracking-wide sm:text-base-content/80"
       >
         <.icon name="hero-lock-closed" class="size-3.5 sm:size-3" />
-        <span class="hidden sm:inline" aria-hidden="true">PRO</span>
-        <span class="sr-only">Requires Flux Pro</span>
+        <span class="hidden sm:inline" aria-hidden="true">
+          {@option.type |> edition() |> String.upcase()}
+        </span>
+        <span class="sr-only">Requires Flux {edition(@option.type)}</span>
       </span>
       <%!-- Pinned to row 2, under the name. On phones it may run under the lock
            too. Start/end, not col-span, which would reset the start column. --%>
@@ -372,7 +403,10 @@ defmodule FluxWeb.SinkLive.Form do
       assign(assigns,
         option: type_option(assigns.type),
         tier:
-          if(Map.has_key?(@pro_sink_features, assigns.type), do: "Flux Pro", else: "Community")
+          if(Map.has_key?(@gated_sink_features, assigns.type),
+            do: "Flux #{edition(assigns.type)}",
+            else: "Community"
+          )
       )
 
     ~H"""
@@ -405,7 +439,7 @@ defmodule FluxWeb.SinkLive.Form do
 
   # Replaces the connection settings when the chosen type isn't licensed.
   defp pro_required(assigns) do
-    community = Enum.reject(@sink_type_options, &Map.has_key?(@pro_sink_features, &1.type))
+    community = Enum.reject(@sink_type_options, &Map.has_key?(@gated_sink_features, &1.type))
 
     assigns =
       assign(assigns,
@@ -428,7 +462,7 @@ defmodule FluxWeb.SinkLive.Form do
             tabindex="-1"
             class="text-lg font-semibold tracking-tight text-base-content focus:outline-none"
           >
-            {pro_label(@type)} are part of Flux Pro
+            {pro_label(@type)} are part of Flux {edition(@type)}
           </h2>
           <p class="mt-2 max-w-prose text-sm leading-relaxed text-base-content/80">
             Community destinations — {@community_labels} — are always included. Upgrade to send pipeline output here too.
@@ -1540,6 +1574,133 @@ defmodule FluxWeb.SinkLive.Form do
   end
 
   # Rendered only on a licensed build (Community shows the upgrade prompt instead).
+  defp type_config_fields(%{type: "pagerduty"} = assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <.input
+        field={@form[:config_routing_key]}
+        type="password"
+        label="Integration Key"
+        placeholder="32-character Events API v2 integration key"
+        required
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        From a PagerDuty service's <em>Events API v2</em>
+        integration (Service → Integrations). It is write-only here and left blank when editing.
+      </p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <.input
+          field={@form[:config_region]}
+          type="select"
+          label="Service Region"
+          options={[{"US (events.pagerduty.com)", "us"}, {"EU (events.eu.pagerduty.com)", "eu"}]}
+        />
+        <.input
+          field={@form[:config_event_action]}
+          type="select"
+          label="Event Action"
+          options={[{"Trigger", "trigger"}, {"Acknowledge", "acknowledge"}, {"Resolve", "resolve"}]}
+        />
+      </div>
+      <.input
+        field={@form[:config_action_field]}
+        type="text"
+        label="Action Field (optional)"
+        placeholder="status"
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        A record field (dot-paths supported) holding <code>trigger</code>, <code>acknowledge</code>
+        or <code>resolve</code>. When set, it overrides the event action per record, so one sink
+        can open and close incidents.
+      </p>
+      <.input
+        field={@form[:config_dedup_key_template]}
+        type="text"
+        label="Dedup Key Template"
+        placeholder="{pipeline_id}-{anomaly_type}"
+        required={
+          cfg(@form, "config_event_action") in ["acknowledge", "resolve"] or
+            cfg(@form, "config_action_field") not in [nil, ""]
+        }
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Events with the same key update one incident instead of opening duplicates; acknowledge and
+        resolve need it to find the incident. Interpolates
+        <code phx-no-curly-interpolation>{field}</code>
+        placeholders from the record, plus <code phx-no-curly-interpolation>{pipeline_id}</code>
+        and <code phx-no-curly-interpolation>{sink_id}</code>.
+      </p>
+      <.input
+        field={@form[:config_summary_template]}
+        type="text"
+        label="Summary Template (optional)"
+        placeholder="Anomaly in {metric} on pipeline {pipeline_id}"
+      />
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <.input
+          field={@form[:config_severity]}
+          type="select"
+          label="Default Severity"
+          options={[
+            {"Critical", "critical"},
+            {"Error", "error"},
+            {"Warning", "warning"},
+            {"Info", "info"}
+          ]}
+        />
+        <.input
+          field={@form[:config_severity_field]}
+          type="text"
+          label="Severity Field (optional)"
+          placeholder="severity"
+        />
+      </div>
+      <p class="text-xs text-base-content/60 -mt-2">
+        The severity field's value is mapped to a PagerDuty severity (e.g. <code>warn</code>
+        → warning, <code>fatal</code>
+        → critical); unrecognised or missing values use the default severity.
+      </p>
+      <.input
+        field={@form[:config_severity_map]}
+        type="textarea"
+        label="Severity Mapping (optional JSON)"
+        placeholder={~s({"sev1": "critical", "sev2": "error", "sev3": "warning"})}
+      />
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <.input
+          field={@form[:config_source]}
+          type="text"
+          label="Source (optional)"
+          placeholder="flux"
+        />
+        <.input
+          field={@form[:config_component]}
+          type="text"
+          label="Component (optional)"
+          placeholder="{service}"
+        />
+        <.input
+          field={@form[:config_group]}
+          type="text"
+          label="Group (optional)"
+          placeholder="{region}"
+        />
+      </div>
+      <.input
+        field={@form[:config_custom_details_template]}
+        type="textarea"
+        label="Custom Details (optional JSON)"
+        placeholder={~s({"metric": "{metric}", "value": "{value}"})}
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        A JSON object shown on the incident, with <code phx-no-curly-interpolation>{field}</code>
+        interpolation. Leave blank to attach the whole record.
+      </p>
+    </div>
+    """
+  end
+
+  # Rendered only on a licensed build (Community shows the upgrade prompt instead).
   defp type_config_fields(%{type: "dynamodb"} = assigns) do
     ~H"""
     <div class="space-y-4">
@@ -2140,6 +2301,23 @@ defmodule FluxWeb.SinkLive.Form do
     |> put_field("config_blocks_template", config["blocks_template"])
   end
 
+  defp config_form_params("pagerduty", config) do
+    # routing_key is secret — left blank on edit.
+    %{}
+    |> put_field("config_region", config["region"])
+    |> put_field("config_event_action", config["event_action"])
+    |> put_field("config_action_field", config["action_field"])
+    |> put_field("config_dedup_key_template", config["dedup_key_template"])
+    |> put_field("config_summary_template", config["summary_template"])
+    |> put_field("config_severity", config["severity"])
+    |> put_field("config_severity_field", config["severity_field"])
+    |> put_field("config_severity_map", config["severity_map"])
+    |> put_field("config_source", config["source"])
+    |> put_field("config_component", config["component"])
+    |> put_field("config_group", config["group"])
+    |> put_field("config_custom_details_template", config["custom_details_template"])
+  end
+
   defp config_form_params("dynamodb", config) do
     # secret_access_key and session_token are secret — left blank on edit.
     %{}
@@ -2419,6 +2597,25 @@ defmodule FluxWeb.SinkLive.Form do
     |> Map.put("ttl_seconds", parse_int(params["config_ttl_seconds"]))
   end
 
+  # Optional settings are clearable (a blank field removes the stored value);
+  # the integration key keeps "blank means unchanged" — see carried_config/3.
+  defp build_config(params, "pagerduty") do
+    %{}
+    |> maybe_put("routing_key", trim(params["config_routing_key"]))
+    |> maybe_put("region", params["config_region"])
+    |> maybe_put("event_action", params["config_event_action"])
+    |> put_clearable("action_field", params["config_action_field"])
+    |> put_clearable("dedup_key_template", params["config_dedup_key_template"])
+    |> put_clearable("summary_template", params["config_summary_template"])
+    |> maybe_put("severity", params["config_severity"])
+    |> put_clearable("severity_field", params["config_severity_field"])
+    |> put_clearable("severity_map", params["config_severity_map"])
+    |> put_clearable("source", params["config_source"])
+    |> put_clearable("component", params["config_component"])
+    |> put_clearable("group", params["config_group"])
+    |> put_clearable("custom_details_template", params["config_custom_details_template"])
+  end
+
   defp build_config(_params, _type), do: %{}
 
   # A new token wins; otherwise the "remove" checkbox clears the stored one (nil
@@ -2527,10 +2724,17 @@ defmodule FluxWeb.SinkLive.Form do
   defp cfg(form, key), do: form.params[key]
 
   defp pro_locked?(type) do
-    case Map.fetch(@pro_sink_features, type) do
+    case Map.fetch(@gated_sink_features, type) do
       {:ok, feature} -> not Flux.License.entitled?(feature)
       :error -> false
     end
+  end
+
+  # The edition ("Pro" / "Enterprise") whose license entitles a gated sink type.
+  defp edition(type) do
+    @gated_sink_features
+    |> Map.get(type, :pro_sink)
+    |> Flux.License.Features.edition_for_feature()
   end
 
   defp type_option(type), do: Enum.find(@sink_type_options, &(&1.type == type))
@@ -2540,7 +2744,7 @@ defmodule FluxWeb.SinkLive.Form do
 
   defp submit_hint(type) do
     if pro_locked?(type),
-      do: "#{pro_label(type)} need Flux Pro, so this sink can't be created yet"
+      do: "#{pro_label(type)} need Flux #{edition(type)}, so this sink can't be created yet"
   end
 
   defp to_sentence([only]), do: only
@@ -2559,5 +2763,6 @@ defmodule FluxWeb.SinkLive.Form do
   defp pro_label("slack"), do: "Slack sinks"
   defp pro_label("dynamodb"), do: "DynamoDB sinks"
   defp pro_label("gcs"), do: "Google Cloud Storage sinks"
+  defp pro_label("pagerduty"), do: "PagerDuty sinks"
   defp pro_label(type), do: "#{type} sinks"
 end
