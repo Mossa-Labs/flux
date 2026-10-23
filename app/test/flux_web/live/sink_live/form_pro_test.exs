@@ -216,6 +216,22 @@ defmodule FluxWeb.SinkLive.FormProTest do
       assert has_element?(lv, "#sink-destination", "Destination · Flux Enterprise")
     end
 
+    test "a new sink's default severity starts at error, not the first option", %{conn: conn} do
+      put_license_tier(:enterprise)
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "pagerduty"})
+
+      assert has_element?(
+               lv,
+               ~s(select[name="sink[config_severity]"] option[value="error"][selected])
+             )
+
+      refute has_element?(
+               lv,
+               ~s(select[name="sink[config_severity]"] option[value="critical"][selected])
+             )
+    end
+
     test "the dedup key is required once an event can acknowledge or resolve", %{conn: conn} do
       put_license_tier(:enterprise)
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
@@ -279,6 +295,22 @@ defmodule FluxWeb.SinkLive.FormProTest do
       # Optional settings are clearable.
       refute Map.has_key?(config, "severity_field")
       assert config["dedup_key_template"] == "{pipeline_id}-{anomaly_type}"
+    end
+
+    test "an untouched edit of a sink with no stored severity saves error",
+         %{conn: conn, scope: scope} do
+      sink =
+        sink_fixture(scope.organization_id, %{
+          type: "pagerduty",
+          config: %{"routing_key" => "R0STOREDKEY0000000000000000000000"}
+        })
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      # Submit the form as rendered: the select's own value is what gets saved.
+      lv |> form("form") |> render_submit()
+
+      assert Flux.Sinks.get_sink(sink.id, scope.organization_id).config["severity"] == "error"
     end
   end
 
