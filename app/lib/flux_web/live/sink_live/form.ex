@@ -1637,10 +1637,13 @@ defmodule FluxWeb.SinkLive.Form do
         placeholder="Anomaly in {metric} on pipeline {pipeline_id}"
       />
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <%!-- No stored severity selects "error" (the adapter's default), not the
+             first option, so an untouched form doesn't save "critical". --%>
         <.input
           field={@form[:config_severity]}
           type="select"
           label="Default Severity"
+          value={cfg(@form, "config_severity") || "error"}
           options={[
             {"Critical", "critical"},
             {"Error", "error"},
