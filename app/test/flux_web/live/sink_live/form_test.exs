@@ -291,6 +291,29 @@ defmodule FluxWeb.SinkLive.FormTest do
       refute has_element?(lv, "#sink-details")
     end
 
+    test "lists Enterprise destinations in their own locked group", %{conn: conn} do
+      {:ok, lv, html} = live(conn, ~p"/sinks/new")
+
+      assert has_element?(lv, "#sink-types-enterprise + div #sink-type-pagerduty")
+      refute has_element?(lv, "#sink-types-pro + div #sink-type-pagerduty")
+      assert has_element?(lv, "#sink-types-enterprise", "requires a Flux Enterprise license")
+      assert has_element?(lv, "#sink-type-pagerduty", "Requires Flux Enterprise")
+      # One pricing link, however many editions are locked.
+      assert [_] = Regex.scan(~r/id="sink-compare-plans"/, html)
+      assert has_element?(lv, "#sink-types-pro #sink-compare-plans")
+    end
+
+    test "a locked Enterprise type names Flux Enterprise, not Pro", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "pagerduty"})
+
+      assert has_element?(lv, "#sink-pro-required", "PagerDuty sinks are part of Flux Enterprise")
+      assert has_element?(lv, "#sink-submit-hint", "PagerDuty sinks need Flux Enterprise")
+      assert has_element?(lv, "#sink-destination", "Destination · Flux Enterprise")
+      refute html =~ "Integration Key"
+    end
+
     test "pricing links open in a new tab so the form isn't lost", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
 

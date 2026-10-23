@@ -181,6 +181,107 @@ defmodule FluxWeb.SinkLive.FormProTest do
     end
   end
 
+  describe "Enterprise-gated sink types" do
+    test "stay locked under a Pro license", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      assert has_element?(lv, "#sink-types-pro", "included in your license")
+      assert has_element?(lv, "#sink-types-enterprise", "requires a Flux Enterprise license")
+      # Pro is fully licensed, so the pricing link moves to the Enterprise group.
+      assert has_element?(lv, "#sink-types-enterprise #sink-compare-plans")
+      refute has_element?(lv, "#sink-type-s3", "Requires Flux Pro")
+
+      html = render_click(lv, "select_type", %{"type" => "pagerduty"})
+
+      assert has_element?(lv, "#sink-pro-required", "PagerDuty sinks are part of Flux Enterprise")
+      refute html =~ "Integration Key"
+    end
+
+    test "selecting PagerDuty under an Enterprise license renders its config fields",
+         %{conn: conn} do
+      put_license_tier(:enterprise)
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      refute has_element?(lv, "#sink-compare-plans")
+      assert has_element?(lv, "#sink-types-enterprise", "included in your license")
+
+      html = render_click(lv, "select_type", %{"type" => "pagerduty"})
+
+      assert html =~ "Integration Key"
+      assert html =~ "Event Action"
+      assert html =~ "Dedup Key Template"
+      assert html =~ "Severity Mapping"
+      assert html =~ "Custom Details"
+      refute has_element?(lv, "#sink-pro-required")
+      assert has_element?(lv, "#sink-destination", "Destination · Flux Enterprise")
+    end
+
+    test "the dedup key is required once an event can acknowledge or resolve", %{conn: conn} do
+      put_license_tier(:enterprise)
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      html = render_click(lv, "select_type", %{"type" => "pagerduty"})
+
+      assert html =~ ~s(Integration Key<span class="text-error)
+      refute html =~ ~s(Dedup Key Template<span class="text-error)
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_event_action" => "resolve"}})
+        |> render_change()
+
+      assert html =~ ~s(Dedup Key Template<span class="text-error)
+
+      html =
+        lv
+        |> form("form", %{
+          "sink" => %{"config_event_action" => "trigger", "config_action_field" => "status"}
+        })
+        |> render_change()
+
+      assert html =~ ~s(Dedup Key Template<span class="text-error)
+    end
+  end
+
+  describe "editing a PagerDuty sink" do
+    # The public build backs "pagerduty" with the Enterprise stub, which rejects
+    # every save; a permissive adapter stands in for the licensed one.
+    setup do
+      put_license_tier(:enterprise)
+      Flux.Sink.Registry.register("pagerduty", Flux.Test.PermissiveSinkAdapter)
+      on_exit(fn -> Flux.Sink.Registry.register("pagerduty", Flux.Sink.Adapters.Stub) end)
+      :ok
+    end
+
+    test "never pre-fills the integration key; a blank key keeps the stored one",
+         %{conn: conn, scope: scope} do
+      sink =
+        sink_fixture(scope.organization_id, %{
+          type: "pagerduty",
+          config: %{
+            "routing_key" => "R0STOREDKEY0000000000000000000000",
+            "event_action" => "trigger",
+            "dedup_key_template" => "{pipeline_id}-{anomaly_type}",
+            "severity_field" => "level"
+          }
+        })
+
+      {:ok, lv, html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      refute html =~ "R0STOREDKEY"
+      assert html =~ "{pipeline_id}-{anomaly_type}"
+
+      lv
+      |> form("form", %{"sink" => %{"config_routing_key" => "", "config_severity_field" => ""}})
+      |> render_submit()
+
+      config = Flux.Sinks.get_sink(sink.id, scope.organization_id).config
+      assert config["routing_key"] == "R0STOREDKEY0000000000000000000000"
+      # Optional settings are clearable.
+      refute Map.has_key?(config, "severity_field")
+      assert config["dedup_key_template"] == "{pipeline_id}-{anomaly_type}"
+    end
+  end
+
   describe "required-field markers" do
     test "always-required fields carry a * and optional fields do not", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
