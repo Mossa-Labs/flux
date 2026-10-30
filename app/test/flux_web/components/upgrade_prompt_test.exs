@@ -100,6 +100,12 @@ defmodule FluxWeb.Components.UpgradePromptTest do
     assert html =~ "Flux Pro"
   end
 
+  test "renders the Apache Cassandra sink label" do
+    html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :cassandra_sink)
+    assert html =~ "Apache Cassandra sink"
+    assert html =~ "Flux Pro"
+  end
+
   test "renders the PagerDuty label and names Flux Enterprise" do
     html = render_component(&UpgradePrompt.upgrade_prompt/1, feature: :pagerduty_sink)
     assert html =~ "PagerDuty integration"

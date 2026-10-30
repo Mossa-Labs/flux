@@ -20,6 +20,7 @@ defmodule FluxWeb.SinkLive.Form do
     "slack" => :slack_sink,
     "dynamodb" => :dynamodb_sink,
     "gcs" => :gcs_sink,
+    "cassandra" => :cassandra_sink,
     "pagerduty" => :pagerduty_sink
   }
 
@@ -61,6 +62,12 @@ defmodule FluxWeb.SinkLive.Form do
       icon: "hero-square-3-stack-3d",
       label: "DynamoDB",
       sublabel: "NoSQL key-value"
+    },
+    %{
+      type: "cassandra",
+      icon: "hero-view-columns",
+      label: "Cassandra",
+      sublabel: "Wide-column store"
     },
     %{
       type: "pagerduty",
@@ -1840,6 +1847,201 @@ defmodule FluxWeb.SinkLive.Form do
     """
   end
 
+  # Rendered only on a licensed build (Community shows the upgrade prompt instead).
+  defp type_config_fields(%{type: "cassandra"} = assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="sm:col-span-2">
+          <.input
+            field={@form[:config_contact_points]}
+            type="text"
+            label="Contact Points"
+            placeholder="cassandra-1.internal, cassandra-2.internal"
+            required
+          />
+        </div>
+        <.input field={@form[:config_port]} type="number" label="Port" placeholder="9042" />
+      </div>
+      <p class="text-xs text-base-content/60 -mt-2">
+        Comma-separated hosts used to discover the cluster. A host may carry its own <code>:port</code>. Works with Apache Cassandra, ScyllaDB and Amazon Keyspaces.
+      </p>
+      <.input
+        field={@form[:config_local_datacenter]}
+        type="text"
+        label="Local Datacenter (optional)"
+        placeholder="datacenter1"
+      />
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <.input
+          field={@form[:config_keyspace]}
+          type="text"
+          label="Keyspace"
+          placeholder="telemetry"
+          required
+        />
+        <.input
+          field={@form[:config_table]}
+          type="text"
+          label="Table"
+          placeholder="readings"
+          required
+        />
+      </div>
+      <p class="text-xs text-base-content/60 -mt-2">
+        Record fields are written to the table's columns of the same name. Every record must
+        carry the partition and clustering key columns.
+      </p>
+      <.input
+        field={@form[:config_consistency]}
+        type="select"
+        label="Write Consistency"
+        options={[
+          {"LOCAL_QUORUM (recommended)", "local_quorum"},
+          {"LOCAL_ONE", "local_one"},
+          {"ONE", "one"},
+          {"QUORUM", "quorum"},
+          {"ALL", "all"}
+        ]}
+      />
+      <.input
+        field={@form[:config_auth_mode]}
+        type="select"
+        label="Auth Mode"
+        options={[
+          {"None", "none"},
+          {"Username + password", "password"},
+          {"AWS SigV4 (Amazon Keyspaces)", "sigv4"}
+        ]}
+      />
+      <div :if={cfg(@form, "config_auth_mode") == "password"} class="space-y-4">
+        <.input
+          field={@form[:config_username]}
+          type="text"
+          label="Username"
+          required
+        />
+        <.input
+          field={@form[:config_password]}
+          type="password"
+          label="Password"
+          required
+        />
+        <p class="text-xs text-base-content/60 -mt-2">
+          Also used for LDAP-backed clusters and Keyspaces service-specific credentials. Leave
+          the password blank to keep the stored one.
+        </p>
+      </div>
+      <div :if={cfg(@form, "config_auth_mode") == "sigv4"} class="space-y-4">
+        <.input
+          field={@form[:config_region]}
+          type="text"
+          label="Region"
+          placeholder="us-east-1"
+          required
+        />
+        <.input
+          field={@form[:config_aws_auth_mode]}
+          type="select"
+          label="AWS Credentials"
+          options={[
+            {"IAM role (ambient credentials)", "iam_role"},
+            {"Static access key", "static"},
+            {"Assume role (cross-account)", "assume_role"}
+          ]}
+        />
+        <div :if={cfg(@form, "config_aws_auth_mode") == "static"} class="space-y-4">
+          <.input
+            field={@form[:config_access_key_id]}
+            type="text"
+            label="Access Key ID"
+            placeholder="AKIA…"
+            required
+          />
+          <.input
+            field={@form[:config_secret_access_key]}
+            type="password"
+            label="Secret Access Key"
+            required
+          />
+          <.input
+            field={@form[:config_session_token]}
+            type="password"
+            label="Session Token (optional)"
+            placeholder="For temporary credentials"
+          />
+          <.input
+            :if={stored_session_token?(@sink)}
+            field={@form[:config_clear_session_token]}
+            type="checkbox"
+            label="Remove the stored session token"
+          />
+          <p class="text-xs text-base-content/60 -mt-2">
+            Leave the secrets blank to keep the stored ones. Entering a new secret access key
+            without a session token also removes the stored token, which only works with the
+            key pair it was issued for.
+          </p>
+        </div>
+        <div :if={cfg(@form, "config_aws_auth_mode") == "assume_role"} class="space-y-4">
+          <.input
+            field={@form[:config_role_arn]}
+            type="text"
+            label="Role ARN"
+            placeholder="arn:aws:iam::123456789012:role/flux-keyspaces"
+            required
+          />
+          <.input
+            field={@form[:config_external_id]}
+            type="text"
+            label="External ID (optional)"
+          />
+        </div>
+      </div>
+      <.input field={@form[:config_tls]} type="checkbox" label="Use TLS connection" />
+      <div :if={cfg(@form, "config_tls") == "true"} class="space-y-4">
+        <.input
+          field={@form[:config_tls_ca_file]}
+          type="text"
+          label="TLS CA Certificate Path (optional)"
+          placeholder="/etc/flux/certs/ca.pem"
+        />
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <.input
+            field={@form[:config_tls_cert_file]}
+            type="text"
+            label="Client Certificate Path (mTLS)"
+            placeholder="/etc/flux/certs/client.pem"
+          />
+          <.input
+            field={@form[:config_tls_key_file]}
+            type="text"
+            label="Client Key Path (mTLS)"
+            placeholder="/etc/flux/certs/client.key"
+          />
+        </div>
+        <p class="text-xs text-base-content/60 -mt-2">
+          Without a CA path the system trust store is used. Amazon Keyspaces requires TLS on
+          port 9142.
+        </p>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <.input
+          field={@form[:config_ttl_seconds]}
+          type="number"
+          label="TTL (seconds, optional)"
+          placeholder="Expire rows after N seconds"
+        />
+        <.input
+          field={@form[:config_timeout_ms]}
+          type="number"
+          label="Write Timeout (ms, optional)"
+          placeholder="5000"
+        />
+      </div>
+    </div>
+    """
+  end
+
   defp type_config_fields(assigns) do
     ~H"""
     <p class="text-base-content/60">Select a sink type to configure.</p>
@@ -2117,6 +2319,28 @@ defmodule FluxWeb.SinkLive.Form do
     end
   end
 
+  # A Cassandra sink's stored secrets belong to one auth mode: the password to
+  # password auth, the AWS secrets to SigV4 with static keys. On a switch away
+  # they are dropped, with the same session-token rule as DynamoDB.
+  defp carried_config("cassandra", config, built) do
+    auth_mode = Map.get(built, "auth_mode", "none")
+    aws_static? = auth_mode == "sigv4" and Map.get(built, "aws_auth_mode") == "static"
+
+    config =
+      if auth_mode == "password", do: config, else: Map.delete(config, "password")
+
+    cond do
+      not aws_static? ->
+        Map.drop(config, @aws_static_secret_keys)
+
+      Map.has_key?(built, "secret_access_key") and not Map.has_key?(built, "session_token") ->
+        Map.delete(config, "session_token")
+
+      true ->
+        config
+    end
+  end
+
   defp carried_config(_type, config, _built), do: config
 
   # A GCS sink's byte threshold is edited in whole MB, so the field shows a
@@ -2337,6 +2561,30 @@ defmodule FluxWeb.SinkLive.Form do
     |> put_field("config_version_attribute", config["version_attribute"])
     |> put_field("config_ttl_attribute", config["ttl_attribute"])
     |> put_field("config_ttl_seconds", config["ttl_seconds"])
+  end
+
+  defp config_form_params("cassandra", config) do
+    # password, secret_access_key and session_token are secret — left blank on edit.
+    %{}
+    |> put_field("config_contact_points", config["contact_points"])
+    |> put_field("config_port", config["port"])
+    |> put_field("config_local_datacenter", config["local_datacenter"])
+    |> put_field("config_keyspace", config["keyspace"])
+    |> put_field("config_table", config["table"])
+    |> put_field("config_consistency", config["consistency"])
+    |> put_field("config_auth_mode", config["auth_mode"])
+    |> put_field("config_username", config["username"])
+    |> put_field("config_region", config["region"])
+    |> put_field("config_aws_auth_mode", config["aws_auth_mode"])
+    |> put_field("config_access_key_id", config["access_key_id"])
+    |> put_field("config_role_arn", config["role_arn"])
+    |> put_field("config_external_id", config["external_id"])
+    |> put_field("config_tls", bool_to_param(config["tls"]))
+    |> put_field("config_tls_ca_file", config["tls_ca_file"])
+    |> put_field("config_tls_cert_file", config["tls_cert_file"])
+    |> put_field("config_tls_key_file", config["tls_key_file"])
+    |> put_field("config_ttl_seconds", config["ttl_seconds"])
+    |> put_field("config_timeout_ms", config["timeout_ms"])
   end
 
   defp config_form_params(_type, _config), do: %{}
@@ -2619,6 +2867,50 @@ defmodule FluxWeb.SinkLive.Form do
     |> put_clearable("custom_details_template", params["config_custom_details_template"])
   end
 
+  # Same rules as DynamoDB: settings are clearable, a field that belongs to an
+  # auth mode (or to TLS) is cleared whenever that mode is off, and only the
+  # secrets keep "blank means unchanged" — see carried_config/3.
+  defp build_config(params, "cassandra") do
+    auth_mode = params["config_auth_mode"]
+    password? = auth_mode == "password"
+    sigv4? = auth_mode == "sigv4"
+    aws_auth_mode = if sigv4?, do: params["config_aws_auth_mode"]
+    tls? = params["config_tls"] == "true"
+
+    %{}
+    |> put_clearable("contact_points", params["config_contact_points"])
+    |> Map.put("port", parse_int(params["config_port"]))
+    |> put_clearable("local_datacenter", params["config_local_datacenter"])
+    |> put_clearable("keyspace", params["config_keyspace"])
+    |> put_clearable("table", params["config_table"])
+    |> maybe_put("consistency", params["config_consistency"])
+    |> maybe_put("auth_mode", auth_mode)
+    |> put_clearable("username", if(password?, do: params["config_username"]))
+    |> maybe_put("password", if(password?, do: params["config_password"]))
+    |> put_clearable("region", if(sigv4?, do: params["config_region"]))
+    |> put_clearable("aws_auth_mode", aws_auth_mode)
+    |> put_clearable(
+      "access_key_id",
+      if(aws_auth_mode == "static", do: params["config_access_key_id"])
+    )
+    |> maybe_put("secret_access_key", trim(params["config_secret_access_key"]))
+    |> put_session_token(params)
+    |> put_clearable(
+      "role_arn",
+      if(aws_auth_mode == "assume_role", do: params["config_role_arn"])
+    )
+    |> put_clearable(
+      "external_id",
+      if(aws_auth_mode == "assume_role", do: params["config_external_id"])
+    )
+    |> Map.put("tls", tls?)
+    |> put_clearable("tls_ca_file", if(tls?, do: params["config_tls_ca_file"]))
+    |> put_clearable("tls_cert_file", if(tls?, do: params["config_tls_cert_file"]))
+    |> put_clearable("tls_key_file", if(tls?, do: params["config_tls_key_file"]))
+    |> Map.put("ttl_seconds", parse_int(params["config_ttl_seconds"]))
+    |> Map.put("timeout_ms", parse_int(params["config_timeout_ms"]))
+  end
+
   defp build_config(_params, _type), do: %{}
 
   # A new token wins; otherwise the "remove" checkbox clears the stored one (nil
@@ -2631,8 +2923,9 @@ defmodule FluxWeb.SinkLive.Form do
     end
   end
 
-  defp stored_session_token?(%Sink{type: "dynamodb", config: %{"session_token" => token}}),
-    do: is_binary(token) and token != ""
+  defp stored_session_token?(%Sink{type: type, config: %{"session_token" => token}})
+       when type in ["dynamodb", "cassandra"],
+       do: is_binary(token) and token != ""
 
   defp stored_session_token?(_sink), do: false
 
@@ -2766,6 +3059,7 @@ defmodule FluxWeb.SinkLive.Form do
   defp pro_label("slack"), do: "Slack sinks"
   defp pro_label("dynamodb"), do: "DynamoDB sinks"
   defp pro_label("gcs"), do: "Google Cloud Storage sinks"
+  defp pro_label("cassandra"), do: "Cassandra sinks"
   defp pro_label("pagerduty"), do: "PagerDuty sinks"
   defp pro_label(type), do: "#{type} sinks"
 end

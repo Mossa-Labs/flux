@@ -42,6 +42,7 @@ defmodule Flux.Sink.Adapters.Stub do
   defp feature_for_type("slack"), do: :slack_sink
   defp feature_for_type("dynamodb"), do: :dynamodb_sink
   defp feature_for_type("gcs"), do: :gcs_sink
+  defp feature_for_type("cassandra"), do: :cassandra_sink
   defp feature_for_type("pagerduty"), do: :pagerduty_sink
   defp feature_for_type(_), do: @feature
 end

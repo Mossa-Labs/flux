@@ -66,6 +66,7 @@ defmodule Flux.Registrations do
     Flux.Sink.Registry.register("slack", Flux.Sink.Adapters.Stub)
     Flux.Sink.Registry.register("dynamodb", Flux.Sink.Adapters.Stub)
     Flux.Sink.Registry.register("gcs", Flux.Sink.Adapters.Stub)
+    Flux.Sink.Registry.register("cassandra", Flux.Sink.Adapters.Stub)
     # Enterprise connector — same stub, gated on :pagerduty_sink.
     Flux.Sink.Registry.register("pagerduty", Flux.Sink.Adapters.Stub)
     :ok
