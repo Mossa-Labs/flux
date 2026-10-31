@@ -179,6 +179,72 @@ defmodule FluxWeb.SinkLive.FormProTest do
       assert html =~ ~s(value="50")
       refute html =~ "super-secret"
     end
+
+    test "selecting Cassandra renders the config fields instead of the upgrade prompt",
+         %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "cassandra"})
+
+      assert html =~ ~s{Contact Points<span class="text-error}
+      assert html =~ ~s{Keyspace<span class="text-error}
+      assert html =~ ~s{Table<span class="text-error}
+      assert html =~ "Write Consistency"
+      refute html =~ "are part of Flux Pro"
+    end
+
+    test "Cassandra reveals credential fields for the chosen auth mode", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      html = render_click(lv, "select_type", %{"type" => "cassandra"})
+
+      # No auth (the default) needs no credential inputs.
+      refute html =~ ~s{Username<span class="text-error}
+      refute html =~ "AWS Credentials"
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_auth_mode" => "password"}})
+        |> render_change()
+
+      assert html =~ ~s{Username<span class="text-error}
+      assert html =~ ~s{Password<span class="text-error}
+      refute html =~ "AWS Credentials"
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_auth_mode" => "sigv4"}})
+        |> render_change()
+
+      assert html =~ ~s{Region<span class="text-error}
+      assert html =~ "AWS Credentials"
+      refute html =~ "Secret Access Key"
+      refute html =~ ~s{Username<span class="text-error}
+
+      html =
+        lv
+        |> form("form", %{
+          "sink" => %{"config_auth_mode" => "sigv4", "config_aws_auth_mode" => "static"}
+        })
+        |> render_change()
+
+      assert html =~ ~s{Secret Access Key<span class="text-error}
+      refute html =~ "Role ARN"
+    end
+
+    test "Cassandra shows certificate paths only when TLS is on", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      html = render_click(lv, "select_type", %{"type" => "cassandra"})
+
+      refute html =~ "Client Certificate Path"
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_tls" => "true"}})
+        |> render_change()
+
+      assert html =~ "Client Certificate Path (mTLS)"
+      assert html =~ "TLS CA Certificate Path"
+    end
   end
 
   describe "Enterprise-gated sink types" do
@@ -500,6 +566,145 @@ defmodule FluxWeb.SinkLive.FormProTest do
       config = stored_config(sink, scope)
       refute Map.has_key?(config, "session_token")
       assert config["secret_access_key"] == "old-secret"
+    end
+  end
+
+  describe "editing a Cassandra sink" do
+    # The public build backs "cassandra" with the Pro stub, which rejects every
+    # save; a permissive adapter stands in for the licensed one.
+    setup do
+      Flux.Sink.Registry.register("cassandra", Flux.Test.PermissiveSinkAdapter)
+      on_exit(fn -> Flux.Sink.Registry.register("cassandra", Flux.Sink.Adapters.Stub) end)
+      :ok
+    end
+
+    defp cassandra_sink(org_id, config) do
+      sink_fixture(org_id, %{
+        type: "cassandra",
+        config:
+          Map.merge(
+            %{
+              "contact_points" => "cassandra-1.internal",
+              "keyspace" => "telemetry",
+              "table" => "readings",
+              "auth_mode" => "password",
+              "username" => "flux",
+              "password" => "old-password"
+            },
+            config
+          )
+          |> Map.reject(fn {_key, value} -> is_nil(value) end)
+      })
+    end
+
+    defp sigv4_cassandra_sink(org_id) do
+      cassandra_sink(org_id, %{
+        "auth_mode" => "sigv4",
+        "username" => nil,
+        "password" => nil,
+        "region" => "us-east-1",
+        "aws_auth_mode" => "static",
+        "access_key_id" => "AKIAOLD",
+        "secret_access_key" => "old-secret",
+        "session_token" => "old-token"
+      })
+    end
+
+    test "clearing optional settings removes them; a blank password is kept",
+         %{conn: conn, scope: scope} do
+      sink =
+        cassandra_sink(scope.organization_id, %{
+          "port" => 9043,
+          "local_datacenter" => "dc1",
+          "ttl_seconds" => 3600,
+          "timeout_ms" => 2000
+        })
+
+      {:ok, lv, html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+      assert html =~ ~s(value="dc1")
+      refute html =~ "old-password"
+
+      submit(lv, %{
+        "config_port" => "",
+        "config_local_datacenter" => "",
+        "config_ttl_seconds" => "",
+        "config_timeout_ms" => ""
+      })
+
+      config = stored_config(sink, scope)
+
+      for key <- ~w(port local_datacenter ttl_seconds timeout_ms) do
+        refute Map.has_key?(config, key), "expected #{key} to be cleared, got #{inspect(config)}"
+      end
+
+      assert config["username"] == "flux"
+      assert config["password"] == "old-password"
+    end
+
+    test "switching away from password auth drops the stored credentials",
+         %{conn: conn, scope: scope} do
+      sink = cassandra_sink(scope.organization_id, %{})
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      submit(lv, %{"config_auth_mode" => "none"})
+
+      config = stored_config(sink, scope)
+      assert config["auth_mode"] == "none"
+      refute Map.has_key?(config, "username")
+      refute Map.has_key?(config, "password")
+    end
+
+    test "switching SigV4 from static keys to an IAM role drops the stored AWS secrets",
+         %{conn: conn, scope: scope} do
+      sink = sigv4_cassandra_sink(scope.organization_id)
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      submit(lv, %{"config_aws_auth_mode" => "iam_role"})
+
+      config = stored_config(sink, scope)
+      assert config["aws_auth_mode"] == "iam_role"
+
+      for key <- ~w(access_key_id secret_access_key session_token) do
+        refute Map.has_key?(config, key), "expected #{key} to be dropped, got #{inspect(config)}"
+      end
+    end
+
+    test "a new secret without a new token drops the stored session token",
+         %{conn: conn, scope: scope} do
+      sink = sigv4_cassandra_sink(scope.organization_id)
+      {:ok, lv, html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+      assert html =~ "Remove the stored session token"
+
+      submit(lv, %{
+        "config_access_key_id" => "AKIANEW",
+        "config_secret_access_key" => "new-secret"
+      })
+
+      config = stored_config(sink, scope)
+      assert config["access_key_id"] == "AKIANEW"
+      assert config["secret_access_key"] == "new-secret"
+      refute Map.has_key?(config, "session_token")
+    end
+
+    test "turning TLS off clears the certificate paths", %{conn: conn, scope: scope} do
+      sink =
+        cassandra_sink(scope.organization_id, %{
+          "tls" => true,
+          "tls_ca_file" => "/etc/flux/ca.pem",
+          "tls_cert_file" => "/etc/flux/client.pem",
+          "tls_key_file" => "/etc/flux/client.key"
+        })
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      submit(lv, %{"config_tls" => "false"})
+
+      config = stored_config(sink, scope)
+      assert config["tls"] == false
+
+      for key <- ~w(tls_ca_file tls_cert_file tls_key_file) do
+        refute Map.has_key?(config, key), "expected #{key} to be cleared, got #{inspect(config)}"
+      end
     end
   end
 end

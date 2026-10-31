@@ -67,6 +67,16 @@ defmodule FluxWeb.SinkLive.FormTest do
       refute html =~ "Object Name Template"
     end
 
+    test "selecting Cassandra shows the Pro upgrade prompt in Community", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+
+      html = render_click(lv, "select_type", %{"type" => "cassandra"})
+
+      # Community is not entitled, so the config form is replaced by the upgrade prompt.
+      assert has_element?(lv, "#sink-pro-required", "Cassandra sinks are part of Flux Pro")
+      refute html =~ "Contact Points"
+    end
+
     test "selecting MongoDB shows the Pro upgrade prompt in Community", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/sinks/new")
 

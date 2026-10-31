@@ -325,6 +325,26 @@ defmodule Flux.SinksTest do
       refute changeset.errors[:type]
     end
 
+    test "with cassandra type in Community is rejected (Pro feature)", %{org_id: org_id} do
+      attrs = %{
+        name: "my-cassandra-sink",
+        type: "cassandra",
+        config: %{
+          "contact_points" => "cassandra-1.internal",
+          "keyspace" => "telemetry",
+          "table" => "readings"
+        },
+        organization_id: org_id
+      }
+
+      # cassandra is an accepted type (passes inclusion); the Community stub
+      # rejects it at config validation with the upgrade prompt.
+      assert {:error, %Ecto.Changeset{} = changeset} = Sinks.create_sink(attrs)
+      assert {msg, _} = changeset.errors[:config]
+      assert msg =~ "Flux Pro"
+      refute changeset.errors[:type]
+    end
+
     test "with pagerduty type in Community is rejected (Enterprise feature)", %{org_id: org_id} do
       attrs = %{
         name: "my-pagerduty-sink",

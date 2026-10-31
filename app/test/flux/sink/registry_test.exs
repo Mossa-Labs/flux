@@ -39,6 +39,10 @@ defmodule Flux.Sink.RegistryTest do
       assert {:ok, Flux.Sink.Adapters.Stub} = Registry.lookup("gcs")
     end
 
+    test "cassandra resolves to Stub in Community" do
+      assert {:ok, Flux.Sink.Adapters.Stub} = Registry.lookup("cassandra")
+    end
+
     test "pagerduty resolves to Stub in Community" do
       assert {:ok, Flux.Sink.Adapters.Stub} = Registry.lookup("pagerduty")
     end

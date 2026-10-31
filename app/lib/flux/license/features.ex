@@ -22,6 +22,8 @@ defmodule Flux.License.Features do
     * `:slack_sink` - Slack sink connector (Incoming Webhook / bot-token messaging)
     * `:dynamodb_sink` - Amazon DynamoDB sink connector (AWS NoSQL key-value store)
     * `:gcs_sink` - Google Cloud Storage sink connector (batched object uploads)
+    * `:cassandra_sink` - Apache Cassandra sink connector (wide-column store; ScyllaDB and
+      Amazon Keyspaces compatible)
     * `:pagerduty_sink` - PagerDuty integration (Events API v2): the PagerDuty
       sink connector and the PagerDuty alert-rule channel
     * `:kafka_source` - Kafka topic source connector (see `Flux.Source`)
@@ -74,6 +76,8 @@ defmodule Flux.License.Features do
       :dynamodb_sink,
       # Google Cloud Storage sink connector — batched NDJSON/Parquet objects (see `Flux.Sink`).
       :gcs_sink,
+      # Apache Cassandra sink connector — wide-column store (see `Flux.Sink`).
+      :cassandra_sink,
       # Kafka topic source connector (consume → transform/detect → produce).
       :kafka_source,
       # MQTT topic source connector — IoT/industrial ingestion (see `Flux.Source`).
