@@ -90,9 +90,9 @@ value: Flux leaves it unset rather than writing a null, so no tombstone is
 created. An explicit `null` in the record does write a null.
 
 Flux prepares one `INSERT` statement for the table and reuses it for every
-record. It re-reads the table's schema every 30 seconds, so a column added with
-`ALTER TABLE` starts receiving values within 30 seconds (or right away after
-**Test connection**). A dropped column is handled on the next write.
+record. It re-reads the table's schema periodically, so a column added with
+`ALTER TABLE` starts receiving values shortly afterwards, or right away after
+**Test connection**. A dropped column is handled on the next write.
 
 Every record must carry the table's **partition key** and **clustering key**
 columns. A record missing one is rejected rather than written.
