@@ -27,9 +27,18 @@ For `sigv4`, `aws_auth_mode` picks where the AWS credentials come from:
 | `static` | Static `access_key_id` + `secret_access_key` (optional `session_token`) |
 | `assume_role` | Assume a `role_arn` (cross-account), optionally with an `external_id` |
 
+> **Server credentials reach only Amazon Keyspaces.** With `iam_role` or
+> `assume_role`, Flux signs with its own AWS identity. For security, these sinks
+> connect only to Amazon Keyspaces endpoints in the configured `region`:
+> `cassandra.<region>.amazonaws.com`, its FIPS variant
+> `cassandra-fips.<region>.amazonaws.com`, or a Keyspaces VPC endpoint
+> (`*.cassandra.<region>.vpce.amazonaws.com`). TLS is always on and verified
+> against the system trust store, so `tls_ca_file` can't be set and client
+> certificates aren't used. To reach any other host, sign with `static` keys.
+
 **Mutual TLS** is independent of the auth mode: turn on `tls` and set
 `tls_cert_file` / `tls_key_file` to present a client certificate, on its own or
-alongside password auth.
+alongside password auth (not with SigV4 server credentials, above).
 
 `password`, `secret_access_key` and `session_token` are encrypted at rest and
 masked (`[REDACTED]`) when configuration leaves the system (e.g. API reads).
@@ -44,7 +53,7 @@ stored token, since a token is only valid with the key pair it was issued for.
 
 | Field | Required | Description |
 | --- | --- | --- |
-| `contact_points` | yes | Comma-separated hosts used to discover the cluster; a host may carry its own `:port` |
+| `contact_points` | yes | Comma-separated hosts used to discover the cluster; a host may carry its own `:port`. With SigV4 server credentials, only Amazon Keyspaces endpoints in `region` |
 | `port` | no | Native protocol port for hosts without one (default `9042`) |
 | `local_datacenter` | no | Datacenter to route writes to; recommended for multi-datacenter clusters |
 | `keyspace` | yes | Keyspace of the target table |
@@ -56,8 +65,8 @@ stored token, since a token is only valid with the key pair it was issued for.
 | `aws_auth_mode` | no | Credential source for `sigv4` (default `iam_role`) |
 | `access_key_id` / `secret_access_key` | conditional | Required for `aws_auth_mode: static`; optional `session_token` |
 | `role_arn` | conditional | Required for `aws_auth_mode: assume_role`; optional `external_id` |
-| `tls` | no | Encrypt the connection (default `false`) |
-| `tls_ca_file` | no | CA bundle path; without it the system trust store is used |
+| `tls` | no | Encrypt the connection (default `false`; always on with SigV4 server credentials) |
+| `tls_ca_file` | no | CA bundle path; without it the system trust store is used. Not allowed with SigV4 server credentials |
 | `tls_cert_file` / `tls_key_file` | no | Client certificate and key paths, for mutual TLS |
 | `ttl_seconds` | no | Expire written rows after this many seconds (`USING TTL`) |
 | `timeout_ms` | no | Per-write timeout in milliseconds |
