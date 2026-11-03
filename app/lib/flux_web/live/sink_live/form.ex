@@ -1997,32 +1997,44 @@ defmodule FluxWeb.SinkLive.Form do
           />
         </div>
       </div>
-      <.input field={@form[:config_tls]} type="checkbox" label="Use TLS connection" />
-      <div :if={cfg(@form, "config_tls") == "true"} class="space-y-4">
-        <.input
-          field={@form[:config_tls_ca_file]}
-          type="text"
-          label="TLS CA Certificate Path (optional)"
-          placeholder="/etc/flux/certs/ca.pem"
-        />
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <p
+        :if={cassandra_server_signing?(@form)}
+        id="cassandra-keyspaces-only"
+        class="text-xs text-base-content/60"
+      >
+        Signing with the server's AWS credentials connects only to Amazon Keyspaces endpoints
+        in the region above, such as <code>cassandra.us-east-1.amazonaws.com</code>
+        on port 9142, always over TLS verified against the system trust store. To reach any
+        other host, sign with a static access key.
+      </p>
+      <div :if={!cassandra_server_signing?(@form)} class="space-y-4">
+        <.input field={@form[:config_tls]} type="checkbox" label="Use TLS connection" />
+        <div :if={cfg(@form, "config_tls") == "true"} class="space-y-4">
           <.input
-            field={@form[:config_tls_cert_file]}
+            field={@form[:config_tls_ca_file]}
             type="text"
-            label="Client Certificate Path (mTLS)"
-            placeholder="/etc/flux/certs/client.pem"
+            label="TLS CA Certificate Path (optional)"
+            placeholder="/etc/flux/certs/ca.pem"
           />
-          <.input
-            field={@form[:config_tls_key_file]}
-            type="text"
-            label="Client Key Path (mTLS)"
-            placeholder="/etc/flux/certs/client.key"
-          />
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <.input
+              field={@form[:config_tls_cert_file]}
+              type="text"
+              label="Client Certificate Path (mTLS)"
+              placeholder="/etc/flux/certs/client.pem"
+            />
+            <.input
+              field={@form[:config_tls_key_file]}
+              type="text"
+              label="Client Key Path (mTLS)"
+              placeholder="/etc/flux/certs/client.key"
+            />
+          </div>
+          <p class="text-xs text-base-content/60 -mt-2">
+            Without a CA path the system trust store is used. Amazon Keyspaces requires TLS on
+            port 9142.
+          </p>
         </div>
-        <p class="text-xs text-base-content/60 -mt-2">
-          Without a CA path the system trust store is used. Amazon Keyspaces requires TLS on
-          port 9142.
-        </p>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <.input
@@ -2875,7 +2887,11 @@ defmodule FluxWeb.SinkLive.Form do
     password? = auth_mode == "password"
     sigv4? = auth_mode == "sigv4"
     aws_auth_mode = if sigv4?, do: params["config_aws_auth_mode"]
-    tls? = params["config_tls"] == "true"
+    # Signing with the server's AWS credentials always uses TLS on the system
+    # trust store, so TLS is stored on and no custom certificate paths are kept.
+    server_signing? = sigv4? and aws_auth_mode != "static"
+    tls? = server_signing? or params["config_tls"] == "true"
+    custom_tls? = tls? and not server_signing?
 
     %{}
     |> put_clearable("contact_points", params["config_contact_points"])
@@ -2904,9 +2920,9 @@ defmodule FluxWeb.SinkLive.Form do
       if(aws_auth_mode == "assume_role", do: params["config_external_id"])
     )
     |> Map.put("tls", tls?)
-    |> put_clearable("tls_ca_file", if(tls?, do: params["config_tls_ca_file"]))
-    |> put_clearable("tls_cert_file", if(tls?, do: params["config_tls_cert_file"]))
-    |> put_clearable("tls_key_file", if(tls?, do: params["config_tls_key_file"]))
+    |> put_clearable("tls_ca_file", if(custom_tls?, do: params["config_tls_ca_file"]))
+    |> put_clearable("tls_cert_file", if(custom_tls?, do: params["config_tls_cert_file"]))
+    |> put_clearable("tls_key_file", if(custom_tls?, do: params["config_tls_key_file"]))
     |> Map.put("ttl_seconds", parse_int(params["config_ttl_seconds"]))
     |> Map.put("timeout_ms", parse_int(params["config_timeout_ms"]))
   end
@@ -2928,6 +2944,14 @@ defmodule FluxWeb.SinkLive.Form do
        do: is_binary(token) and token != ""
 
   defp stored_session_token?(_sink), do: false
+
+  # A Cassandra sink signing AWS SigV4 with the server's credentials (anything
+  # but a static key) only reaches Amazon Keyspaces, over TLS on the system
+  # trust store, so the form shows that rule instead of the TLS settings.
+  defp cassandra_server_signing?(form),
+    do:
+      cfg(form, "config_auth_mode") == "sigv4" and
+        cfg(form, "config_aws_auth_mode") != "static"
 
   defp blank_to_nil(value) when value in [nil, ""], do: nil
   defp blank_to_nil(value), do: value

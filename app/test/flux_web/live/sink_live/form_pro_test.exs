@@ -245,6 +245,38 @@ defmodule FluxWeb.SinkLive.FormProTest do
       assert html =~ "Client Certificate Path (mTLS)"
       assert html =~ "TLS CA Certificate Path"
     end
+
+    test "Cassandra signing with the server's AWS credentials states the Keyspaces-only rule",
+         %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "cassandra"})
+
+      # The AWS credentials select only renders once SigV4 is picked.
+      lv
+      |> form("form", %{"sink" => %{"config_auth_mode" => "sigv4"}})
+      |> render_change()
+
+      for aws_auth_mode <- ["iam_role", "assume_role"] do
+        lv
+        |> form("form", %{
+          "sink" => %{"config_auth_mode" => "sigv4", "config_aws_auth_mode" => aws_auth_mode}
+        })
+        |> render_change()
+
+        assert has_element?(lv, "#cassandra-keyspaces-only")
+        refute has_element?(lv, "input[name='sink[config_tls]'][type=checkbox]")
+      end
+
+      # A static key is the user's own, so the TLS settings are theirs to choose.
+      lv
+      |> form("form", %{
+        "sink" => %{"config_auth_mode" => "sigv4", "config_aws_auth_mode" => "static"}
+      })
+      |> render_change()
+
+      refute has_element?(lv, "#cassandra-keyspaces-only")
+      assert has_element?(lv, "input[name='sink[config_tls]'][type=checkbox]")
+    end
   end
 
   describe "Enterprise-gated sink types" do
@@ -701,6 +733,38 @@ defmodule FluxWeb.SinkLive.FormProTest do
 
       config = stored_config(sink, scope)
       assert config["tls"] == false
+
+      for key <- ~w(tls_ca_file tls_cert_file tls_key_file) do
+        refute Map.has_key?(config, key), "expected #{key} to be cleared, got #{inspect(config)}"
+      end
+    end
+
+    test "switching to SigV4 with the server's credentials stores TLS on, without custom certificates",
+         %{conn: conn, scope: scope} do
+      sink =
+        cassandra_sink(scope.organization_id, %{
+          "tls" => false,
+          "tls_ca_file" => "/etc/flux/ca.pem",
+          "tls_cert_file" => "/etc/flux/client.pem",
+          "tls_key_file" => "/etc/flux/client.key"
+        })
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      # The SigV4 fields only render once SigV4 is picked.
+      lv
+      |> form("form", %{"sink" => %{"config_auth_mode" => "sigv4"}})
+      |> render_change()
+
+      submit(lv, %{
+        "config_contact_points" => "cassandra.us-east-1.amazonaws.com",
+        "config_auth_mode" => "sigv4",
+        "config_region" => "us-east-1",
+        "config_aws_auth_mode" => "iam_role"
+      })
+
+      config = stored_config(sink, scope)
+      assert config["tls"] == true
 
       for key <- ~w(tls_ca_file tls_cert_file tls_key_file) do
         refute Map.has_key?(config, key), "expected #{key} to be cleared, got #{inspect(config)}"
