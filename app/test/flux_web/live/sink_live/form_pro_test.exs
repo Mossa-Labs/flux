@@ -109,7 +109,11 @@ defmodule FluxWeb.SinkLive.FormProTest do
         |> render_change()
 
       assert html =~ ~s{Role ARN<span class="text-error}
-      refute html =~ "Secret Access Key"
+      # Base keys are optional while the server's own identity may call STS.
+      assert html =~ "Base Access Key ID (optional)"
+      assert html =~ "Base Secret Access Key (optional)"
+      refute html =~ ~s{Base Secret Access Key<span class="text-error}
+      refute has_element?(lv, "#dynamodb-server-credentials-disabled")
     end
 
     test "DynamoDB asks for a version attribute only in if_newer mode", %{conn: conn} do
@@ -563,6 +567,28 @@ defmodule FluxWeb.SinkLive.FormProTest do
       end
     end
 
+    test "switching to assume_role keeps the keys as the STS base credentials",
+         %{conn: conn, scope: scope} do
+      sink = dynamodb_sink(scope.organization_id, %{})
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      lv
+      |> form("form", %{"sink" => %{"config_auth_mode" => "assume_role"}})
+      |> render_change()
+
+      submit(lv, %{
+        "config_auth_mode" => "assume_role",
+        "config_role_arn" => "arn:aws:iam::123456789012:role/flux"
+      })
+
+      config = stored_config(sink, scope)
+      assert config["auth_mode"] == "assume_role"
+      assert config["role_arn"] == "arn:aws:iam::123456789012:role/flux"
+      assert config["access_key_id"] == "AKIAOLD"
+      assert config["secret_access_key"] == "old-secret"
+      assert config["session_token"] == "old-token"
+    end
+
     test "a new secret without a new token drops the stored session token",
          %{conn: conn, scope: scope} do
       sink = dynamodb_sink(scope.organization_id, %{})
@@ -769,6 +795,101 @@ defmodule FluxWeb.SinkLive.FormProTest do
       for key <- ~w(tls_ca_file tls_cert_file tls_key_file) do
         refute Map.has_key?(config, key), "expected #{key} to be cleared, got #{inspect(config)}"
       end
+    end
+  end
+
+  describe "with server AWS credentials disabled by the operator" do
+    setup do
+      previous = Application.get_env(:flux, :aws_server_credentials)
+      Application.put_env(:flux, :aws_server_credentials, :disabled)
+      on_exit(fn -> Application.put_env(:flux, :aws_server_credentials, previous) end)
+      :ok
+    end
+
+    defp auth_options(lv, select_name) do
+      for value <- ~w(iam_role static assume_role),
+          has_element?(lv, "select[name='sink[#{select_name}]'] option[value='#{value}']"),
+          do: value
+    end
+
+    test "DynamoDB offers no IAM role and opens on static keys", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      html = render_click(lv, "select_type", %{"type" => "dynamodb"})
+
+      assert auth_options(lv, "config_auth_mode") == ["static", "assume_role"]
+      assert has_element?(lv, "#dynamodb-server-credentials-disabled")
+      assert html =~ ~s{Access Key ID<span class="text-error}
+      assert html =~ ~s{Secret Access Key<span class="text-error}
+    end
+
+    test "DynamoDB assume_role requires base keys", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "dynamodb"})
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_auth_mode" => "assume_role"}})
+        |> render_change()
+
+      assert html =~ ~s{Role ARN<span class="text-error}
+      assert html =~ ~s{Base Access Key ID<span class="text-error}
+      assert html =~ ~s{Base Secret Access Key<span class="text-error}
+      refute html =~ "Leave them blank to assume the role with the"
+    end
+
+    test "Cassandra SigV4 offers no IAM role and defaults to static keys", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "cassandra"})
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_auth_mode" => "sigv4"}})
+        |> render_change()
+
+      assert auth_options(lv, "config_aws_auth_mode") == ["static", "assume_role"]
+      assert has_element?(lv, "#cassandra-server-credentials-disabled")
+      assert html =~ ~s{Secret Access Key<span class="text-error}
+      # Static keys are the user's own, so the Keyspaces-only rule does not apply.
+      refute has_element?(lv, "#cassandra-keyspaces-only")
+    end
+
+    test "S3 no longer describes blank keys as optional", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      html = render_click(lv, "select_type", %{"type" => "s3"})
+
+      assert has_element?(lv, "#s3-server-credentials-disabled")
+      refute html =~ "Access Key ID (optional)"
+      refute html =~ "server&#39;s AWS credentials"
+    end
+
+    test "a DynamoDB sink stored with iam_role opens on static with the notice",
+         %{conn: conn, scope: scope} do
+      Flux.Sink.Registry.register("dynamodb", Flux.Test.PermissiveSinkAdapter)
+      on_exit(fn -> Flux.Sink.Registry.register("dynamodb", Flux.Sink.Adapters.Stub) end)
+
+      sink =
+        dynamodb_sink(scope.organization_id, %{
+          "auth_mode" => "iam_role",
+          "access_key_id" => nil,
+          "secret_access_key" => nil,
+          "session_token" => nil
+        })
+
+      {:ok, lv, html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      assert auth_options(lv, "config_auth_mode") == ["static", "assume_role"]
+      assert has_element?(lv, "#dynamodb-server-credentials-disabled")
+      assert html =~ ~s{Secret Access Key<span class="text-error}
+    end
+  end
+
+  describe "with server AWS credentials allowed (the default)" do
+    test "S3 describes blank keys as using the server's credentials", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      html = render_click(lv, "select_type", %{"type" => "s3"})
+
+      refute has_element?(lv, "#s3-server-credentials-disabled")
+      assert html =~ "Access Key ID (optional)"
     end
   end
 end

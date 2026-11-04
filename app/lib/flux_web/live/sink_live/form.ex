@@ -611,15 +611,23 @@ defmodule FluxWeb.SinkLive.Form do
       <.input
         field={@form[:config_access_key]}
         type="text"
-        label="Access Key ID"
-        placeholder="Optional - uses env if empty"
+        label={if aws_server_credentials?(), do: "Access Key ID (optional)", else: "Access Key ID"}
+        placeholder={
+          if aws_server_credentials?(),
+            do: "Blank uses the server's AWS credentials",
+            else: "AKIA…"
+        }
       />
       <.input
         field={@form[:config_secret_key]}
         type="password"
-        label="Secret Access Key"
-        placeholder="Optional - uses env if empty"
+        label={
+          if aws_server_credentials?(),
+            do: "Secret Access Key (optional)",
+            else: "Secret Access Key"
+        }
       />
+      <.aws_server_credentials_notice id="s3-server-credentials-disabled" />
     </div>
     """
   end
@@ -1751,45 +1759,16 @@ defmodule FluxWeb.SinkLive.Form do
         field={@form[:config_auth_mode]}
         type="select"
         label="Auth Mode"
-        options={[
-          {"IAM role (ambient credentials)", "iam_role"},
-          {"Static access key", "static"},
-          {"Assume role (cross-account)", "assume_role"}
-        ]}
+        options={aws_auth_mode_options()}
       />
-      <div :if={cfg(@form, "config_auth_mode") == "static"} class="space-y-4">
-        <.input
-          field={@form[:config_access_key_id]}
-          type="text"
-          label="Access Key ID"
-          placeholder="AKIA…"
-          required
-        />
-        <.input
-          field={@form[:config_secret_access_key]}
-          type="password"
-          label="Secret Access Key"
-          required
-        />
-        <.input
-          field={@form[:config_session_token]}
-          type="password"
-          label="Session Token (optional)"
-          placeholder="For temporary credentials"
-        />
-        <.input
-          :if={stored_session_token?(@sink)}
-          field={@form[:config_clear_session_token]}
-          type="checkbox"
-          label="Remove the stored session token"
-        />
-        <p class="text-xs text-base-content/60 -mt-2">
-          Leave the secrets blank to keep the stored ones. Entering a new secret access key
-          without a session token also removes the stored token, which only works with the
-          key pair it was issued for.
-        </p>
-      </div>
-      <div :if={cfg(@form, "config_auth_mode") == "assume_role"} class="space-y-4">
+      <.aws_server_credentials_notice id="dynamodb-server-credentials-disabled" />
+      <.aws_key_fields
+        :if={aws_auth_mode(@form, "config_auth_mode") == "static"}
+        form={@form}
+        sink={@sink}
+        mode="static"
+      />
+      <div :if={aws_auth_mode(@form, "config_auth_mode") == "assume_role"} class="space-y-4">
         <.input
           field={@form[:config_role_arn]}
           type="text"
@@ -1802,6 +1781,7 @@ defmodule FluxWeb.SinkLive.Form do
           type="text"
           label="External ID (optional)"
         />
+        <.aws_key_fields form={@form} sink={@sink} mode="assume_role" />
       </div>
       <.input
         field={@form[:config_write_mode]}
@@ -1944,45 +1924,19 @@ defmodule FluxWeb.SinkLive.Form do
           field={@form[:config_aws_auth_mode]}
           type="select"
           label="AWS Credentials"
-          options={[
-            {"IAM role (ambient credentials)", "iam_role"},
-            {"Static access key", "static"},
-            {"Assume role (cross-account)", "assume_role"}
-          ]}
+          options={aws_auth_mode_options()}
         />
-        <div :if={cfg(@form, "config_aws_auth_mode") == "static"} class="space-y-4">
-          <.input
-            field={@form[:config_access_key_id]}
-            type="text"
-            label="Access Key ID"
-            placeholder="AKIA…"
-            required
-          />
-          <.input
-            field={@form[:config_secret_access_key]}
-            type="password"
-            label="Secret Access Key"
-            required
-          />
-          <.input
-            field={@form[:config_session_token]}
-            type="password"
-            label="Session Token (optional)"
-            placeholder="For temporary credentials"
-          />
-          <.input
-            :if={stored_session_token?(@sink)}
-            field={@form[:config_clear_session_token]}
-            type="checkbox"
-            label="Remove the stored session token"
-          />
-          <p class="text-xs text-base-content/60 -mt-2">
-            Leave the secrets blank to keep the stored ones. Entering a new secret access key
-            without a session token also removes the stored token, which only works with the
-            key pair it was issued for.
-          </p>
-        </div>
-        <div :if={cfg(@form, "config_aws_auth_mode") == "assume_role"} class="space-y-4">
+        <.aws_server_credentials_notice id="cassandra-server-credentials-disabled" />
+        <.aws_key_fields
+          :if={aws_auth_mode(@form, "config_aws_auth_mode") == "static"}
+          form={@form}
+          sink={@sink}
+          mode="static"
+        />
+        <div
+          :if={aws_auth_mode(@form, "config_aws_auth_mode") == "assume_role"}
+          class="space-y-4"
+        >
           <.input
             field={@form[:config_role_arn]}
             type="text"
@@ -1995,6 +1949,7 @@ defmodule FluxWeb.SinkLive.Form do
             type="text"
             label="External ID (optional)"
           />
+          <.aws_key_fields form={@form} sink={@sink} mode="assume_role" />
         </div>
       </div>
       <p
@@ -2311,16 +2266,17 @@ defmodule FluxWeb.SinkLive.Form do
       else: Map.drop(config, @email_secret_keys)
   end
 
-  # A DynamoDB sink's stored AWS secrets belong to static auth. On a switch to
-  # another mode they are dropped (access_key_id is cleared by build_config/2),
-  # so the adapter can't go on signing with the old keys. A session token only
-  # works with the key pair it was issued for, so a new secret entered without
-  # a new token drops the stored token.
+  # A DynamoDB sink's stored AWS secrets belong to a keyed auth mode: static
+  # keys, or the base keys assume_role calls STS with. On a switch to iam_role
+  # they are dropped (access_key_id is cleared by build_config/2), so the adapter
+  # can't go on signing with the old keys. A session token only works with the
+  # key pair it was issued for, so a new secret entered without a new token
+  # drops the stored token.
   @aws_static_secret_keys ~w(secret_access_key session_token)
 
   defp carried_config("dynamodb", config, built) do
     cond do
-      Map.get(built, "auth_mode", "iam_role") != "static" ->
+      not aws_keyed_mode?(Map.get(built, "auth_mode")) ->
         Map.drop(config, @aws_static_secret_keys)
 
       Map.has_key?(built, "secret_access_key") and not Map.has_key?(built, "session_token") ->
@@ -2332,17 +2288,18 @@ defmodule FluxWeb.SinkLive.Form do
   end
 
   # A Cassandra sink's stored secrets belong to one auth mode: the password to
-  # password auth, the AWS secrets to SigV4 with static keys. On a switch away
-  # they are dropped, with the same session-token rule as DynamoDB.
+  # password auth, the AWS secrets to SigV4 with a keyed AWS mode (static, or
+  # assume_role's base keys). On a switch away they are dropped, with the same
+  # session-token rule as DynamoDB.
   defp carried_config("cassandra", config, built) do
     auth_mode = Map.get(built, "auth_mode", "none")
-    aws_static? = auth_mode == "sigv4" and Map.get(built, "aws_auth_mode") == "static"
+    aws_keyed? = auth_mode == "sigv4" and aws_keyed_mode?(Map.get(built, "aws_auth_mode"))
 
     config =
       if auth_mode == "password", do: config, else: Map.delete(config, "password")
 
     cond do
-      not aws_static? ->
+      not aws_keyed? ->
         Map.drop(config, @aws_static_secret_keys)
 
       Map.has_key?(built, "secret_access_key") and not Map.has_key?(built, "session_token") ->
@@ -2845,7 +2802,7 @@ defmodule FluxWeb.SinkLive.Form do
     |> maybe_put("auth_mode", auth_mode)
     |> put_clearable(
       "access_key_id",
-      if(auth_mode == "static", do: params["config_access_key_id"])
+      if(aws_keyed_mode?(auth_mode), do: params["config_access_key_id"])
     )
     |> maybe_put("secret_access_key", trim(params["config_secret_access_key"]))
     |> put_session_token(params)
@@ -2907,7 +2864,7 @@ defmodule FluxWeb.SinkLive.Form do
     |> put_clearable("aws_auth_mode", aws_auth_mode)
     |> put_clearable(
       "access_key_id",
-      if(aws_auth_mode == "static", do: params["config_access_key_id"])
+      if(aws_keyed_mode?(aws_auth_mode), do: params["config_access_key_id"])
     )
     |> maybe_put("secret_access_key", trim(params["config_secret_access_key"]))
     |> put_session_token(params)
@@ -2945,13 +2902,119 @@ defmodule FluxWeb.SinkLive.Form do
 
   defp stored_session_token?(_sink), do: false
 
+  # The access key pair an AWS connector signs with: static keys, or the base
+  # keys assume_role calls STS with. Base keys are optional while the operator
+  # lets connectors use the server's own identity, and required otherwise.
+  attr :form, Phoenix.HTML.Form, required: true
+  attr :sink, Sink, required: true
+  attr :mode, :string, values: ~w(static assume_role), required: true
+
+  defp aws_key_fields(assigns) do
+    assigns =
+      assign(assigns,
+        base?: assigns.mode == "assume_role",
+        optional?: assigns.mode == "assume_role" and aws_server_credentials?()
+      )
+
+    ~H"""
+    <div class="space-y-4" id={"aws-#{@mode}-keys"}>
+      <p :if={@base?} class="text-xs text-base-content/60">
+        <%= if @optional? do %>
+          Base credentials for the STS call. Leave them blank to assume the role with the
+          server's own AWS identity.
+        <% else %>
+          Base credentials for the STS call. The role is assumed with these keys, never with
+          the server's own AWS identity.
+        <% end %>
+      </p>
+      <.input
+        field={@form[:config_access_key_id]}
+        type="text"
+        label={key_label("Access Key ID", @base?, @optional?)}
+        placeholder="AKIA…"
+        required={not @optional?}
+      />
+      <.input
+        field={@form[:config_secret_access_key]}
+        type="password"
+        label={key_label("Secret Access Key", @base?, @optional?)}
+        required={not @optional?}
+      />
+      <.input
+        field={@form[:config_session_token]}
+        type="password"
+        label="Session Token (optional)"
+        placeholder="For temporary credentials"
+      />
+      <.input
+        :if={stored_session_token?(@sink)}
+        field={@form[:config_clear_session_token]}
+        type="checkbox"
+        label="Remove the stored session token"
+      />
+      <p class="text-xs text-base-content/60 -mt-2">
+        Leave the secrets blank to keep the stored ones. Entering a new secret access key
+        without a session token also removes the stored token, which only works with the
+        key pair it was issued for.
+      </p>
+    </div>
+    """
+  end
+
+  defp key_label(label, base?, optional?) do
+    label = if base?, do: "Base " <> label, else: label
+    if optional?, do: label <> " (optional)", else: label
+  end
+
+  # Explains why server-credential options are missing when the operator has
+  # turned them off. Renders nothing while they are allowed.
+  attr :id, :string, required: true
+
+  defp aws_server_credentials_notice(assigns) do
+    ~H"""
+    <div
+      :if={not aws_server_credentials?()}
+      id={@id}
+      class="flex items-start gap-2 rounded-lg border border-base-300 bg-base-200/60 px-3 py-2 text-xs text-base-content/70"
+    >
+      <.icon name="hero-lock-closed" class="w-4 h-4 mt-px shrink-0 text-base-content/50" />
+      <span>{Flux.AWS.ServerCredentials.disabled_message()}</span>
+    </div>
+    """
+  end
+
   # A Cassandra sink signing AWS SigV4 with the server's credentials (anything
   # but a static key) only reaches Amazon Keyspaces, over TLS on the system
   # trust store, so the form shows that rule instead of the TLS settings.
   defp cassandra_server_signing?(form),
     do:
       cfg(form, "config_auth_mode") == "sigv4" and
-        cfg(form, "config_aws_auth_mode") != "static"
+        aws_auth_mode(form, "config_aws_auth_mode") != "static"
+
+  # The AWS auth modes a connector may pick. `iam_role` signs with the server's
+  # own identity, so it is offered only while the operator allows that; the
+  # first option is the default a new connector opens on.
+  defp aws_auth_mode_options do
+    keyed = [{"Static access key", "static"}, {"Assume role (cross-account)", "assume_role"}]
+
+    if aws_server_credentials?(),
+      do: [{"IAM role (ambient credentials)", "iam_role"} | keyed],
+      else: keyed
+  end
+
+  # The selected AWS auth mode, or the select's default before the field has a
+  # value (a new connector, or one whose stored mode is no longer offered).
+  defp aws_auth_mode(form, field) do
+    modes = Enum.map(aws_auth_mode_options(), &elem(&1, 1))
+    mode = cfg(form, field)
+    if mode in modes, do: mode, else: hd(modes)
+  end
+
+  defp aws_server_credentials?, do: Flux.AWS.ServerCredentials.allowed?()
+
+  # Auth modes whose stored access key pair is used: static keys, and the base
+  # keys an assume_role connector calls STS with.
+  defp aws_keyed_mode?(mode), do: mode in ["static", "assume_role"]
 
   defp blank_to_nil(value) when value in [nil, ""], do: nil
   defp blank_to_nil(value), do: value
