@@ -130,4 +130,30 @@ defmodule Flux.SinkTest do
                Sink.test_connection("unknown", %{})
     end
   end
+
+  describe "undecryptable secrets (MOS-665)" do
+    setup do
+      marker =
+        "token"
+        |> Flux.SinksFixtures.foreign_encrypted_wrapper()
+        |> Map.put("undecryptable", true)
+
+      config = %{
+        "type" => "http",
+        "url" => "https://example.invalid/hook",
+        "auth" => %{"type" => "bearer", "token" => marker}
+      }
+
+      %{config: config}
+    end
+
+    test "deliver/3 returns :undecryptable_secret without calling the adapter",
+         %{config: config} do
+      assert Sink.deliver(%{"a" => 1}, config) == {:error, :undecryptable_secret}
+    end
+
+    test "test_connection/2 returns :undecryptable_secret", %{config: config} do
+      assert Sink.test_connection("http", config) == {:error, :undecryptable_secret}
+    end
+  end
 end

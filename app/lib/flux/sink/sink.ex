@@ -49,6 +49,10 @@ defmodule Flux.Sink do
 
   The config must include a `"type"` key specifying the sink type.
 
+  Returns `{:error, :undecryptable_secret}` without calling the adapter when a
+  stored secret couldn't be decrypted with the current vault key (see
+  `Flux.Vault.decrypt_map/2`). The operator fixes it by re-entering the secret.
+
   ## Examples
 
       config = %{"type" => "http", "url" => "https://example.com/webhook"}
@@ -59,6 +63,16 @@ defmodule Flux.Sink do
   def deliver(data, config, opts \\ [])
 
   def deliver(data, %{"type" => type} = config, opts) do
+    with :ok <- check_secrets_decrypted(config) do
+      do_deliver(data, type, config, opts)
+    end
+  end
+
+  def deliver(_data, config, _opts) do
+    {:error, {:missing_type, config}}
+  end
+
+  defp do_deliver(data, type, config, opts) do
     case adapter_for_type(type) do
       {:ok, adapter} ->
         Logger.debug("Delivering to #{type} sink")
@@ -67,10 +81,6 @@ defmodule Flux.Sink do
       {:error, :unknown_type} ->
         {:error, {:unknown_sink_type, type}}
     end
-  end
-
-  def deliver(_data, config, _opts) do
-    {:error, {:missing_type, config}}
   end
 
   @doc """
@@ -94,9 +104,17 @@ defmodule Flux.Sink do
   Tests connectivity to a sink.
 
   Returns `:ok` if the connection is successful, or `{:error, reason}` if not.
+  Returns `{:error, :undecryptable_secret}` without contacting the sink when a
+  stored secret couldn't be decrypted with the current vault key.
   """
   @spec test_connection(String.t(), sink_config()) :: :ok | {:error, term()}
   def test_connection(type, config) do
+    with :ok <- check_secrets_decrypted(config) do
+      do_test_connection(type, config)
+    end
+  end
+
+  defp do_test_connection(type, config) do
     case adapter_for_type(type) do
       {:ok, adapter} ->
         if function_exported?(adapter, :test_connection, 1) do
@@ -109,4 +127,17 @@ defmodule Flux.Sink do
         {:error, {:unknown_sink_type, type}}
     end
   end
+
+  # A secret that couldn't be decrypted with the current vault key loads as a
+  # marker map, not as the secret (see `Flux.Vault.decrypt_map/2`). Stop here
+  # with a clear reason instead of handing the marker to the adapter as a
+  # password or token. Checking once in this facade covers every adapter.
+  defp check_secrets_decrypted(config) when is_map(config) do
+    case Flux.Vault.undecryptable_paths(config, Flux.Sinks.Secrets.paths(config)) do
+      [] -> :ok
+      _paths -> {:error, :undecryptable_secret}
+    end
+  end
+
+  defp check_secrets_decrypted(_config), do: :ok
 end
