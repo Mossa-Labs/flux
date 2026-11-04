@@ -26,6 +26,15 @@ when configuration leaves the system (e.g. API reads). Prefer `iam_role` in
 AWS-hosted deployments so no long-lived secrets are stored. (SSO and
 cross-account assume-role are on the roadmap.)
 
+> **Server credentials can be turned off.** `iam_role` signs with the Flux
+> server's own AWS identity. An operator can set
+> `FLUX_AWS_SERVER_CREDENTIALS=disabled`, which is recommended when several
+> organizations share a deployment. `iam_role` is then refused when you save and
+> at runtime, and the form offers only static keys. See
+> [Server AWS Credentials](../operator_manual.md#server-aws-credentials).
+>
+> A source saved before the change does not start.
+
 ## Source configuration
 
 | Field | Required | Description |

@@ -25,7 +25,7 @@ For `sigv4`, `aws_auth_mode` picks where the AWS credentials come from:
 | --- | --- |
 | `iam_role` (default) | Ambient IAM role from EC2/ECS/EKS instance metadata — no stored secrets |
 | `static` | Static `access_key_id` + `secret_access_key` (optional `session_token`) |
-| `assume_role` | Assume a `role_arn` (cross-account), optionally with an `external_id` |
+| `assume_role` | Assume a `role_arn` (cross-account), optionally with an `external_id`. The STS call is signed with base `access_key_id` + `secret_access_key` when you give them, and with the server's identity otherwise |
 
 > **Server credentials reach only Amazon Keyspaces.** With `iam_role` or
 > `assume_role`, Flux signs with its own AWS identity. For security, these sinks
@@ -35,6 +35,14 @@ For `sigv4`, `aws_auth_mode` picks where the AWS credentials come from:
 > (`*.cassandra.<region>.vpce.amazonaws.com`). TLS is always on and verified
 > against the system trust store, so `tls_ca_file` can't be set and client
 > certificates aren't used. To reach any other host, sign with `static` keys.
+
+> **Server credentials can be turned off.** For SigV4, `iam_role` and
+> `assume_role` without base keys sign with the Flux server's own AWS identity.
+> An operator can set `FLUX_AWS_SERVER_CREDENTIALS=disabled`, which is
+> recommended when several organizations share a deployment. These modes are
+> then refused when you save and before connecting, and the form offers only
+> static keys and `assume_role` with base keys. See
+> [Server AWS Credentials](../operator_manual.md#server-aws-credentials).
 
 **Mutual TLS** is independent of the auth mode: turn on `tls` and set
 `tls_cert_file` / `tls_key_file` to present a client certificate, on its own or

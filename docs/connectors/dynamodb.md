@@ -16,7 +16,7 @@ with optional idempotent (conditional) writes and TTL expiry.
 | --- | --- |
 | `iam_role` (default) | Ambient IAM role from EC2/ECS/EKS instance metadata — no stored secrets |
 | `static` | Static `access_key_id` + `secret_access_key` (optional `session_token`) |
-| `assume_role` | Assume a `role_arn` (cross-account), optionally with an `external_id` |
+| `assume_role` | Assume a `role_arn` (cross-account), optionally with an `external_id`. The STS call is signed with base `access_key_id` + `secret_access_key` when you give them, and with the server's identity otherwise |
 
 `secret_access_key` and `session_token` are encrypted at rest and masked
 (`[REDACTED]`) when configuration leaves the system (e.g. API reads). Prefer
@@ -24,13 +24,21 @@ with optional idempotent (conditional) writes and TTL expiry.
 stored.
 
 When editing a sink, leave the secrets blank to keep the stored ones. Switching the
-auth mode away from `static` removes the stored keys and session token. Entering a
+auth mode to `iam_role` removes the stored keys and session token. Switching between
+`static` and `assume_role` keeps them, as the base keys. Entering a
 new `secret_access_key` without a new `session_token` also removes the stored token,
 since a token is only valid with the key pair it was issued for.
 
 AWS SSO (IAM Identity Center) is an interactive, browser-based login unsuited to a
 headless server, so it is not supported; use `iam_role` (or cross-account
 `assume_role`) instead.
+
+> **Server credentials can be turned off.** `iam_role`, and `assume_role` without
+> base keys, sign with the Flux server's own AWS identity. An operator can set
+> `FLUX_AWS_SERVER_CREDENTIALS=disabled`, which is recommended when several
+> organizations share a deployment. These modes are then refused when you save
+> and at runtime, and the form offers only static keys and `assume_role` with base keys. See
+> [Server AWS Credentials](../operator_manual.md#server-aws-credentials).
 
 ## Sink configuration
 
@@ -42,7 +50,7 @@ headless server, so it is not supported; use `iam_role` (or cross-account
 | `region` | no | AWS region of the table (default `us-east-1`) |
 | `endpoint` | no | Custom endpoint URL, e.g. LocalStack or DynamoDB Local for testing |
 | `auth_mode` | no | One of the auth modes above (default `iam_role`) |
-| `access_key_id` / `secret_access_key` | conditional | Required for `static`; optional `session_token` |
+| `access_key_id` / `secret_access_key` | conditional | Required for `static`. Under `assume_role` they are the STS base keys: optional, but required when server credentials are disabled. Optional `session_token` |
 | `role_arn` | conditional | Required for `assume_role`; optional `external_id` |
 | `write_mode` | no | `put` (default) / `if_absent` / `if_newer` — see below |
 | `version_attribute` | conditional | Numeric version attribute; required for `if_newer` |
@@ -111,8 +119,9 @@ ARN:
 | `dynamodb:DescribeTable` | **Test connection** — table status and key schema |
 | `dynamodb:DescribeTimeToLive` | **Test connection** — TTL check when `ttl_attribute` is set |
 
-For `assume_role`, the Flux principal also needs `sts:AssumeRole` on the
-`role_arn`. Temporary credentials are cached and refreshed before they expire.
+For `assume_role`, the principal that signs the STS call needs `sts:AssumeRole`
+on the `role_arn`. That is the base keys' IAM user when you give base keys, and
+Flux's own identity otherwise. Temporary credentials are cached and refreshed before they expire.
 
 ## Networking & firewall
 
