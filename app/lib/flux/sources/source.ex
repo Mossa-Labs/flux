@@ -20,7 +20,10 @@ defmodule Flux.Sources.Source do
     field :name, :string
     field :description, :string
     field :type, :string
-    field :config, :map, default: %{}
+    # Secret values within `config` (see `Flux.Sources.Secrets`) are encrypted at
+    # rest by the custom type; everything else is plain JSONB. Callers and
+    # adapters always see plaintext.
+    field :config, Flux.Vault.EncryptedConfig, secrets: Flux.Sources.Secrets, default: %{}
     field :enabled, :boolean, default: true
 
     belongs_to :organization, Organization
