@@ -156,5 +156,6 @@ alongside email, webhook and Slack. Paste the service's integration key into
   as custom details.
 - The key is write-only: it is never shown again after saving. Leave the field
   blank when editing to keep it, or tick **Remove the PagerDuty channel**.
-  Unlike the sink's key, an alert channel's key is not encrypted at rest.
+  Like the sink's key, it is encrypted at rest and kept out of alert history
+  and logs.
 - **Test** checks the key the same non-paging way as the sink's connection test.
