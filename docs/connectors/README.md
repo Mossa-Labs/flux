@@ -1,8 +1,10 @@
 # Connectors
 
-Sources bring data into a pipeline. Sinks deliver it. Community connectors ship
-in every build. Pro and Enterprise connectors appear in every build too, marked
-with their edition, and work once a license for that edition is active (see
+Sources bring data into a pipeline. Sinks deliver it. Community connectors work
+in every build. Pro and Enterprise connectors appear in the Community build
+marked with their edition, but saving one there shows an upgrade prompt. The
+connectors themselves ship in the Flux Pro / Enterprise edition and run with an
+active license for that edition (see
 [pricing](https://fluxdata.tech/pricing.html)).
 
 ## Sources
