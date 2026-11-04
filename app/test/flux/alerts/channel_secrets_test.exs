@@ -89,6 +89,26 @@ defmodule Flux.Alerts.ChannelSecretsTest do
       refute log =~ "not-a-valid-token"
     end
 
+    test "a damaged wrapper is treated as undecryptable, not as a stored secret" do
+      for wrapper <- [
+            %{"encrypted" => true},
+            %{"encrypted" => true, "ciphertext" => nil},
+            %{"encrypted" => true, "ciphertext" => 123},
+            %{"encrypted" => true, "ciphertext" => %{"nested" => "x"}}
+          ] do
+        damaged = [
+          %{"type" => "pagerduty", "config" => %{"routing_key" => wrapper, "severity" => "error"}}
+        ]
+
+        {result, log} = ExUnit.CaptureLog.with_log(fn -> ChannelSecrets.decrypt(damaged) end)
+
+        assert [%{"type" => "pagerduty", "config" => config}] = result
+        assert config == %{"severity" => "error"}
+        refute ChannelSecrets.stored?(ChannelSecrets.redact(result), "pagerduty")
+        assert log =~ "could not decrypt an alert channel secret (routing_key)"
+      end
+    end
+
     test "tolerates malformed channels and non-lists" do
       odd = [%{"type" => "slack"}, %{"config" => %{"url" => @slack_url}}, "junk"]
       assert ChannelSecrets.encrypt(odd) == odd

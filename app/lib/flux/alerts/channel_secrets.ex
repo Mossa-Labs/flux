@@ -58,10 +58,12 @@ defmodule Flux.Alerts.ChannelSecrets do
   Decrypts each channel's secret values. Only the locations named by
   `secret_keys/1` are decrypted; legacy plaintext passes through unchanged.
 
-  A secret that can't be decrypted (the Vault key changed, or the ciphertext
-  was tampered with) is dropped with a warning instead of raising. The channel
-  then reads as "not set": it fails delivery cleanly, and the owner can
-  re-enter the value, rather than one bad row breaking every rule.
+  A secret that can't be decrypted is dropped with a warning instead of
+  raising. That covers a changed Vault key, a tampered ciphertext, and a
+  damaged wrapper (missing or non-string `ciphertext`), which `Flux.Vault`
+  would otherwise pass through as-is. The channel then reads as "not set": it
+  fails delivery cleanly, and the owner can re-enter the value, rather than
+  one bad row breaking every rule.
   """
   @spec decrypt([map()]) :: [map()]
   def decrypt(channels) when is_list(channels),
@@ -70,16 +72,32 @@ defmodule Flux.Alerts.ChannelSecrets do
   def decrypt(other), do: other
 
   defp decrypt_config(config, paths) do
-    Vault.decrypt_map(config, paths)
-  rescue
-    Flux.Vault.DecryptError ->
-      Logger.warning(
-        "[Alerts] could not decrypt an alert channel secret (#{Enum.map_join(paths, ", ", &hd/1)}); " <>
-          "it must be re-entered"
-      )
+    Enum.reduce(paths, config, fn [key] = path, acc ->
+      case decrypt_secret(acc, path) do
+        {:ok, decrypted} ->
+          decrypted
 
-      Map.drop(config, Enum.map(paths, &hd/1))
+        :error ->
+          Logger.warning(
+            "[Alerts] could not decrypt an alert channel secret (#{key}); it must be re-entered"
+          )
+
+          Map.delete(acc, key)
+      end
+    end)
   end
+
+  # A wrapper still in place after decryption was never decrypted: its
+  # `ciphertext` is missing or isn't a string, so `Flux.Vault` skipped it.
+  defp decrypt_secret(config, path) do
+    decrypted = Vault.decrypt_map(config, [path])
+    if wrapper?(get_in(decrypted, path)), do: :error, else: {:ok, decrypted}
+  rescue
+    Flux.Vault.DecryptError -> :error
+  end
+
+  defp wrapper?(%{"encrypted" => true}), do: true
+  defp wrapper?(_), do: false
 
   @doc """
   Masks every secret value with `"[REDACTED]"`, then masks any encrypted
