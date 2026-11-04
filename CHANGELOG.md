@@ -1,14 +1,13 @@
 # Changelog
 
 Notable changes to Flux Community Edition. Releases are git tags (`vX.Y.Z`).
-Connectors marked Pro or Enterprise are gated here: their types, forms and
-upgrade prompts ship in this repository, and their adapters ship in the Flux
-Pro / Enterprise edition.
+Connectors marked Pro or Enterprise are available in the Flux Pro / Enterprise
+edition; Community shows them with an upgrade prompt.
 
 This file starts after v0.2.6. For earlier releases, see the git history between
 tags.
 
-## Unreleased
+## 0.2.7 — 2026-11-04
 
 ### Upgrade notes
 
@@ -44,9 +43,9 @@ tags.
 - **Source credentials stay out of pipeline reads and exports.** Builder source
   configs (passwords, secret keys, tokens, client keys) are masked in the
   pipeline API and the version diff, and dropped from exports via the API, the
-  download and the mix task. Previously any key with `read:pipelines` could read
-  them. Source credentials are not encrypted at rest, and the builder no longer
-  says they are.
+  download and the mix task. Earlier releases returned them to any API key that
+  could read pipelines. Source credentials are not encrypted at rest, and the
+  builder no longer says they are.
 - Dependency security updates:
   - plug_crypto 2.2.1 (EEF-CVE-2026-105963)
   - bandit 1.14.1 (EEF-CVE-2026-116078)
@@ -76,18 +75,6 @@ tags.
 
 ### Changed
 
-- Builder canvas controls follow the app theme, and the React Flow attribution
-  is hidden.
+- Builder canvas controls follow the app theme.
 - Dependency upgrades: Oban 2.24.2, Phoenix LiveView 1.2.13, LiveDashboard
-  0.9.1, Broadway 1.3.0, MyXQL 0.9.0, Swoosh 1.29.3. nimble_options stays at
-  1.1.1, because 1.2.0 breaks `Broadway.start_link/2`.
-- CI:
-  - Dependabot proposes only minor and patch version updates, and groups
-    security updates per package manager.
-  - GitHub Actions get their own weekly update and run on their Node 24
-    releases.
-
-### Fixed
-
-- gRPC pipelines built in the builder consume the source's `grpc.<channel>`
-  queue.
+  0.9.1, Broadway 1.3.0, MyXQL 0.9.0, Swoosh 1.29.3.
