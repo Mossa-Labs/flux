@@ -7,6 +7,9 @@ defmodule Flux.Sinks do
   """
 
   import Ecto.Query, warn: false
+
+  require Logger
+
   alias Flux.Repo
   alias Flux.Sinks.Sink
 
@@ -61,6 +64,7 @@ defmodule Flux.Sinks do
     |> where([s], s.organization_id == ^organization_id)
     |> order_by([s], desc: s.updated_at)
     |> Repo.all()
+    |> warn_undecryptable()
   end
 
   @doc """
@@ -71,6 +75,7 @@ defmodule Flux.Sinks do
     |> where([s], s.organization_id == ^organization_id and s.enabled == true)
     |> order_by([s], asc: s.name)
     |> Repo.all()
+    |> warn_undecryptable()
   end
 
   @doc """
@@ -112,7 +117,55 @@ defmodule Flux.Sinks do
       ** (Ecto.NoResultsError)
 
   """
-  def get_sink!(id), do: Repo.get!(Sink, id)
+  def get_sink!(id), do: Sink |> Repo.get!(id) |> warn_undecryptable()
+
+  @doc """
+  Returns the names of a sink's secret keys that couldn't be decrypted with the
+  current vault key, e.g. `["routing_key"]` or `["auth.token"]`.
+
+  An empty list means every stored secret decrypted (or there are none). See
+  `Flux.Vault.decrypt_map/2` for how such secrets load.
+  """
+  @spec undecryptable_secrets(%Sink{} | map()) :: [String.t()]
+  def undecryptable_secrets(%Sink{config: config}), do: undecryptable_secrets(config)
+
+  def undecryptable_secrets(config) when is_map(config) do
+    config
+    |> Flux.Vault.undecryptable_paths(Secrets.paths(config))
+    |> Enum.map(&Enum.join(&1, "."))
+  end
+
+  def undecryptable_secrets(_config), do: []
+
+  @doc "Returns `true` if any of the sink's stored secrets couldn't be decrypted."
+  @spec undecryptable_secrets?(%Sink{} | map()) :: boolean()
+  def undecryptable_secrets?(sink_or_config), do: undecryptable_secrets(sink_or_config) != []
+
+  # Logs one warning per affected sink so an operator can find the rows to fix.
+  # Only key names and the sink id are logged, never ciphertext. Not called on
+  # the delivery path (`get_sinks_by_ids/1`): there, each failed delivery is
+  # already logged with the sink id and `:undecryptable_secret`.
+  defp warn_undecryptable(sinks) when is_list(sinks) do
+    Enum.each(sinks, &warn_undecryptable/1)
+    sinks
+  end
+
+  defp warn_undecryptable(%Sink{} = sink) do
+    case undecryptable_secrets(sink) do
+      [] ->
+        :ok
+
+      keys ->
+        Logger.warning(
+          "Sink #{sink.id} has stored secrets that can't be decrypted with the current " <>
+            "vault key (#{Enum.join(keys, ", ")}). Re-enter them on the sink's edit page."
+        )
+    end
+
+    sink
+  end
+
+  defp warn_undecryptable(other), do: other
 
   @doc """
   Gets a single sink by id and organization.
@@ -123,6 +176,7 @@ defmodule Flux.Sinks do
     Sink
     |> where([s], s.id == ^id and s.organization_id == ^organization_id)
     |> Repo.one()
+    |> warn_undecryptable()
   end
 
   @doc """

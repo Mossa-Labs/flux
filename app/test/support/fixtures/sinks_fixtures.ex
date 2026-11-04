@@ -68,4 +68,53 @@ defmodule Flux.SinksFixtures do
     {:ok, sink} = Flux.Sinks.create_sink(attrs)
     sink
   end
+
+  @doc """
+  Encrypts `value` into a vault wrapper under a key that is **not** the
+  configured vault key, the way a row looks after a key rotation that missed
+  it. `Flux.Vault` can't decrypt it.
+  """
+  def foreign_encrypted_wrapper(value) do
+    base = "a-different-vault-key-#{System.unique_integer([:positive])}"
+    aes = Plug.Crypto.KeyGenerator.generate(base, "flux.vault.aes256.v1", length: 32)
+    sign = Plug.Crypto.KeyGenerator.generate(base, "flux.vault.sign.v1", length: 32)
+    token = Plug.Crypto.MessageEncryptor.encrypt(Jason.encode!(value), aes, sign)
+    %{"encrypted" => true, "ciphertext" => token}
+  end
+
+  @doc """
+  Generate an HTTP sink whose bearer token was encrypted under a different
+  vault key, so it can't be decrypted on load.
+
+  Writes the raw `config` column directly, skipping the `EncryptedConfig` type,
+  so no global vault key has to change and the test can stay async.
+  """
+  def undecryptable_sink_fixture(organization_id, attrs \\ %{}) do
+    import Ecto.Query, only: [from: 2]
+
+    sink =
+      sink_fixture(
+        organization_id,
+        Enum.into(attrs, %{
+          config: %{
+            "url" => "https://example.com/webhook",
+            "method" => "POST",
+            "auth" => %{"type" => "bearer", "token" => "old-token"}
+          }
+        })
+      )
+
+    raw_config = %{
+      "url" => "https://example.com/webhook",
+      "method" => "POST",
+      "auth" => %{"type" => "bearer", "token" => foreign_encrypted_wrapper("old-token")}
+    }
+
+    {1, _} =
+      Flux.Repo.update_all(from(s in "sinks", where: s.id == ^sink.id),
+        set: [config: raw_config]
+      )
+
+    Flux.Repo.get!(Flux.Sinks.Sink, sink.id)
+  end
 end

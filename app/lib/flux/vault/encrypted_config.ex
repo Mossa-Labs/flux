@@ -20,6 +20,11 @@ defmodule Flux.Vault.EncryptedConfig do
 
   Legacy plaintext rows are handled gracefully: `load` passes plaintext at a
   secret path through unchanged, and the next write encrypts it.
+
+  `load` never raises. A secret that can't be decrypted with the current key
+  loads as an undecryptable marker (see `Flux.Vault.decrypt_map/2`). Without
+  that, one bad row would make every query that reads the row fail. `dump`
+  writes the original ciphertext back unchanged.
   """
 
   use Ecto.ParameterizedType

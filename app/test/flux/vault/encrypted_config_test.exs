@@ -61,4 +61,18 @@ defmodule Flux.Vault.EncryptedConfigTest do
     assert %{"encrypted" => true} = dumped["private_key"]
     assert {:ok, ^config} = EncryptedConfig.load(dumped, nil, params)
   end
+
+  test "load doesn't raise when a secret was encrypted under another key", %{params: params} do
+    foreign = Flux.SinksFixtures.foreign_encrypted_wrapper("abc123")
+    stored = put_in(@config, ["auth", "token"], foreign)
+
+    assert {:ok, loaded} = EncryptedConfig.load(stored, nil, params)
+    assert loaded["url"] == "https://example.com"
+    assert loaded["database_url"] == "postgres://u:pw@h/db"
+    assert Flux.Vault.undecryptable?(loaded["auth"]["token"])
+
+    # Writing the row back keeps the original ciphertext, minus the flag.
+    assert {:ok, dumped} = EncryptedConfig.dump(loaded, nil, params)
+    assert dumped["auth"]["token"] == foreign
+  end
 end
