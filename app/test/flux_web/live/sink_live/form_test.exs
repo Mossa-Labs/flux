@@ -865,4 +865,55 @@ defmodule FluxWeb.SinkLive.FormTest do
       }
     })
   end
+
+  describe "editing a sink whose stored secret can't be decrypted (MOS-665)" do
+    setup :register_and_log_in_user
+
+    setup %{scope: scope} do
+      sink =
+        scope.organization_id
+        |> email_sink_fixture()
+        |> make_secret_undecryptable(["password"])
+
+      %{sink: sink}
+    end
+
+    @tag :capture_log
+    test "shows a notice naming the secret", %{conn: conn, sink: sink} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      assert has_element?(lv, "#sink-undecryptable-notice", "can't be decrypted")
+      assert has_element?(lv, "#sink-undecryptable-notice code", "password")
+    end
+
+    @tag :capture_log
+    test "saving without re-entering the secret is rejected and keeps the stored ciphertext",
+         %{conn: conn, scope: scope, sink: sink} do
+      ciphertext = sink.config["password"]["ciphertext"]
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      html = lv |> form("form", %{"sink" => %{"config_subject" => "changed"}}) |> render_submit()
+
+      assert html =~ "required when a username is set"
+
+      stored = Flux.Sinks.get_sink(sink.id, scope.organization_id)
+      assert stored.config["subject"] == sink.config["subject"]
+      assert stored.config["password"]["ciphertext"] == ciphertext
+    end
+
+    @tag :capture_log
+    test "re-entering the secret saves and clears the flag",
+         %{conn: conn, scope: scope, sink: sink} do
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      lv
+      |> form("form", %{"sink" => %{"config_password" => "new-s3cr3t"}})
+      |> render_submit()
+
+      stored = Flux.Sinks.get_sink(sink.id, scope.organization_id)
+      assert stored.config["password"] == "new-s3cr3t"
+      refute Flux.Sinks.undecryptable_secrets?(stored)
+    end
+  end
 end
