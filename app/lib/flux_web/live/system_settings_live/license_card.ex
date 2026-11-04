@@ -152,8 +152,7 @@ defmodule FluxWeb.SystemSettingsLive.LicenseCard do
           <span
             class={["size-2 shrink-0 rounded-full", node_dot_class(Map.get(n, :tier))]}
             aria-hidden="true"
-          >
-          </span>
+          ></span>
           <span class="min-w-0 flex-1 truncate font-mono text-xs" title={to_string(n.node)}>
             {n.node}
           </span>

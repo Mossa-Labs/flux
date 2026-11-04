@@ -76,8 +76,7 @@ defmodule FluxWeb.SystemSettingsLive.Components do
         >
           <.icon name={icon} class="size-4" />
           {label}
-          <span :if={id in @attention} class="size-2 rounded-full bg-warning" aria-hidden="true">
-          </span>
+          <span :if={id in @attention} class="size-2 rounded-full bg-warning" aria-hidden="true"></span>
           <span :if={id in @attention} class="sr-only">(needs attention)</span>
         </.link>
       </div>
