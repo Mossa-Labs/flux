@@ -480,8 +480,7 @@ defmodule FluxWeb.DLQLive.Index do
             class="progress progress-primary w-full"
             value={@replay_progress.processed}
             max={max(@replay_progress.total, 1)}
-          >
-          </progress>
+          ></progress>
         </div>
       </div>
 
