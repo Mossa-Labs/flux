@@ -34,6 +34,7 @@ defmodule FluxWeb.PipelineLive.Builder do
      |> assign(:sftp_source, Flux.License.has_feature?(:sftp_source))
      |> assign(:grpc_source, Flux.License.has_feature?(:grpc_source))
      |> assign(:pii_redaction, Flux.License.has_feature?(:pii_redaction))
+     |> assign(:aws_server_credentials, Flux.AWS.ServerCredentials.allowed?())
      |> assign(:page_title, "Pipeline Builder")}
   end
 
@@ -142,6 +143,7 @@ defmodule FluxWeb.PipelineLive.Builder do
                 mqtt_source={@mqtt_source}
                 sftp_source={@sftp_source}
                 grpc_source={@grpc_source}
+                aws_server_credentials={@aws_server_credentials}
               />
             <% @selected_edge -> %>
               <.edge_config_form edge={@selected_edge} ir={@initial_ir} />
@@ -299,6 +301,7 @@ defmodule FluxWeb.PipelineLive.Builder do
   mqtt_source={@mqtt_source}
   sftp_source={@sftp_source}
   grpc_source={@grpc_source}
+  aws_server_credentials={@aws_server_credentials}
 />"
 
   defp node_config_form(%{node: %{type: "step"}} = assigns),
@@ -405,9 +408,17 @@ defmodule FluxWeb.PipelineLive.Builder do
           <% "kafka" -> %>
             <.kafka_source_config config={@source_config} kafka_source={@kafka_source} />
           <% "sqs" -> %>
-            <.sqs_source_config config={@source_config} sqs_source={@sqs_source} />
+            <.sqs_source_config
+              config={@source_config}
+              sqs_source={@sqs_source}
+              server_credentials={@aws_server_credentials}
+            />
           <% "kinesis" -> %>
-            <.kinesis_source_config config={@source_config} kinesis_source={@kinesis_source} />
+            <.kinesis_source_config
+              config={@source_config}
+              kinesis_source={@kinesis_source}
+              server_credentials={@aws_server_credentials}
+            />
           <% "pubsub" -> %>
             <.pubsub_source_config config={@source_config} pubsub_source={@pubsub_source} />
           <% "rabbitmq_external" -> %>
@@ -716,9 +727,7 @@ defmodule FluxWeb.PipelineLive.Builder do
           disabled={!@sqs_source}
           class="select select-bordered select-sm w-full"
         >
-          <option value="iam_role" selected={@config["authMode"] == "iam_role"}>
-            IAM role (instance metadata)
-          </option>
+          <.aws_iam_role_option config={@config} server_credentials={@server_credentials} />
           <option value="static" selected={@config["authMode"] == "static"}>
             Static access key
           </option>
@@ -731,7 +740,16 @@ defmodule FluxWeb.PipelineLive.Builder do
         </select>
       </div>
 
-      <.aws_static_credentials config={@config} enabled={@sqs_source} />
+      <.aws_server_credentials_notice
+        id="sqs-server-credentials-disabled"
+        server_credentials={@server_credentials}
+      />
+
+      <.aws_static_credentials
+        config={@config}
+        enabled={@sqs_source}
+        server_credentials={@server_credentials}
+      />
 
       <div :if={@config["authMode"] == "assume_role"} class="form-control">
         <.field_label
@@ -788,19 +806,41 @@ defmodule FluxWeb.PipelineLive.Builder do
     """
   end
 
-  # Shared conditional AWS static-credential inputs, revealed only when the source
-  # (SQS or Kinesis) uses `static` auth. `enabled` mirrors the parent's Pro flag.
+  # Shared AWS access-key inputs for the SQS and Kinesis sources: the static key
+  # pair, or the base keys an SQS `assume_role` source calls STS with. Base keys
+  # are optional while the operator lets sources use the server's own identity
+  # and required otherwise. `enabled` mirrors the parent's Pro flag.
   attr :config, :map, required: true
   attr :enabled, :boolean, required: true
+  attr :server_credentials, :boolean, required: true
 
   defp aws_static_credentials(assigns) do
+    mode = aws_auth_mode(assigns.config, assigns.server_credentials)
+    base? = mode == "assume_role"
+
+    assigns =
+      assign(assigns,
+        show?: mode in ["static", "assume_role"],
+        base?: base?,
+        required?: not base? or not assigns.server_credentials
+      )
+
     ~H"""
-    <div :if={@config["authMode"] == "static"} class="space-y-3">
+    <div :if={@show?} class="space-y-3" id="aws-source-keys">
+      <p :if={@base?} class="text-xs text-base-content/60">
+        <%= if @required? do %>
+          Base credentials for the STS call. The role is assumed with these keys, never with
+          the server's own AWS identity.
+        <% else %>
+          Base credentials for the STS call (optional). Leave them blank to assume the role
+          with the server's own AWS identity.
+        <% end %>
+      </p>
       <div class="form-control">
         <.field_label
-          text="Access Key ID"
-          tooltip="AWS access key ID (required for static credentials)"
-          required
+          text={if @base?, do: "Base Access Key ID", else: "Access Key ID"}
+          tooltip="AWS access key ID"
+          required={@required?}
         />
         <input
           type="text"
@@ -813,9 +853,9 @@ defmodule FluxWeb.PipelineLive.Builder do
       </div>
       <div class="form-control">
         <.field_label
-          text="Secret Access Key"
+          text={if @base?, do: "Base Secret Access Key", else: "Secret Access Key"}
           tooltip="AWS secret access key (redacted from API reads and exports)"
-          required
+          required={@required?}
         />
         <input
           type="password"
@@ -840,6 +880,52 @@ defmodule FluxWeb.PipelineLive.Builder do
       </div>
     </div>
     """
+  end
+
+  # The IAM role option signs with the server's own identity, so it is offered
+  # only while the operator allows that. A node already saved with it keeps it
+  # shown (disabled) so picking another mode registers as a change.
+  attr :config, :map, required: true
+  attr :server_credentials, :boolean, required: true
+
+  defp aws_iam_role_option(assigns) do
+    ~H"""
+    <option
+      :if={@server_credentials or @config["authMode"] == "iam_role"}
+      value="iam_role"
+      disabled={not @server_credentials}
+      selected={@config["authMode"] == "iam_role"}
+    >
+      {if @server_credentials,
+        do: "IAM role (instance metadata)",
+        else: "IAM role (disabled by your administrator)"}
+    </option>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :server_credentials, :boolean, required: true
+
+  defp aws_server_credentials_notice(assigns) do
+    ~H"""
+    <p
+      :if={not @server_credentials}
+      id={@id}
+      class="flex items-start gap-1.5 text-xs text-base-content/60"
+    >
+      <.icon name="hero-lock-closed" class="w-3.5 h-3.5 mt-px shrink-0" />
+      <span>{Flux.AWS.ServerCredentials.disabled_message()}</span>
+    </p>
+    """
+  end
+
+  # The AWS auth mode a source node signs with: the stored mode, or the select's
+  # default (the first option offered) when none has been picked yet.
+  defp aws_auth_mode(config, server_credentials?) do
+    case config["authMode"] do
+      mode when is_binary(mode) and mode != "" -> mode
+      _ -> if server_credentials?, do: "iam_role", else: "static"
+    end
   end
 
   # Amazon Kinesis is a Pro source connector. Fields are disabled and a note is
@@ -897,16 +983,23 @@ defmodule FluxWeb.PipelineLive.Builder do
           disabled={!@kinesis_source}
           class="select select-bordered select-sm w-full"
         >
-          <option value="iam_role" selected={@config["authMode"] == "iam_role"}>
-            IAM role (instance metadata)
-          </option>
+          <.aws_iam_role_option config={@config} server_credentials={@server_credentials} />
           <option value="static" selected={@config["authMode"] == "static"}>
             Static access key
           </option>
         </select>
       </div>
 
-      <.aws_static_credentials config={@config} enabled={@kinesis_source} />
+      <.aws_server_credentials_notice
+        id="kinesis-server-credentials-disabled"
+        server_credentials={@server_credentials}
+      />
+
+      <.aws_static_credentials
+        config={@config}
+        enabled={@kinesis_source}
+        server_credentials={@server_credentials}
+      />
 
       <div class="form-control">
         <.field_label
@@ -3168,6 +3261,22 @@ defmodule FluxWeb.PipelineLive.Builder do
   end
 
   defp validate_source_config(config) do
+    with :ok <- check_aws_server_credentials(config) do
+      validate_required_source_fields(config)
+    end
+  end
+
+  # With server AWS credentials disabled, an SQS or Kinesis source can't be saved
+  # signing as the server: IAM role auth, or a node saved before the switch.
+  defp check_aws_server_credentials(%{"type" => type} = config) when type in ~w(sqs kinesis) do
+    if Flux.AWS.ServerCredentials.allowed?() or aws_auth_mode(config, false) != "iam_role",
+      do: :ok,
+      else: {:error, Flux.AWS.ServerCredentials.disabled_message()}
+  end
+
+  defp check_aws_server_credentials(_config), do: :ok
+
+  defp validate_required_source_fields(config) do
     case missing_source_fields(config["type"], config) do
       [] ->
         :ok
@@ -3249,15 +3358,29 @@ defmodule FluxWeb.PipelineLive.Builder do
 
   defp missing_source_fields(_type, _config), do: []
 
-  # AWS `static` auth requires an access key pair; only enforced in that mode.
-  defp aws_static_cred_fields(%{"authMode" => "static"} = config),
-    do:
-      blank_fields(config, [
-        {"accessKeyId", "Access Key ID"},
-        {"secretAccessKey", "Secret Access Key"}
-      ])
+  # AWS `static` auth requires an access key pair. So does `assume_role` once the
+  # operator disables server credentials, since the STS call then needs base keys.
+  # A node with no mode picked yet opens on the select's default.
+  defp aws_static_cred_fields(config) do
+    allowed? = Flux.AWS.ServerCredentials.allowed?()
 
-  defp aws_static_cred_fields(_config), do: []
+    case aws_auth_mode(config, allowed?) do
+      "static" ->
+        blank_fields(config, [
+          {"accessKeyId", "Access Key ID"},
+          {"secretAccessKey", "Secret Access Key"}
+        ])
+
+      "assume_role" when not allowed? ->
+        blank_fields(config, [
+          {"accessKeyId", "Base Access Key ID"},
+          {"secretAccessKey", "Base Secret Access Key"}
+        ])
+
+      _ ->
+        []
+    end
+  end
 
   # SQS `assume_role` auth requires the role ARN to assume.
   defp aws_assume_role_fields(%{"authMode" => "assume_role"} = config),
