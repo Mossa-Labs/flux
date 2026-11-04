@@ -270,7 +270,7 @@ MIX_ENV=prod mix release
 | `RELEASE_NODE` | No | Overrides this node's name. Derived from the host address otherwise; the booted name is recorded so `bin/flux rpc`/`remote`/`stop` reach the running node |
 | `POD_IP` | No | Host/pod address used to build the node name when `RELEASE_NODE` is unset. Kubernetes can inject it via `fieldRef` |
 | `RELEASE_COOKIE` | No | Shared distribution secret. **Set it explicitly for any multi-node deployment** — otherwise each build bakes a random cookie and separately-built images cannot connect |
-| `FLUX_VAULT_KEY` | No | Dedicated key for encrypting sink and source secrets at rest. If unset, derived from `SECRET_KEY_BASE`. See [Secret Encryption at Rest](#secret-encryption-at-rest) |
+| `FLUX_VAULT_KEY` | No | Dedicated key for encrypting sink, source and alert-channel secrets at rest. If unset, derived from `SECRET_KEY_BASE`. See [Secret Encryption at Rest](#secret-encryption-at-rest) |
 | `FLUX_TRUSTED_PROXIES` | No | Comma-separated reverse-proxy CIDRs. Required for the IP allowlist to see the real client IP behind a load balancer. See [IP Allowlist](#ip-allowlist) |
 | `FLUX_AWS_SERVER_CREDENTIALS` | No | `allowed` (default) or `disabled`. Whether AWS connectors may sign with the server's own AWS identity. Set `disabled` when several organizations share the deployment. See [Server AWS Credentials](#server-aws-credentials) |
 
@@ -342,9 +342,16 @@ plaintext, and the API masks secrets as `[REDACTED]`.
   key in place, re-encrypting via `mix flux.vault.encrypt_sinks`, then switching
   the key only after every row is re-written. Sources and pipelines have no
   re-encryption task yet; they are re-written on their next save.
-- **What is not encrypted.** Poll source URLs and headers, Kafka and MQTT TLS
-  files (referenced by path), and alert channel secrets are stored as plain
-  values. Restrict database access accordingly.
+- **Alert channels.** Alert rules' webhook and Slack URLs and PagerDuty
+  integration keys are encrypted the same way, in the `alert_rules.channels`
+  column. Existing rules are encrypted by a database migration on upgrade;
+  as with sources, stop every node before you run it, and it decrypts again on
+  rollback. `mix flux.vault.encrypt_sinks` does not cover them. After a key
+  change, a channel whose secret can no longer be decrypted shows as not set
+  (and a warning is logged); re-enter the value on **Alerts**.
+- **What is not encrypted.** Poll source URLs and headers, and Kafka and MQTT
+  TLS files (referenced by path), are stored as plain values. Restrict database
+  access accordingly.
 
 ### Server AWS Credentials
 

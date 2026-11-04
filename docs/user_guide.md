@@ -318,6 +318,7 @@ An alert rule watches for one condition and notifies one or more channels when i
 | PagerDuty | Enterprise | Opens an incident through Events API v2. See [PagerDuty as an alert channel](connectors/pagerduty.md#pagerduty-as-an-alert-channel) |
 
 - **Cooldown.** After a rule fires, it stays quiet for its cooldown (15 minutes by default), so a flapping condition doesn't flood the channel.
+- **Channel secrets.** Webhook and Slack URLs and the PagerDuty integration key are credentials. They are encrypted at rest and never shown again after saving. When editing a rule, leave a field blank to keep the stored value, or tick its **Remove** box to drop the channel.
 - **Test.** Sends a test notification through the rule's channels without waiting for the condition.
 - **Toggle.** Turns a rule off without deleting it.
 - **History.** Lists the 50 most recent firings, with what triggered them and which channels were sent.
