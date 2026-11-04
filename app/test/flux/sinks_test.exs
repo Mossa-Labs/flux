@@ -638,6 +638,14 @@ defmodule Flux.SinksTest do
       assert {"auth type 'bearer' requires proper configuration", _} = changeset.errors[:config]
     end
 
+    test "changing only the type still validates the stored config", %{org_id: org_id} do
+      bad = undecryptable_sink_fixture(org_id)
+
+      assert {:error, changeset} = Sinks.update_sink(bad, %{type: "mysql"})
+      assert changeset.errors[:config]
+      assert Sinks.get_sink!(bad.id).type == "http"
+    end
+
     test "re-entering the secret saves and clears the marker", %{org_id: org_id} do
       bad = undecryptable_sink_fixture(org_id)
       config = put_in(bad.config, ["auth", "token"], "new-token")
