@@ -90,6 +90,7 @@ to run it in production.
 - [RBAC](docs/rbac.md)
 - [Observability](docs/observability.md) — freshness SLOs, volume baselines & schema drift (Pro)
 - [Operator manual](docs/operator_manual.md)
+- [Connectors](docs/connectors/README.md): every source and sink, with its edition
 
 ## <a id="open-core"></a>Open-core model
 

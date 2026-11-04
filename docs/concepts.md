@@ -54,7 +54,7 @@ the system.
 | **Source queue** | The named queue a pipeline consumes from. Webhook ingestion publishes incoming events here. |
 | **Destination queue** | An optional named queue a pipeline can publish its output to, so pipelines can be chained or fanned out. |
 | **Step** | One transformation in a pipeline. **Native** steps (Map, Filter, Rename) are compiled Elixir for speed; **Script** steps run user Lua in a sandbox; an **AI** step (anomaly detection) is available in Pro. |
-| **Sink** | A delivery destination — HTTP, Postgres, and more in Pro. Each sink has a `type` and a type-specific `config` (secrets are redacted before leaving the system). |
+| **Sink** | A delivery destination — HTTP, Postgres, MySQL and more, with further sinks in Pro and Enterprise. Each sink has a `type` and a type-specific `config` (secrets are redacted before leaving the system). |
 | **Queue adapter** | The pluggable backend that buffers messages. Community ships an in-memory adapter (great for development and single-node); Pro adds durable brokers. |
 | **Registry** | The lookup table that maps a string type (`"http"`, `"postgres"`, `"map"`, …) to the module that implements it. How Flux stays extensible without hard-coding adapters into the engine. |
 | **IR (intermediate representation)** | The versioned JSON that describes a pipeline's steps. The visual builder reads and writes it; the engine executes it. Decouples the UI from execution and enables round-tripping (edit → save JSON → reload). |

@@ -225,13 +225,24 @@ Oban handles background job processing (e.g., outbound webhook delivery):
 # config/config.exs (base settings)
 config :flux, Oban,
   repo: Flux.Repo,
-  queues: [default: 10, webhooks: 20]
+  queues: [default: 10, polling: 5, webhooks: 20],
+  plugins: [
+    {Oban.Plugins.Cron, crontab: [{"0 3 * * *", Flux.Workers.AuditPruner}]}
+  ]
 ```
 
 | Queue | Concurrency | Purpose |
 |-------|-------------|---------|
 | `default` | 10 | General background tasks |
+| `polling` | 5 | Scheduled-poll sources |
 | `webhooks` | 20 | Outbound webhook delivery |
+
+The Cron plugin runs `Flux.Workers.AuditPruner` nightly at 03:00 UTC to prune
+audit entries past their retention window (a no-op on Community).
+
+Oban stores its jobs in Postgres, and its schema is versioned through Flux's
+own migrations. Each Oban upgrade that needs a newer schema ships a migration,
+and the node refuses to boot until it has run. See [Upgrading](#upgrading).
 
 ---
 
@@ -313,6 +324,11 @@ and sink adapters always read plaintext.
   `FLUX_VAULT_KEY`) invalidates existing ciphertext. Rotate by keeping the old
   key in place, re-encrypting via `mix flux.vault.encrypt_sinks`, then switching
   the key only after every row is re-written.
+- **What is not encrypted.** Only sink configs are encrypted. Source configs,
+  and the source credentials the pipeline builder keeps in a pipeline's steps,
+  are stored as plain JSONB. They stay out of the API: masked as `[REDACTED]` in
+  pipeline reads and dropped from pipeline exports. Restrict database access
+  accordingly.
 
 ### Server AWS Credentials
 
@@ -347,6 +363,36 @@ When you disable it, also scope what each organization can reach in IAM:
 - **Review existing connectors before you switch.** Any connector on `iam_role` stops working until someone gives it static keys or an assumed role with base keys.
 
 A failed AssumeRole is always an error. Flux never falls back to signing the request with the server's identity, whatever this setting says.
+
+### Upgrading
+
+Migrations are forward-only. To upgrade a release built with `mix release`:
+
+```bash
+# 1. Back up the database.
+pg_dump "$DATABASE_URL" > flux-backup-$(date +%F).sql
+
+# 2. Run the new release's migrations before starting it.
+bin/flux eval "Flux.Release.migrate()"
+
+# 3. Start the new release.
+bin/flux start
+```
+
+For a source checkout, run `mix ecto.migrate` instead of step 2.
+
+The release after 0.2.6 moves Oban from 2.20 to 2.24, which needs Oban schema
+version 14. The migration `20261023045219_upgrade_oban_to_v14` does three things:
+
+- It adds two indexes to `oban_jobs`. They are built without `CONCURRENTLY`, so
+  inserts into a large `oban_jobs` table block for a short while.
+- It adds a `suspended` job state. Rolling the migration back leaves that enum
+  value in place, because Postgres can't drop one.
+- It gates boot. A node that starts before the migration fails with "Oban
+  migrations are outdated".
+
+Nodes still on 0.2.6 keep running against the upgraded schema. A rolling
+upgrade, or a rollback to the previous release, is safe.
 
 ### Starting the Application
 
@@ -630,10 +676,11 @@ Flux emits the following telemetry events that can be consumed by external monit
 | `[:flux, :pipeline, :message, :skipped]` | -- | `pipeline_id` |
 | `[:flux, :queue, :published]` | `count` | `organization_id`, `source`, `queue` |
 | `[:flux, :webhook, :received]` | `field_count` | `organization_id`, `source`, `fingerprint` |
+| `[:flux, :grpc, :received]` | `field_count` | `organization_id`, `source`, `fingerprint` |
 
 These events are attached by `Flux.Pipeline.Metrics` at startup and can also be used to feed external observability tools (Prometheus, Datadog, etc.) via standard telemetry reporter libraries.
 
-`[:flux, :queue, :published]` and `[:flux, :webhook, :received]` fire on every accepted webhook (`POST /api/webhooks/:source`). The latter carries only a lightweight shape **fingerprint** (a stable hash of the payload's top-level keys and value types, via `Flux.Observability.SchemaFingerprint`) and the field count — never the payload itself — so downstream handlers can track schema drift without ever seeing message contents. The Pro [Observability](observability.md) feature attaches to both events to power freshness SLOs, volume baselines, and schema-drift detection.
+`[:flux, :queue, :published]` and `[:flux, :webhook, :received]` fire on every accepted webhook (`POST /api/webhooks/:source`). A gRPC source (Enterprise) emits `[:flux, :queue, :published]` and `[:flux, :grpc, :received]` for every message it accepts, in server and client mode alike. The latter carries only a lightweight shape **fingerprint** (a stable hash of the payload's top-level keys and value types, via `Flux.Observability.SchemaFingerprint`) and the field count — never the payload itself — so downstream handlers can track schema drift without ever seeing message contents. The Pro [Observability](observability.md) feature attaches to both events to power freshness SLOs, volume baselines, and schema-drift detection.
 
 ---
 

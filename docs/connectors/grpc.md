@@ -167,6 +167,11 @@ In client mode Flux opens one long-lived call to `method` on `endpoint` and
 publishes every response message. Only one node in a cluster runs a given
 client-mode source at a time.
 
+Client mode counts toward the organization's usage quota, like server mode.
+Each response is checked before it is published. Over quota, that response is
+not published, and the stream ends and reconnects after the quota's retry-after
+period.
+
 ### Message schemas
 
 Flux needs the service's message definitions to encode `request` and decode
@@ -174,7 +179,9 @@ responses. Set `schema_source` to choose where they come from:
 
 - `reflection` (default): Flux asks the server through the
   [gRPC server reflection](https://grpc.io/docs/guides/reflection/) service (v1,
-  falling back to v1alpha). The server must have reflection enabled.
+  falling back to v1alpha). The server must have reflection enabled. Flux
+  follows the schema's imports up to 256 files and 30 seconds; a larger or
+  slower schema fails, so use `descriptor` instead.
 - `descriptor`: you supply a descriptor set in `descriptor_set`. Build it with
   `protoc` and base64-encode the output:
 

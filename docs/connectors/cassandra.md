@@ -28,11 +28,13 @@ For `sigv4`, `aws_auth_mode` picks where the AWS credentials come from:
 | `assume_role` | Assume a `role_arn` (cross-account), optionally with an `external_id`. The STS call is signed with base `access_key_id` + `secret_access_key` when you give them, and with the server's identity otherwise |
 
 > **Server credentials reach only Amazon Keyspaces.** With `iam_role` or
-> `assume_role`, Flux signs with its own AWS identity. For security, these sinks
-> connect only to Amazon Keyspaces endpoints in the configured `region`:
+> `assume_role`, Flux signs with its own AWS identity or a role it assumes. For
+> security, these sinks connect only to Amazon Keyspaces endpoints in the
+> configured `region`, even when `assume_role` has base keys:
 > `cassandra.<region>.amazonaws.com`, its FIPS variant
 > `cassandra-fips.<region>.amazonaws.com`, or a Keyspaces VPC endpoint
-> (`*.cassandra.<region>.vpce.amazonaws.com`). TLS is always on and verified
+> (`*.cassandra.<region>.vpce.amazonaws.com`), including the
+> `.amazonaws.com.cn` forms in the China regions. TLS is always on and verified
 > against the system trust store, so `tls_ca_file` can't be set and client
 > certificates aren't used. To reach any other host, sign with `static` keys.
 
@@ -139,7 +141,9 @@ inside the local datacenter. `quorum` and `all` wait on remote datacenters too,
 and fail when too few replicas are reachable; `one` and `local_one` are the
 fastest and the least durable.
 
-Amazon Keyspaces accepts only `local_quorum` for writes.
+Amazon Keyspaces accepts only `local_quorum` for writes, so Flux rejects any
+other `consistency` when you save a sink whose contact points include a
+Keyspaces endpoint, whatever the auth mode.
 
 ## TTL expiry (optional)
 
