@@ -2,8 +2,8 @@
 
 Notable changes to Flux Community Edition. Releases are git tags (`vX.Y.Z`).
 Connectors marked Pro or Enterprise are gated here: their types, forms and
-upgrade prompts ship in this repository, and their adapters ship in the
-commercial editions.
+upgrade prompts ship in this repository, and their adapters ship in the Flux
+Pro / Enterprise edition.
 
 This file starts after v0.2.6. For earlier releases, see the git history between
 tags.
@@ -38,8 +38,8 @@ tags.
   keeps today's behaviour.
   - With it disabled, the S3, DynamoDB, Cassandra SigV4, SQS and Kinesis forms
     offer only static keys or `assume_role` with base keys.
-  - The rule applies wherever the edition's adapters check it: on save, at test
-    connection, at delivery and at source start.
+  - Connectors that would use the server's identity are refused on save, at
+    test connection, at delivery and at source start.
   - See [Server AWS Credentials](docs/operator_manual.md#server-aws-credentials).
 - **Source credentials stay out of pipeline reads and exports.** Builder source
   configs (passwords, secret keys, tokens, client keys) are masked in the
