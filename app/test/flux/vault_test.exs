@@ -149,4 +149,30 @@ defmodule Flux.VaultTest do
       assert Vault.decrypt_value(nil, "user:42") == nil
     end
   end
+
+  describe "scrub_wrappers/2" do
+    test "replaces wrappers at any depth, in maps and lists" do
+      wrapper = Vault.encrypt_value("secret")
+
+      value = %{
+        "top" => wrapper,
+        "nested" => %{"x" => wrapper, "keep" => "plain"},
+        "list" => [wrapper, "plain", %{"y" => wrapper}]
+      }
+
+      assert Vault.scrub_wrappers(value, "[REDACTED]") == %{
+               "top" => "[REDACTED]",
+               "nested" => %{"x" => "[REDACTED]", "keep" => "plain"},
+               "list" => ["[REDACTED]", "plain", %{"y" => "[REDACTED]"}]
+             }
+    end
+
+    test "leaves wrapper-free values untouched" do
+      assert Vault.scrub_wrappers(%{"a" => [1, %{"b" => "c"}]}, "X") == %{
+               "a" => [1, %{"b" => "c"}]
+             }
+
+      assert Vault.scrub_wrappers("plain", "X") == "plain"
+    end
+  end
 end

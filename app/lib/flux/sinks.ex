@@ -27,7 +27,10 @@ defmodule Flux.Sinks do
     config
     |> redact_keys(Secrets.top_keys())
     |> redact_auth()
-    |> scrub_wrappers()
+    # Defense-in-depth: mask any encrypted wrapper that survives to the output —
+    # e.g. a ciphertext blob a caller planted in a non-secret field, which is not
+    # decrypted (see `Flux.Vault.decrypt_map/2`) and so would otherwise echo back.
+    |> Flux.Vault.scrub_wrappers(@redacted)
   end
 
   def redact_config(other), do: other
@@ -43,17 +46,6 @@ defmodule Flux.Sinks do
   end
 
   defp redact_auth(config), do: config
-
-  # Defense-in-depth: mask any encrypted wrapper that survives to the output —
-  # e.g. a ciphertext blob a caller planted in a non-secret field, which is not
-  # decrypted (see `Flux.Vault.decrypt_map/2`) and so would otherwise echo back.
-  defp scrub_wrappers(%{"encrypted" => true}), do: @redacted
-
-  defp scrub_wrappers(map) when is_map(map),
-    do: Map.new(map, fn {k, v} -> {k, scrub_wrappers(v)} end)
-
-  defp scrub_wrappers(list) when is_list(list), do: Enum.map(list, &scrub_wrappers/1)
-  defp scrub_wrappers(value), do: value
 
   @doc """
   Returns the list of sinks for an organization.

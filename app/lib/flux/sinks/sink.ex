@@ -21,7 +21,7 @@ defmodule Flux.Sinks.Sink do
     field :type, :string
     # Secret values within `config` are encrypted at rest by the custom type;
     # non-secret keys are stored as plain JSONB. Transparent on read/write.
-    field :config, Flux.Vault.EncryptedConfig, default: %{}
+    field :config, Flux.Vault.EncryptedConfig, secrets: Flux.Sinks.Secrets, default: %{}
     field :enabled, :boolean, default: true
 
     belongs_to :organization, Organization
