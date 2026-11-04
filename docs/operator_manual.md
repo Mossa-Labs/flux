@@ -337,6 +337,16 @@ plaintext, and the API masks secrets as `[REDACTED]`.
 - **Rolling back.** The source and pipeline migrations decrypt again on
   rollback. Stop the new release, roll the database back, and only then start
   the older release, or the older code will read ciphertext.
+- **Secrets that can't be decrypted.** A secret encrypted under a different key
+  than the one loaded (a rotation that missed some rows, or a database restored
+  next to a different `FLUX_VAULT_KEY`) doesn't stop anything from loading. The
+  rest of the row loads normally, a warning naming the sink and the affected
+  keys is logged, and the original ciphertext is kept, so restoring the right
+  key recovers it. On **Sinks**, the sink shows *Credentials need re-entering*.
+  Its deliveries and connection tests fail with `:undecryptable_secret` until
+  you re-enter the secret on its edit page. You can still disable it meanwhile.
+  Sources and builder credentials load the same way but aren't flagged in the
+  UI yet.
 - **Key rotation.** Changing the base key (`SECRET_KEY_BASE` or
   `FLUX_VAULT_KEY`) invalidates existing ciphertext. Rotate by keeping the old
   key in place, re-encrypting via `mix flux.vault.encrypt_sinks`, then switching
