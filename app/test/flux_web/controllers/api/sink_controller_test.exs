@@ -57,4 +57,19 @@ defmodule FluxWeb.API.SinkControllerTest do
     assert sink["config"]["auth"]["token"] == "[REDACTED]"
     assert sink["config"]["url"] == "https://x"
   end
+
+  @tag :capture_log
+  test "lists a sink whose secret can't be decrypted, flagged and redacted (MOS-665)",
+       %{conn: conn} do
+    o = org()
+    good = Flux.SinksFixtures.sink_fixture(o.id, %{name: "good"})
+    bad = Flux.SinksFixtures.undecryptable_sink_fixture(o.id, %{name: "bad"})
+
+    body = conn |> auth(key(o.id)) |> get(~p"/api/sinks") |> json_response(200)
+    by_id = Map.new(body["data"], &{&1["id"], &1})
+
+    assert by_id[bad.id]["credentials_undecryptable"] == true
+    assert by_id[bad.id]["config"]["auth"]["token"] == "[REDACTED]"
+    assert by_id[good.id]["credentials_undecryptable"] == false
+  end
 end

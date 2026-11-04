@@ -97,6 +97,7 @@ defmodule FluxWeb.SinkLive.Form do
      |> assign(:page_title, title)
      |> assign(:action, action)
      |> assign(:sink, sink)
+     |> assign(:undecryptable_secrets, Sinks.undecryptable_secrets(sink))
      |> assign(:form, to_form(changeset))
      |> assign(:selected_type, sink.type)
      # A new sink opens on the destination picker; an existing one shows its
@@ -129,6 +130,7 @@ defmodule FluxWeb.SinkLive.Form do
         phx-hook=".FocusOnEvent"
         class="mt-6 space-y-4"
       >
+        <.undecryptable_notice keys={@undecryptable_secrets} />
         <.error_summary :if={@show_errors?} errors={error_items(@form, @selected_type)} />
 
         <%!-- On phones the open picker drops its card so two tiles fit side by side. --%>
@@ -520,6 +522,44 @@ defmodule FluxWeb.SinkLive.Form do
         </div>
       </div>
     </section>
+    """
+  end
+
+  attr :keys, :list, required: true
+
+  # Shown when a stored secret couldn't be decrypted with the current vault key
+  # (see `Flux.Vault.decrypt_map/2`). Those secrets count as blank here, so the
+  # sink saves only once they're re-entered.
+  defp undecryptable_notice(%{keys: []} = assigns), do: ~H""
+
+  defp undecryptable_notice(assigns) do
+    one? = length(assigns.keys) == 1
+
+    assigns =
+      assign(assigns,
+        was: if(one?, do: "was", else: "were"),
+        it: if(one?, do: "it", else: "them")
+      )
+
+    ~H"""
+    <div
+      id="sink-undecryptable-notice"
+      role="alert"
+      class="flex gap-3 rounded-xl border border-warning/50 bg-warning/10 p-4"
+    >
+      <.icon name="hero-exclamation-triangle" class="size-5 shrink-0 text-warning" />
+      <div class="min-w-0 text-sm">
+        <p class="font-semibold text-base-content">
+          Stored credentials can't be decrypted — re-enter them
+        </p>
+        <p class="mt-1 text-base-content/80">
+          This sink's
+          <code class="rounded bg-base-200 px-1 py-0.5 text-xs">{Enum.join(@keys, ", ")}</code>
+          {@was} encrypted with a different vault key, usually after a key change or a
+          database restore. Deliveries fail until you enter {@it} again and save.
+        </p>
+      </div>
+    </div>
     """
   end
 
@@ -2241,7 +2281,8 @@ defmodule FluxWeb.SinkLive.Form do
   # changes we start from an empty base so stale keys aren't carried over.
   defp merge_config_params(params, type, sink) do
     built = params |> build_config(type) |> keep_exact_values(type, sink)
-    base = if type == sink.type, do: carried_config(type, sink.config || %{}, built), else: %{}
+    stored = drop_undecryptable_secrets(sink.config || %{})
+    base = if type == sink.type, do: carried_config(type, stored, built), else: %{}
 
     config =
       base
@@ -2251,6 +2292,15 @@ defmodule FluxWeb.SinkLive.Form do
     params
     |> Map.put("type", type)
     |> Map.put("config", config)
+  end
+
+  # A stored secret that couldn't be decrypted (see `Flux.Vault.decrypt_map/2`)
+  # isn't carried over a blank field: it counts as absent, so validation asks
+  # for it instead of saving the unusable marker again.
+  defp drop_undecryptable_secrets(config) do
+    config
+    |> Flux.Vault.undecryptable_paths(Flux.Sinks.Secrets.paths(config))
+    |> Enum.reduce(config, fn path, acc -> acc |> pop_in(path) |> elem(1) end)
   end
 
   # An email sink's secrets belong to its provider. SendGrid, Postmark and

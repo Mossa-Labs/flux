@@ -85,30 +85,37 @@ defmodule Flux.SinksFixtures do
   @doc """
   Generate an HTTP sink whose bearer token was encrypted under a different
   vault key, so it can't be decrypted on load.
+  """
+  def undecryptable_sink_fixture(organization_id, attrs \\ %{}) do
+    organization_id
+    |> sink_fixture(
+      Enum.into(attrs, %{
+        config: %{
+          "url" => "https://example.com/webhook",
+          "method" => "POST",
+          "auth" => %{"type" => "bearer", "token" => "old-token"}
+        }
+      })
+    )
+    |> make_secret_undecryptable(["auth", "token"])
+  end
+
+  @doc """
+  Rewrites the stored secret at `path` in `sink`'s config so it is encrypted
+  under a different vault key, then reloads the sink.
 
   Writes the raw `config` column directly, skipping the `EncryptedConfig` type,
   so no global vault key has to change and the test can stay async.
   """
-  def undecryptable_sink_fixture(organization_id, attrs \\ %{}) do
+  def make_secret_undecryptable(%Flux.Sinks.Sink{} = sink, path) do
     import Ecto.Query, only: [from: 2]
 
-    sink =
-      sink_fixture(
-        organization_id,
-        Enum.into(attrs, %{
-          config: %{
-            "url" => "https://example.com/webhook",
-            "method" => "POST",
-            "auth" => %{"type" => "bearer", "token" => "old-token"}
-          }
-        })
-      )
+    paths = Flux.Sinks.Secrets.paths(sink.config)
 
-    raw_config = %{
-      "url" => "https://example.com/webhook",
-      "method" => "POST",
-      "auth" => %{"type" => "bearer", "token" => foreign_encrypted_wrapper("old-token")}
-    }
+    raw_config =
+      sink.config
+      |> Flux.Vault.encrypt_map(paths)
+      |> put_in(path, foreign_encrypted_wrapper(get_in(sink.config, path)))
 
     {1, _} =
       Flux.Repo.update_all(from(s in "sinks", where: s.id == ^sink.id),

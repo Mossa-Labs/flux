@@ -6,6 +6,21 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
   setup :register_and_log_in_user
 
   describe "builder page" do
+    @tag :capture_log
+    test "renders when one sink's stored secret can't be decrypted (MOS-665)",
+         %{conn: conn, scope: scope} do
+      Flux.SinksFixtures.sink_fixture(scope.organization_id, %{name: "Healthy Sink"})
+
+      Flux.SinksFixtures.undecryptable_sink_fixture(scope.organization_id, %{
+        name: "Broken Sink"
+      })
+
+      {:ok, _lv, html} = live(conn, ~p"/pipelines/builder")
+
+      assert html =~ "Healthy Sink"
+      assert html =~ "Broken Sink"
+    end
+
     test "mounts and renders the pipeline-builder container", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/pipelines/builder")
 

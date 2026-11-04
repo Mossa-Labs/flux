@@ -91,8 +91,20 @@ defmodule FluxWeb.SinkLive.Index do
                     <.type_badge type={sink.type} />
                   </td>
                   <td>
-                    <span :if={sink.enabled} class="badge badge-success">Enabled</span>
-                    <span :if={!sink.enabled} class="badge badge-ghost">Disabled</span>
+                    <div class="flex flex-col items-start gap-1.5">
+                      <span :if={sink.enabled} class="badge badge-success">Enabled</span>
+                      <span :if={!sink.enabled} class="badge badge-ghost">Disabled</span>
+                      <.link
+                        :if={Sinks.undecryptable_secrets?(sink)}
+                        id={"sink-#{sink.id}-undecryptable"}
+                        navigate={~p"/sinks/#{sink.id}/edit"}
+                        class="badge badge-warning gap-1 whitespace-nowrap transition-opacity hover:opacity-80"
+                        title="Stored credentials can't be decrypted with the current vault key. Re-enter them to fix this sink."
+                      >
+                        <.icon name="hero-exclamation-triangle" class="w-3.5 h-3.5" />
+                        Credentials need re-entering
+                      </.link>
+                    </div>
                   </td>
                   <td class="text-sm text-base-content/60">
                     {format_datetime(sink.updated_at)}
@@ -198,6 +210,10 @@ defmodule FluxWeb.SinkLive.Index do
     """
   end
 
+  defp undecryptable_message do
+    "Stored credentials can't be decrypted — re-enter them on the sink's edit page."
+  end
+
   defp format_datetime(datetime) do
     Calendar.strftime(datetime, "%b %d, %Y %H:%M")
   end
@@ -212,6 +228,9 @@ defmodule FluxWeb.SinkLive.Index do
         case Sinks.test_connection(sink) do
           :ok ->
             {:noreply, put_flash(socket, :info, "Connection successful!")}
+
+          {:error, :undecryptable_secret} ->
+            {:noreply, put_flash(socket, :error, undecryptable_message())}
 
           {:error, reason} ->
             {:noreply, put_flash(socket, :error, "Connection failed: #{inspect(reason)}")}
