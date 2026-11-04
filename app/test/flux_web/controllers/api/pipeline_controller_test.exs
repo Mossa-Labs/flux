@@ -167,6 +167,18 @@ defmodule FluxWeb.API.PipelineControllerTest do
 
       assert body["details"]["source_queue"]
     end
+
+    # A cast error on `steps` carries `type: {:parameterized, ...}` in its opts
+    # (the encrypted column type); formatting it must not crash.
+    test "422 for steps that are not a map", %{conn: conn, org: o} do
+      body =
+        conn
+        |> auth(key(o.id, "admin"))
+        |> post(~p"/api/pipelines", %{"name" => "x", "source_queue" => "q", "steps" => "nope"})
+        |> json_response(422)
+
+      assert body["details"]["steps"] == ["is invalid"]
+    end
   end
 
   describe "start/stop authorization" do

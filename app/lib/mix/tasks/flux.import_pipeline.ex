@@ -88,11 +88,16 @@ defmodule Mix.Tasks.Flux.ImportPipeline do
   defp resolve_org(id), do: id
 
   defp format_changeset(changeset) do
-    Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
-      Enum.reduce(opts, msg, fn {key, value}, acc ->
-        String.replace(acc, "%{#{key}}", to_string(value))
-      end)
-    end)
+    Ecto.Changeset.traverse_errors(changeset, &interpolate_error/1)
     |> Enum.map_join("; ", fn {field, errs} -> "#{field} #{Enum.join(errs, ", ")}" end)
+  end
+
+  # Fills only the placeholders the message actually uses. Error opts can hold
+  # values with no string form (e.g. a cast error's `type: {:parameterized, ...}`
+  # or `{:array, :integer}`), so stringifying every opt would crash.
+  defp interpolate_error({msg, opts}) do
+    Regex.replace(~r"%{(\w+)}", msg, fn _, key ->
+      opts |> Keyword.get(String.to_existing_atom(key), key) |> to_string()
+    end)
   end
 end
