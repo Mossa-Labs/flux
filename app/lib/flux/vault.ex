@@ -5,7 +5,8 @@ defmodule Flux.Vault do
   Wraps `Plug.Crypto.MessageEncryptor` (AES-GCM, authenticated) to encrypt
   individual values, and provides map-walking helpers used by
   `Flux.Vault.EncryptedConfig` to transparently encrypt/decrypt the sensitive
-  fields of a sink `config` JSONB column.
+  fields of a JSONB config column: `sinks.config`, `sources.config`, and the
+  builder's source credentials in `pipelines.steps` / `pipeline_versions.steps`.
 
   ## Key management
 
@@ -19,8 +20,9 @@ defmodule Flux.Vault do
 
   Derivation uses fixed, versioned salts, so a given base key always yields the
   same encryption/signing keys. To rotate keys, set `FLUX_VAULT_KEY`, re-encrypt
-  existing rows (`mix flux.vault.encrypt_sinks`), and keep the previous base key
-  available until every row has been re-written.
+  existing rows (`mix flux.vault.encrypt_sinks` for sinks; sources and pipelines
+  are re-encrypted on their next save), and keep the previous base key available
+  until every row has been re-written.
 
   ## Encrypted value shape
 
@@ -29,7 +31,8 @@ defmodule Flux.Vault do
       %{"encrypted" => true, "ciphertext" => "<url-safe base64 token>"}
 
   Encryption and decryption are both driven by the same list of secret paths
-  (`Flux.Sinks.Secrets.paths/0`) — see `encrypt_map/2` and `decrypt_map/2`. We do
+  (a `Flux.Vault.SecretPaths` module, e.g. `Flux.Sinks.Secrets`) — see
+  `encrypt_map/2` and `decrypt_map/2`. We do
   **not** decrypt by blindly walking the map for wrappers: decryption is
   restricted to the exact locations that the redaction layer also masks, so a
   wrapper relocated into a non-secret field is never decrypted and can never be
@@ -128,9 +131,9 @@ defmodule Flux.Vault do
   @doc """
   Encrypts the values at the given `paths` within `config`.
 
-  Each path is a list of string keys (see `Flux.Sinks.Secrets.paths/0`). Paths
-  whose parent is missing or whose value is `nil` are skipped. Already-encrypted
-  values are left as-is (idempotent).
+  Each path is a list of string keys or `Access.at/1` steps (see
+  `Flux.Vault.SecretPaths`). Paths whose parent is missing or whose value is
+  `nil` are skipped. Already-encrypted values are left as-is (idempotent).
   """
   @spec encrypt_map(map(), [[String.t()]]) :: map()
   def encrypt_map(config, paths) when is_map(config) do
@@ -171,6 +174,24 @@ defmodule Flux.Vault do
   end
 
   def decrypt_map(config, _paths), do: config
+
+  @doc """
+  Replaces every encrypted wrapper anywhere in `value` with `replacement`.
+
+  Defense-in-depth for the redaction layers: a wrapper that survives to the
+  output — e.g. a ciphertext blob planted in a non-secret field, which
+  `decrypt_map/2` deliberately leaves alone — is masked instead of echoed back.
+  """
+  @spec scrub_wrappers(term(), term()) :: term()
+  def scrub_wrappers(%{@wrapper_key => true}, replacement), do: replacement
+
+  def scrub_wrappers(map, replacement) when is_map(map),
+    do: Map.new(map, fn {k, v} -> {k, scrub_wrappers(v, replacement)} end)
+
+  def scrub_wrappers(list, replacement) when is_list(list),
+    do: Enum.map(list, &scrub_wrappers(&1, replacement))
+
+  def scrub_wrappers(value, _replacement), do: value
 
   # `put_in/3` requires every parent to exist; `get_in/2` already told us the
   # value is present, so the parents do too.

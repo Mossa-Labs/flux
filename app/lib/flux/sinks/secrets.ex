@@ -17,6 +17,8 @@ defmodule Flux.Sinks.Secrets do
   the config map; auth keys live nested under the `"auth"` map (HTTP-style auth).
   """
 
+  @behaviour Flux.Vault.SecretPaths
+
   # Top-level secret keys, across all sink types.
   @top_keys ~w(password private_key private_key_passphrase secret_access_key session_token
                credentials database_url sasl_password ssl_keyfile uri
@@ -42,4 +44,11 @@ defmodule Flux.Sinks.Secrets do
   def paths do
     Enum.map(@top_keys, &[&1]) ++ Enum.map(@auth_keys, &["auth", &1])
   end
+
+  @doc """
+  `Flux.Vault.SecretPaths` callback: the secret paths are the same for every
+  sink config, so this ignores `config` and returns `paths/0`.
+  """
+  @impl Flux.Vault.SecretPaths
+  def paths(_config), do: paths()
 end
