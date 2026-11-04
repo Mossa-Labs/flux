@@ -261,6 +261,7 @@ MIX_ENV=prod mix release
 | `RELEASE_COOKIE` | No | Shared distribution secret. **Set it explicitly for any multi-node deployment** — otherwise each build bakes a random cookie and separately-built images cannot connect |
 | `FLUX_VAULT_KEY` | No | Dedicated key for encrypting sink secrets at rest. If unset, derived from `SECRET_KEY_BASE`. See [Secret Encryption at Rest](#secret-encryption-at-rest) |
 | `FLUX_TRUSTED_PROXIES` | No | Comma-separated reverse-proxy CIDRs. Required for the IP allowlist to see the real client IP behind a load balancer. See [IP Allowlist](#ip-allowlist) |
+| `FLUX_AWS_SERVER_CREDENTIALS` | No | `allowed` (default) or `disabled`. Whether AWS connectors may sign with the server's own AWS identity. Set `disabled` when several organizations share the deployment. See [Server AWS Credentials](#server-aws-credentials) |
 
 ### IP Allowlist
 
@@ -312,6 +313,40 @@ and sink adapters always read plaintext.
   `FLUX_VAULT_KEY`) invalidates existing ciphertext. Rotate by keeping the old
   key in place, re-encrypting via `mix flux.vault.encrypt_sinks`, then switching
   the key only after every row is re-written.
+
+### Server AWS Credentials
+
+The AWS connectors are the S3 and DynamoDB sinks, the SQS and Kinesis sources, and the Cassandra sink's SigV4 mode. Each one can authenticate in three ways:
+
+| Auth mode | Signs with |
+| --- | --- |
+| `static` | Access keys stored on the connector. |
+| `assume_role` with base keys | A role assumed with access keys stored on the connector. |
+| `iam_role` | **The server's own AWS identity.** This is the ambient chain: `AWS_*` environment variables, the ECS/EKS task role, or the EC2 instance role. |
+| `assume_role` without base keys | A role assumed with **the server's own identity**. |
+
+S3 has no auth mode setting. Blank keys mean the server's identity.
+
+A connector that uses the server's identity can reach anything that identity can reach. That's fine when one team owns both the deployment and its AWS role. It's a problem when several organizations share the deployment. A member of one organization could aim a sink at another organization's bucket or table, or a source at its queue or stream, and the server's role would sign the request. Nothing ties a connector's target to the organization that configured it.
+
+`FLUX_AWS_SERVER_CREDENTIALS` controls this:
+
+- **`allowed`** (default): any member may pick `iam_role`, or `assume_role` without base keys.
+- **`disabled`**: no connector may use the server's identity. It applies everywhere:
+  - The forms drop the IAM role option, open on static keys, and require base keys for `assume_role`.
+  - Saving such a config fails, whether it comes from the UI or the API.
+  - Connectors saved before the change are refused too. Test connection fails, delivery fails, and an SQS or Kinesis source does not start.
+  - Each refusal says "Server AWS credentials are disabled by your administrator", and no request is sent to AWS.
+
+An unknown value stops the server at boot. A blank value counts as `allowed`.
+
+When you disable it, also scope what each organization can reach in IAM:
+
+- **Give each organization its own role.** Its trust policy should allow only a principal that organization controls, plus an `sts:ExternalId` condition. The organization configures `assume_role` with that `role_arn` and `external_id`, and with base keys for an IAM user in its own account.
+- **Keep the server's instance or task role minimal.** It needs no data-plane access to tenant resources, so with this setting disabled nothing should depend on it.
+- **Review existing connectors before you switch.** Any connector on `iam_role` stops working until someone gives it static keys or an assumed role with base keys.
+
+A failed AssumeRole is always an error. Flux never falls back to signing the request with the server's identity, whatever this setting says.
 
 ### Starting the Application
 

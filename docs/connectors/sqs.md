@@ -20,7 +20,7 @@ queue, which your pipeline consumes.
 | --- | --- |
 | `iam_role` (default) | Ambient IAM role from EC2/ECS/EKS instance metadata — no stored secrets |
 | `static` | Static `access_key_id` + `secret_access_key` (optional `session_token`) |
-| `assume_role` | Assume a `role_arn` (cross-account), optionally with an `external_id` |
+| `assume_role` | Assume a `role_arn` (cross-account), optionally with an `external_id`. The STS call is signed with base `access_key_id` + `secret_access_key` when you give them, and with the server's identity otherwise |
 | `sso` | _Planned — not yet supported._ AWS IAM Identity Center (SSO) profile |
 
 Static credentials are stored in the source config and are masked (`[REDACTED]`)
@@ -31,6 +31,16 @@ AWS SSO (IAM Identity Center) is an interactive, browser-based login unsuited to
 a headless server, so it is not supported; use `iam_role` (or cross-account
 `assume_role`) instead.
 
+> **Server credentials can be turned off.** `iam_role`, and `assume_role` without
+> base keys, sign with the Flux server's own AWS identity. An operator can set
+> `FLUX_AWS_SERVER_CREDENTIALS=disabled`, which is recommended when several
+> organizations share a deployment. These modes are then refused when you save
+> and at runtime, and the form offers only static keys and `assume_role` with base keys. See
+> [Server AWS Credentials](../operator_manual.md#server-aws-credentials).
+>
+> A source saved before the change does not start. A running source receives
+> nothing and leaves messages on the queue to be redelivered.
+
 ## Source configuration
 
 | Field | Required | Description |
@@ -38,7 +48,7 @@ a headless server, so it is not supported; use `iam_role` (or cross-account
 | `queue_url` | yes | Full SQS queue URL (e.g. `https://sqs.us-east-1.amazonaws.com/123456789012/my-queue`) |
 | `region` | yes | AWS region the queue lives in (e.g. `us-east-1`) |
 | `auth_mode` | no | One of the auth modes above (default `iam_role`) |
-| `access_key_id` / `secret_access_key` | conditional | Required for `static`; optional `session_token` |
+| `access_key_id` / `secret_access_key` | conditional | Required for `static`. Under `assume_role` they are the STS base keys: optional, but required when server credentials are disabled. Optional `session_token` |
 | `role_arn` | conditional | Required for `assume_role`; optional `external_id` |
 | `wait_time_seconds` | no | Long-polling wait per receive call, `0`–`20` (default `20`) |
 | `max_number_of_messages` | no | Messages received per batch, `1`–`10` (default `10`) |
