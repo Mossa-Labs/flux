@@ -1,26 +1,56 @@
 defmodule Flux.Pipelines.StepSecrets do
   @moduledoc """
   Credentials the pipeline builder keeps in a source node's `sourceConfig`,
-  inside `pipeline.steps`, and how they leave the system: masked in reads,
-  dropped from exports.
+  inside `pipeline.steps`, and how they are protected: encrypted at rest,
+  masked in reads, dropped from exports.
+
+  This module is the `Flux.Vault.SecretPaths` taxonomy for the `steps` column of
+  `pipelines` and `pipeline_versions` (see `Flux.Vault.EncryptedConfig`). The
+  same keys drive encryption and masking, so every value decrypted on load is
+  also masked on the way out.
 
   A running source reads its credentials from its source record, never from
   pipeline steps, so nothing downstream of a read or an export needs them.
   Keys are the builder's IR names (see `assets/js/builder/types.ts`).
   """
 
+  @behaviour Flux.Vault.SecretPaths
+
   @redacted "[REDACTED]"
 
+  # `metadata` is the gRPC request headers, which can carry auth.
   @secret_keys ~w(password secretAccessKey sessionToken jwt credentials clientKey sslKeyfile
-                  privateKey passphrase bearerToken)
+                  privateKey passphrase bearerToken metadata)
 
   @doc "The `sourceConfig` keys treated as credentials."
   @spec secret_keys() :: [String.t()]
   def secret_keys, do: @secret_keys
 
-  @doc "Masks set credentials in every source node, for read responses."
+  @doc """
+  `Flux.Vault.SecretPaths` callback: the path of every set credential in every
+  source node, e.g. `["nodes", Access.at(0), "sourceConfig", "password"]`.
+
+  Unset (`nil` / `""`) credentials are skipped, so blank builder fields stay
+  blank on disk. Steps without a `"nodes"` list have no paths.
+  """
+  @impl Flux.Vault.SecretPaths
+  def paths(%{"nodes" => nodes}) when is_list(nodes) do
+    for {%{"sourceConfig" => config}, index} when is_map(config) <- Enum.with_index(nodes),
+        key <- @secret_keys,
+        Map.get(config, key) not in [nil, ""] do
+      ["nodes", Access.at(index), "sourceConfig", key]
+    end
+  end
+
+  def paths(_steps), do: []
+
+  @doc """
+  Masks set credentials in every source node, for read responses. Any
+  encrypted wrapper left in a source node is masked too (defense-in-depth).
+  """
   @spec redact(map() | nil) :: map() | nil
-  def redact(steps), do: update_source_configs(steps, &mask/1)
+  def redact(steps),
+    do: update_source_configs(steps, &(&1 |> mask() |> Flux.Vault.scrub_wrappers(@redacted)))
 
   @doc """
   Drops credentials from every source node, for exports. Masking would

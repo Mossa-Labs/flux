@@ -22,7 +22,9 @@ defmodule Flux.Pipelines.Pipeline do
     field :destination_queue, :string
     field :status, :string, default: "stopped"
     field :config, :map, default: %{}
-    field :steps, :map, default: %{}
+    # Source credentials in `nodes[].sourceConfig` (see `Flux.Pipelines.StepSecrets`)
+    # are encrypted at rest; the rest of the steps IR is plain JSONB.
+    field :steps, Flux.Vault.EncryptedConfig, secrets: Flux.Pipelines.StepSecrets, default: %{}
     field :sink_ids, {:array, :integer}, default: []
 
     # Set programmatically by Flux.Pipelines (never via changeset cast):

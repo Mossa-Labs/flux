@@ -51,6 +51,38 @@ defmodule Flux.Pipelines.StepSecretsTest do
     assert Enum.all?(redacted, fn {_key, value} -> value == "[REDACTED]" end)
   end
 
+  test "paths/1 names every set credential in every source node" do
+    steps = %{
+      "nodes" => [
+        %{"id" => "a", "type" => "source", "sourceConfig" => @config},
+        %{"id" => "out", "type" => "sink"},
+        %{"id" => "b", "type" => "source", "sourceConfig" => %{"jwt" => "j", "metadata" => nil}}
+      ]
+    }
+
+    paths = StepSecrets.paths(steps)
+
+    assert Enum.map(paths, &get_in(steps, &1)) |> Enum.sort() ==
+             ["-----BEGIN PRIVATE KEY-----", "j", "t0k"]
+
+    # Blank and nil credentials have no path, so they are not encrypted.
+    assert length(paths) == 3
+  end
+
+  test "paths/1 is empty for steps without nodes" do
+    assert StepSecrets.paths(%{"version" => "1.0", "steps" => []}) == []
+    assert StepSecrets.paths(%{}) == []
+  end
+
+  test "redact/1 scrubs an encrypted wrapper left in a non-secret field" do
+    wrapper = Flux.Vault.encrypt_value("stolen")
+
+    [%{"sourceConfig" => config}, _] =
+      StepSecrets.redact(steps(%{"endpoint" => wrapper}))["nodes"]
+
+    assert config["endpoint"] == "[REDACTED]"
+  end
+
   test "passes through steps without nodes" do
     assert StepSecrets.redact(nil) == nil
 
