@@ -11,13 +11,18 @@ tags.
 
 ### Upgrade notes
 
-- **Run migrations before you start the new release.** Two data migrations
-  encrypt existing source configs and the source credentials in pipeline steps
-  (including every version snapshot). They rewrite rows in `sources`,
-  `pipelines` and `pipeline_versions`.
-  - Rolling back: run the database rollback *before* deploying the older
-    release. The migrations decrypt on the way down, so older code never reads
-    ciphertext.
+- **Stop every node before you migrate. This release can't be rolled out node
+  by node.** Two data migrations encrypt existing source configs and the source
+  credentials in pipeline steps (including every version snapshot). They
+  rewrite rows in `sources`, `pipelines` and `pipeline_versions`. A node still
+  on the previous release reads those columns as plain maps, so it would hand
+  ciphertext to its source adapters and show it in the pipeline builder. Plan a
+  short maintenance window:
+  1. Stop all Flux nodes.
+  2. Run the migrations.
+  3. Start the new release.
+  - Rolling back: stop the new release, run the database rollback (it decrypts
+    again), then start the older release.
   - See [Secret Encryption at Rest](docs/operator_manual.md#secret-encryption-at-rest).
 
 ### Security
