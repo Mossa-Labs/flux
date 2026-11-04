@@ -88,6 +88,142 @@ defmodule FluxWeb.AlertsLive.IndexTest do
                Flux.AlertsTestProvider.stored_rules(org_id)
     end
 
+    @slack_url "https://hooks.slack.com/services/T000/B000/XXXXXXXXXXXXXXXX"
+    @webhook_url "https://example.com/hooks/flux?token=s3cr3t-token"
+
+    defp create_url_rule(conn) do
+      {:ok, lv, _html} = live(conn, ~p"/system/alerts")
+      lv |> element("button", "New rule") |> render_click()
+
+      lv
+      |> form("#alert-rule-form", %{
+        "rule" => %{
+          "name" => "Failures to chat",
+          "trigger_type" => "failure_rate",
+          "slack_url" => @slack_url,
+          "webhook_url" => @webhook_url
+        }
+      })
+      |> render_submit()
+
+      lv
+    end
+
+    defp stored_config(org_id, type) do
+      [rule] = Flux.AlertsTestProvider.stored_rules(org_id)
+      Enum.find_value(rule.channels, &(&1["type"] == type && &1["config"]))
+    end
+
+    test "editing never echoes Slack or webhook URLs; blank fields keep them",
+         %{conn: conn, org_id: org_id} do
+      lv = create_url_rule(conn)
+      [rule] = Flux.AlertsTestProvider.stored_rules(org_id)
+
+      html = render(lv)
+      refute html =~ "XXXXXXXXXXXXXXXX"
+      refute html =~ "s3cr3t-token"
+
+      html = lv |> element("#alert-rule-#{rule.id} button", "Edit") |> render_click()
+
+      refute html =~ "XXXXXXXXXXXXXXXX"
+      refute html =~ "s3cr3t-token"
+      refute html =~ "[REDACTED]"
+      assert html =~ "Stored — leave blank to keep it"
+      assert has_element?(lv, ~s(input[name="rule[slack_url]"][type="password"]))
+      assert has_element?(lv, ~s(input[name="rule[webhook_url]"][type="password"]))
+
+      lv
+      |> form("#alert-rule-form", %{
+        "rule" => %{"name" => "Renamed", "slack_url" => "", "webhook_url" => ""}
+      })
+      |> render_submit()
+
+      assert stored_config(org_id, "slack") == %{"url" => @slack_url}
+      assert stored_config(org_id, "webhook") == %{"url" => @webhook_url}
+    end
+
+    test "a new URL replaces the stored one", %{conn: conn, org_id: org_id} do
+      lv = create_url_rule(conn)
+      [rule] = Flux.AlertsTestProvider.stored_rules(org_id)
+
+      lv |> element("#alert-rule-#{rule.id} button", "Edit") |> render_click()
+
+      lv
+      |> form("#alert-rule-form", %{"rule" => %{"slack_url" => "https://hooks.slack.com/new"}})
+      |> render_submit()
+
+      assert stored_config(org_id, "slack") == %{"url" => "https://hooks.slack.com/new"}
+      assert stored_config(org_id, "webhook") == %{"url" => @webhook_url}
+    end
+
+    test "the remove checkboxes drop the Slack and webhook channels",
+         %{conn: conn, org_id: org_id} do
+      lv = create_url_rule(conn)
+      [rule] = Flux.AlertsTestProvider.stored_rules(org_id)
+
+      lv |> element("#alert-rule-#{rule.id} button", "Edit") |> render_click()
+
+      lv
+      |> form("#alert-rule-form", %{
+        "rule" => %{
+          "email_to" => "ops@acme.com",
+          "slack_remove" => "true",
+          "webhook_remove" => "true"
+        }
+      })
+      |> render_submit()
+
+      assert stored_config(org_id, "slack") == nil
+      assert stored_config(org_id, "webhook") == nil
+      assert stored_config(org_id, "email") == %{"to" => "ops@acme.com"}
+    end
+
+    test "Test sends through the provider with the stored secrets", %{conn: conn, org_id: org_id} do
+      lv = create_url_rule(conn)
+      [rule] = Flux.AlertsTestProvider.stored_rules(org_id)
+
+      html = lv |> element("#alert-rule-#{rule.id} button", "Test") |> render_click()
+
+      assert html =~ "Sent a test to 2 channel(s)."
+
+      assert [%{"config" => %{"url" => @webhook_url}}, %{"config" => %{"url" => @slack_url}}] =
+               Enum.sort_by(Flux.AlertsTestProvider.tested_channels(), & &1["type"], :desc)
+    end
+
+    test "a stored PagerDuty channel survives an edit under a Pro license",
+         %{conn: conn, org_id: org_id} do
+      pagerduty = %{
+        "type" => "pagerduty",
+        "config" => %{
+          "routing_key" => "R0123456789ABCDEF0123456789ABCDE",
+          "severity" => "critical"
+        }
+      }
+
+      Flux.AlertsTestProvider.reset([
+        %{
+          id: 1,
+          organization_id: org_id,
+          name: "On-call",
+          trigger_type: :anomaly,
+          trigger_config: %{},
+          channels: [pagerduty],
+          enabled: true,
+          cooldown_minutes: 15,
+          last_fired_at: nil,
+          inserted_at: DateTime.utc_now(),
+          updated_at: DateTime.utc_now()
+        }
+      ])
+
+      {:ok, lv, _html} = live(conn, ~p"/system/alerts")
+      lv |> element("#alert-rule-1 button", "Edit") |> render_click()
+
+      lv |> form("#alert-rule-form", %{"rule" => %{"name" => "Renamed"}}) |> render_submit()
+
+      assert stored_config(org_id, "pagerduty") == pagerduty["config"]
+    end
+
     test "the PagerDuty channel stays locked under a Pro license", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/system/alerts")
 
