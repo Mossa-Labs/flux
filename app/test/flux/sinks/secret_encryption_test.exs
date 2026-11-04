@@ -76,6 +76,21 @@ defmodule Flux.Sinks.SecretEncryptionTest do
     assert %{"encrypted" => true} = raw_config(updated.id)["auth"]["token"]
   end
 
+  # The HTTP changeset rejects such an `auth`, but older rows (or other sink
+  # types) can hold one, so exercise the Ecto type directly.
+  test "a config whose auth is a plain value saves and loads", %{org_id: org_id} do
+    sink =
+      Repo.insert!(%Flux.Sinks.Sink{
+        name: "no-auth-sink",
+        type: "http",
+        organization_id: org_id,
+        config: %{"url" => "https://example.com/webhook", "auth" => "none"}
+      })
+
+    assert raw_config(sink.id)["auth"] == "none"
+    assert Sinks.get_sink(sink.id, org_id).config["auth"] == "none"
+  end
+
   test "load tolerates a legacy plaintext row (no re-encryption needed to read)", %{
     org_id: org_id
   } do
