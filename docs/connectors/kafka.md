@@ -27,8 +27,9 @@ Both source and sink support the same authentication modes (entitled to Pro):
 | `sasl_scram_512` | SASL/SCRAM-SHA-512 |
 | `mtls` | Mutual TLS (client cert + key) — for production clusters |
 
-SASL credentials and TLS material are stored in the source/sink config and are
-masked (`[REDACTED]`) when configuration leaves the system (e.g. API reads).
+The SASL password is encrypted at rest in the source/sink config, and SASL
+credentials and TLS material are masked (`[REDACTED]`) when configuration leaves
+the system (e.g. API reads).
 
 ## Source (consume)
 

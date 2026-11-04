@@ -23,8 +23,9 @@ queue, which your pipeline consumes.
 | `mtls` | Mutual TLS (client cert + key) — common in industrial deployments |
 | `jwt` | Bearer/JWT token in the MQTT password field — for cloud brokers |
 
-Credentials and TLS material are stored in the source config and are masked
-(`[REDACTED]`) when configuration leaves the system (e.g. API reads). Set `tls:
+Credentials (`password`, `jwt`) are encrypted at rest in the source config and
+are masked (`[REDACTED]`) when configuration leaves the system (e.g. API reads).
+TLS material is referenced by file path. Set `tls:
 true` to use server-authenticated TLS with `username_password` / `jwt`; `mtls`
 implies TLS.
 

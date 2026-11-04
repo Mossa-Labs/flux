@@ -22,7 +22,7 @@ internal queue, which your pipeline consumes.
 | `adc` (default) | Application Default Credentials — the `GOOGLE_APPLICATION_CREDENTIALS` key file, else the GCE/GKE **metadata server** (Workload Identity). No stored secrets. |
 | `service_account` | Inline service-account JSON key supplied in `credentials`. |
 
-Inline `credentials` are stored in the source config and are masked
+Inline `credentials` are encrypted at rest in the source config and are masked
 (`[REDACTED]`) when configuration leaves the system (e.g. API reads). Prefer
 `adc` with **Workload Identity** on GKE so no long-lived key is stored. Tokens
 are minted via OAuth and cached until expiry.

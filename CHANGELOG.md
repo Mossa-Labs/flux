@@ -7,6 +7,36 @@ edition; Community shows them with an upgrade prompt.
 This file starts after v0.2.6. For earlier releases, see the git history between
 tags.
 
+## Unreleased
+
+### Upgrade notes
+
+- **Run migrations before you start the new release.** Two data migrations
+  encrypt existing source configs and the source credentials in pipeline steps
+  (including every version snapshot). They rewrite rows in `sources`,
+  `pipelines` and `pipeline_versions`.
+  - Rolling back: run the database rollback *before* deploying the older
+    release. The migrations decrypt on the way down, so older code never reads
+    ciphertext.
+  - See [Secret Encryption at Rest](docs/operator_manual.md#secret-encryption-at-rest).
+
+### Security
+
+- **Source credentials are encrypted at rest** (MOS-654). Source configs and the
+  source credentials the pipeline builder keeps in a pipeline's steps are now
+  stored as ciphertext, like sink configs. This covers passwords, SASL passwords,
+  AWS secret keys and session tokens, Pub/Sub credentials, MQTT JWTs, SFTP and
+  mTLS private keys, and gRPC bearer tokens and metadata. Adapters and the
+  builder read plaintext as before.
+- Source config redaction now also masks AWS secret keys and session tokens,
+  Pub/Sub credentials, MQTT JWTs and gRPC metadata, which it previously missed.
+
+### Fixed
+
+- A changeset error on a list-typed or encrypted field (for example a
+  non-numeric `sink_ids` entry) returned a server error from the API, the
+  pipeline import task and the alerts page instead of a validation message.
+
 ## 0.2.7 — 2026-11-04
 
 ### Upgrade notes

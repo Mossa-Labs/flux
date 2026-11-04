@@ -270,7 +270,7 @@ MIX_ENV=prod mix release
 | `RELEASE_NODE` | No | Overrides this node's name. Derived from the host address otherwise; the booted name is recorded so `bin/flux rpc`/`remote`/`stop` reach the running node |
 | `POD_IP` | No | Host/pod address used to build the node name when `RELEASE_NODE` is unset. Kubernetes can inject it via `fieldRef` |
 | `RELEASE_COOKIE` | No | Shared distribution secret. **Set it explicitly for any multi-node deployment** — otherwise each build bakes a random cookie and separately-built images cannot connect |
-| `FLUX_VAULT_KEY` | No | Dedicated key for encrypting sink secrets at rest. If unset, derived from `SECRET_KEY_BASE`. See [Secret Encryption at Rest](#secret-encryption-at-rest) |
+| `FLUX_VAULT_KEY` | No | Dedicated key for encrypting sink and source secrets at rest. If unset, derived from `SECRET_KEY_BASE`. See [Secret Encryption at Rest](#secret-encryption-at-rest) |
 | `FLUX_TRUSTED_PROXIES` | No | Comma-separated reverse-proxy CIDRs. Required for the IP allowlist to see the real client IP behind a load balancer. See [IP Allowlist](#ip-allowlist) |
 | `FLUX_AWS_SERVER_CREDENTIALS` | No | `allowed` (default) or `disabled`. Whether AWS connectors may sign with the server's own AWS identity. Set `disabled` when several organizations share the deployment. See [Server AWS Credentials](#server-aws-credentials) |
 
@@ -308,27 +308,41 @@ short throttle, so "last active" is accurate to within a few minutes.
 
 ### Secret Encryption at Rest
 
-Sensitive sink configuration values — database passwords, access keys, bearer
-tokens, service-account credentials — are encrypted at rest in the `sinks`
-config column (AES-GCM via `Flux.Vault`). Non-secret keys (URLs, hosts, table
-names) remain stored as plain JSONB. Encryption is transparent: application code
-and sink adapters always read plaintext.
+Sensitive connector configuration is encrypted at rest (AES-GCM via
+`Flux.Vault`) in three places:
+
+- **Sink configs** (`sinks.config`): database passwords, access keys, bearer
+  tokens, service-account credentials.
+- **Source configs** (`sources.config`): passwords, SASL passwords, AWS secret
+  keys and session tokens, Pub/Sub credentials, MQTT JWTs, SFTP and mTLS
+  private keys, gRPC bearer tokens and metadata.
+- **Builder source credentials** in a pipeline's steps (`pipelines.steps` and
+  `pipeline_versions.steps`), the same credentials as entered in a source
+  node of the pipeline builder.
+
+Non-secret keys (URLs, hosts, table names) remain stored as plain JSONB.
+Encryption is transparent: application code and connector adapters always read
+plaintext, and the API masks secrets as `[REDACTED]`.
 
 - **Key source.** By default the key is derived from `SECRET_KEY_BASE`, so
   encryption is on with no extra configuration. Set `FLUX_VAULT_KEY` to use a
   dedicated key independent of session signing.
-- **Existing deployments.** Reads of pre-existing plaintext rows keep working;
-  the next save of a sink encrypts it. To encrypt all rows immediately, run
-  `mix flux.vault.encrypt_sinks` (add `--dry-run` to preview).
+- **Existing deployments.** Reads of pre-existing plaintext rows keep working.
+  Sources and pipelines (including version history) are encrypted by a data
+  migration on upgrade. Sinks are encrypted on their next save; to encrypt all
+  sink rows immediately, run `mix flux.vault.encrypt_sinks` (add `--dry-run` to
+  preview).
+- **Rolling back.** The source and pipeline migrations decrypt again on
+  rollback. Roll the database back *before* you deploy an older release, or the
+  older code will read ciphertext.
 - **Key rotation.** Changing the base key (`SECRET_KEY_BASE` or
   `FLUX_VAULT_KEY`) invalidates existing ciphertext. Rotate by keeping the old
   key in place, re-encrypting via `mix flux.vault.encrypt_sinks`, then switching
-  the key only after every row is re-written.
-- **What is not encrypted.** Only sink configs are encrypted. Source configs,
-  and the source credentials the pipeline builder keeps in a pipeline's steps,
-  are stored as plain JSONB. They stay out of the API: masked as `[REDACTED]` in
-  pipeline reads and dropped from pipeline exports. Restrict database access
-  accordingly.
+  the key only after every row is re-written. Sources and pipelines have no
+  re-encryption task yet; they are re-written on their next save.
+- **What is not encrypted.** Poll source URLs and headers, Kafka and MQTT TLS
+  files (referenced by path), and alert channel secrets are stored as plain
+  values. Restrict database access accordingly.
 
 ### Server AWS Credentials
 

@@ -21,8 +21,9 @@ internal queue, which your pipeline consumes.
 | `iam_role` (default) | Ambient IAM role from EC2/ECS/EKS instance metadata — no stored secrets |
 | `static` | Static `access_key_id` + `secret_access_key` (optional `session_token`) |
 
-Static credentials are stored in the source config and are masked (`[REDACTED]`)
-when configuration leaves the system (e.g. API reads). Prefer `iam_role` in
+Static credentials (`secret_access_key`, `session_token`) are encrypted at rest
+in the source config and are masked (`[REDACTED]`) when configuration leaves the
+system (e.g. API reads). Prefer `iam_role` in
 AWS-hosted deployments so no long-lived secrets are stored. (SSO and
 cross-account assume-role are on the roadmap.)
 
