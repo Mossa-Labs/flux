@@ -9,22 +9,25 @@ defmodule Flux.Sources do
 
   import Ecto.Query, warn: false
   alias Flux.Repo
+  alias Flux.Sources.Secrets
   alias Flux.Sources.Source
 
   @redacted "[REDACTED]"
-  # Secret config paths masked before a source leaves the system (e.g. API GETs).
-  # SFTP creds (private_key/passphrase/certificate) and gRPC creds
-  # (bearer_token/client_key) live at the config top level.
-  @secret_top_keys ~w(password sasl_password private_key passphrase certificate bearer_token client_key)
-  @secret_auth_keys ~w(token password username key)
 
   @doc """
   Returns a copy of a source's `config` with known secret fields masked.
+
+  Secret locations come from `Flux.Sources.Secrets`, the same taxonomy that
+  drives encryption at rest, so every value decrypted on load is masked here.
   """
   def redact_config(config) when is_map(config) do
     config
-    |> redact_keys(@secret_top_keys)
+    |> redact_keys(Secrets.top_keys())
     |> redact_auth()
+    # Defense-in-depth: mask any ciphertext that survives to the output, e.g. a
+    # wrapper planted in a non-secret field (never decrypted, see
+    # `Flux.Vault.decrypt_map/2`).
+    |> Flux.Vault.scrub_wrappers(@redacted)
   end
 
   def redact_config(other), do: other
@@ -36,7 +39,7 @@ defmodule Flux.Sources do
   end
 
   defp redact_auth(%{"auth" => auth} = config) when is_map(auth) do
-    Map.put(config, "auth", redact_keys(auth, @secret_auth_keys))
+    Map.put(config, "auth", redact_keys(auth, Secrets.auth_keys()))
   end
 
   defp redact_auth(config), do: config

@@ -192,6 +192,47 @@ defmodule Flux.SourcesTest do
       assert redacted["client_cert"] == "-----BEGIN CERTIFICATE-----"
       assert redacted["endpoint"] == "telemetry.example.com:443"
     end
+
+    test "masks AWS, Pub/Sub, MQTT JWT and gRPC metadata secrets" do
+      config = %{
+        "queue_url" => "https://sqs.us-east-1.amazonaws.com/1/q",
+        "access_key_id" => "AKIA123",
+        "secret_access_key" => "aws-secret",
+        "session_token" => "aws-session",
+        "credentials" => ~s({"private_key": "-----BEGIN PRIVATE KEY-----"}),
+        "jwt" => "eyJhbGciOi",
+        "metadata" => %{"authorization" => "Bearer abc"}
+      }
+
+      redacted = Sources.redact_config(config)
+
+      for key <- ~w(secret_access_key session_token credentials jwt metadata) do
+        assert redacted[key] == "[REDACTED]", "expected #{key} to be masked"
+      end
+
+      assert redacted["queue_url"] == config["queue_url"]
+      assert redacted["access_key_id"] == "AKIA123"
+    end
+
+    test "masks every key in the Sources.Secrets taxonomy" do
+      top = Map.new(Flux.Sources.Secrets.top_keys(), &{&1, "s3cret"})
+      auth = Map.new(Flux.Sources.Secrets.auth_keys(), &{&1, "s3cret"})
+
+      redacted = Sources.redact_config(Map.put(top, "auth", auth))
+
+      for key <- Flux.Sources.Secrets.top_keys(), do: assert(redacted[key] == "[REDACTED]")
+
+      for key <- Flux.Sources.Secrets.auth_keys(),
+          do: assert(redacted["auth"][key] == "[REDACTED]")
+    end
+
+    test "scrubs an encrypted wrapper left in a non-secret field" do
+      wrapper = Flux.Vault.encrypt_value("stolen")
+      redacted = Sources.redact_config(%{"host" => "h", "extra" => %{"x" => wrapper}})
+
+      assert redacted["extra"]["x"] == "[REDACTED]"
+      assert redacted["host"] == "h"
+    end
   end
 
   describe "list/enabled" do

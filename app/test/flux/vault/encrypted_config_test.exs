@@ -50,4 +50,15 @@ defmodule Flux.Vault.EncryptedConfigTest do
     assert EncryptedConfig.dump(nil, nil, params) == {:ok, nil}
     assert EncryptedConfig.load(nil, nil, params) == {:ok, nil}
   end
+
+  test "the secrets module decides which paths are encrypted" do
+    params = EncryptedConfig.init(secrets: Flux.Sources.Secrets)
+    config = %{"host" => "sftp.example.com", "private_key" => "-----BEGIN KEY-----"}
+
+    {:ok, dumped} = EncryptedConfig.dump(config, nil, params)
+
+    assert dumped["host"] == "sftp.example.com"
+    assert %{"encrypted" => true} = dumped["private_key"]
+    assert {:ok, ^config} = EncryptedConfig.load(dumped, nil, params)
+  end
 end
