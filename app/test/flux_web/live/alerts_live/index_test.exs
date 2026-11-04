@@ -85,7 +85,7 @@ defmodule FluxWeb.AlertsLive.IndexTest do
       assert html =~ "Payments failure spike"
 
       assert [%{name: "Payments failure spike", channels: [%{"type" => "webhook"}]}] =
-               Flux.AlertsTestProvider.list_rules(org_id)
+               Flux.AlertsTestProvider.stored_rules(org_id)
     end
 
     test "the PagerDuty channel stays locked under a Pro license", %{conn: conn} do
@@ -136,7 +136,7 @@ defmodule FluxWeb.AlertsLive.IndexTest do
     end
 
     defp pagerduty_channels(org_id) do
-      [rule] = Flux.AlertsTestProvider.list_rules(org_id)
+      [rule] = Flux.AlertsTestProvider.stored_rules(org_id)
       Enum.filter(rule.channels, &(&1["type"] == "pagerduty"))
     end
 
@@ -150,7 +150,7 @@ defmodule FluxWeb.AlertsLive.IndexTest do
     test "editing never echoes the integration key; a blank key keeps it",
          %{conn: conn, org_id: org_id} do
       lv = create_pagerduty_rule(conn)
-      [rule] = Flux.AlertsTestProvider.list_rules(org_id)
+      [rule] = Flux.AlertsTestProvider.stored_rules(org_id)
 
       html = lv |> element("#alert-rule-#{rule.id} button", "Edit") |> render_click()
 
@@ -169,7 +169,7 @@ defmodule FluxWeb.AlertsLive.IndexTest do
 
     test "the remove checkbox drops the PagerDuty channel", %{conn: conn, org_id: org_id} do
       lv = create_pagerduty_rule(conn)
-      [rule] = Flux.AlertsTestProvider.list_rules(org_id)
+      [rule] = Flux.AlertsTestProvider.stored_rules(org_id)
 
       lv |> element("#alert-rule-#{rule.id} button", "Edit") |> render_click()
 

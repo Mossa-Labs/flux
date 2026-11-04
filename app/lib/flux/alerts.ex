@@ -69,6 +69,23 @@ defmodule Flux.Alerts do
   def test_channel(channel), do: Registry.active().test_channel(channel)
 
   @doc """
+  Sends a test notification to every channel of a stored rule. The provider
+  loads the channel secrets itself, so the caller never needs them.
+
+  `test_rule/2` is an optional provider callback; a provider that doesn't
+  implement it yields `{:error, {:pro_required, :alerting}}`.
+  """
+  @spec test_rule(Provider.organization_id(), Provider.rule_id()) ::
+          {:ok, %{sent: non_neg_integer(), failed: non_neg_integer()}} | {:error, term()}
+  def test_rule(organization_id, rule_id) do
+    provider = Registry.active()
+
+    if Code.ensure_loaded?(provider) and function_exported?(provider, :test_rule, 2),
+      do: provider.test_rule(organization_id, rule_id),
+      else: {:error, {:pro_required, :alerting}}
+  end
+
+  @doc """
   Records a rule-less event (e.g. a bulk DLQ replay) in alert history. No-op in
   Community builds.
   """
