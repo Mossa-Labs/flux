@@ -350,11 +350,7 @@ defmodule FluxWeb.AlertsLive.Index do
 
   defp format_error(%Ecto.Changeset{} = cs) do
     cs
-    |> Ecto.Changeset.traverse_errors(fn {msg, opts} ->
-      Enum.reduce(opts, msg, fn {k, v}, acc ->
-        String.replace(acc, "%{#{k}}", to_string(v))
-      end)
-    end)
+    |> Ecto.Changeset.traverse_errors(&interpolate_error/1)
     |> Enum.map(fn {field, msgs} -> "#{field} #{Enum.join(msgs, ", ")}" end)
     |> Enum.join("; ")
   end
@@ -652,4 +648,13 @@ defmodule FluxWeb.AlertsLive.Index do
 
   defp format_timestamp(%DateTime{} = dt), do: Calendar.strftime(dt, "%Y-%m-%d %H:%M UTC")
   defp format_timestamp(_), do: "—"
+
+  # Fills only the placeholders the message actually uses. Error opts can hold
+  # values with no string form (e.g. a cast error's `type: {:parameterized, ...}`
+  # or `{:array, :integer}`), so stringifying every opt would crash.
+  defp interpolate_error({msg, opts}) do
+    Regex.replace(~r"%{(\w+)}", msg, fn _, key ->
+      opts |> Keyword.get(String.to_existing_atom(key), key) |> to_string()
+    end)
+  end
 end
