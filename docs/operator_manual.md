@@ -345,8 +345,9 @@ plaintext, and the API masks secrets as `[REDACTED]`.
   key recovers it. On **Sinks**, the sink shows *Credentials need re-entering*.
   Its deliveries and connection tests fail with `:undecryptable_secret` until
   you re-enter the secret on its edit page. You can still disable it meanwhile.
-  Sources and builder credentials load the same way but aren't flagged in the
-  UI yet.
+  In the pipeline builder, a source credential like this shows as a blank field
+  with a notice. It keeps its stored value until you type a new one. Source
+  records load the same way but aren't flagged in the UI yet.
 - **Key rotation.** Changing the base key (`SECRET_KEY_BASE` or
   `FLUX_VAULT_KEY`) invalidates existing ciphertext. Rotate by keeping the old
   key in place, re-encrypting via `mix flux.vault.encrypt_sinks`, then switching

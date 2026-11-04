@@ -312,18 +312,47 @@ defmodule FluxWeb.PipelineLive.Builder do
 
   # ── Source node configuration ─────────────────────────────────────
 
+  # A credential that couldn't be decrypted loads as a marker map (see
+  # `Flux.Vault.decrypt_map/2`), which can't be rendered as an input value.
+  # Show it as a blank field and list it in a notice. Only this display copy
+  # changes: the node data keeps the marker, and its original ciphertext, until
+  # the field is typed into (`update_node_config` writes only the edited field).
+  defp display_source_config(config) do
+    keys = for {key, value} <- config, Flux.Vault.undecryptable?(value), do: key
+    {Map.merge(config, Map.new(keys, &{&1, ""})), Enum.sort(keys)}
+  end
+
   defp source_config(assigns) do
-    source_config = assigns.node.data["sourceConfig"] || %{}
+    {source_config, undecryptable_keys} =
+      display_source_config(assigns.node.data["sourceConfig"] || %{})
+
     source_type = source_config["type"] || "queue"
 
     assigns =
       assigns
       |> assign(:source_config, source_config)
       |> assign(:source_type, source_type)
+      |> assign(:undecryptable_keys, undecryptable_keys)
 
     ~H"""
     <form phx-change="update_node_config" phx-submit="update_node_config">
       <div class="space-y-4">
+        <div
+          :if={@undecryptable_keys != []}
+          id="source-undecryptable-notice"
+          role="alert"
+          class="flex gap-2 rounded-lg border border-warning/50 bg-warning/10 p-3 text-xs"
+        >
+          <.icon name="hero-exclamation-triangle" class="size-4 shrink-0 text-warning" />
+          <p class="text-base-content/80">
+            <span class="font-semibold text-base-content">
+              Stored credentials can't be decrypted.
+            </span>
+            Re-enter <code class="rounded bg-base-200 px-1">{Enum.join(@undecryptable_keys, ", ")}</code>.
+            They were encrypted with a different vault key.
+          </p>
+        </div>
+
         <div class="flex items-center gap-3 pb-3 border-b border-base-200">
           <div class="p-2 bg-primary/10 rounded-lg text-primary">
             <.icon name={source_icon(@source_type)} class="w-5 h-5" />
