@@ -738,4 +738,86 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
       assert pipeline.source_queue == "webhooks.my-webhook"
     end
   end
+
+  describe "a source credential that can't be decrypted (MOS-665)" do
+    @sqs_static %{
+      "type" => "sqs",
+      "queueUrl" => "https://sqs.us-east-1.amazonaws.com/1/q",
+      "region" => "us-east-1",
+      "authMode" => "static",
+      "accessKeyId" => "AKIAOLD",
+      "secretAccessKey" => "old-secret"
+    }
+
+    # Saves a pipeline whose source node's secretAccessKey is encrypted under a
+    # different vault key, writing the raw column so no global key changes.
+    defp broken_source_pipeline(org_id) do
+      import Ecto.Query, only: [from: 2]
+
+      node = %{"id" => "node_1", "type" => "source", "sourceConfig" => @sqs_static}
+      pipeline = Flux.PipelinesFixtures.pipeline_fixture(org_id, %{steps: %{"nodes" => [node]}})
+
+      foreign = Flux.SinksFixtures.foreign_encrypted_wrapper("old-secret")
+      raw_steps = %{"nodes" => [put_in(node, ["sourceConfig", "secretAccessKey"], foreign)]}
+
+      {1, _} =
+        Flux.Repo.update_all(from(p in "pipelines", where: p.id == ^pipeline.id),
+          set: [steps: raw_steps]
+        )
+
+      {pipeline, foreign}
+    end
+
+    defp select_source(lv, source_config) do
+      render_hook(lv, "select_node", %{
+        "nodeId" => "node_1",
+        "nodeType" => "source",
+        "nodeData" => %{"label" => "My Source", "sourceConfig" => source_config}
+      })
+    end
+
+    test "the builder opens the pipeline", %{conn: conn, scope: scope} do
+      {pipeline, _foreign} = broken_source_pipeline(scope.organization_id)
+
+      assert {:ok, _lv, html} = live(conn, ~p"/pipelines/#{pipeline.id}/builder")
+      assert html =~ ~s(id="pipeline-builder")
+    end
+
+    test "selecting the source shows the credential blank, with a notice",
+         %{conn: conn, scope: scope} do
+      {pipeline, _foreign} = broken_source_pipeline(scope.organization_id)
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/#{pipeline.id}/builder")
+
+      # The canvas sends the node back as it got it in data-initial-ir.
+      marker = Flux.Pipelines.get_pipeline(pipeline.id, scope.organization_id).steps
+      marker = get_in(marker, ["nodes", Access.at(0), "sourceConfig", "secretAccessKey"])
+      assert Flux.Vault.undecryptable?(marker)
+
+      select_source(lv, Map.put(@sqs_static, "secretAccessKey", marker))
+
+      assert has_element?(lv, "#source-undecryptable-notice", "secretAccessKey")
+      assert has_element?(lv, ~s(input[name="sourceConfig[secretAccessKey]"][value=""]))
+    end
+
+    test "editing another field keeps the stored ciphertext in the node",
+         %{conn: conn, scope: scope} do
+      {pipeline, _foreign} = broken_source_pipeline(scope.organization_id)
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/#{pipeline.id}/builder")
+
+      marker =
+        Flux.Pipelines.get_pipeline(pipeline.id, scope.organization_id).steps
+        |> get_in(["nodes", Access.at(0), "sourceConfig", "secretAccessKey"])
+
+      select_source(lv, Map.put(@sqs_static, "secretAccessKey", marker))
+
+      render_change(lv, "update_node_config", %{
+        "_target" => ["sourceConfig", "region"],
+        "sourceConfig" => %{"region" => "eu-west-1", "secretAccessKey" => ""}
+      })
+
+      assert_push_event(lv, "update_node_data", %{data: data})
+      assert data["sourceConfig"]["region"] == "eu-west-1"
+      assert data["sourceConfig"]["secretAccessKey"] == marker
+    end
+  end
 end
