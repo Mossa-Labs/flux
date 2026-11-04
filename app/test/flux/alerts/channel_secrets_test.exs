@@ -73,6 +73,22 @@ defmodule Flux.Alerts.ChannelSecretsTest do
       refute inspect(decrypted) =~ @key
     end
 
+    test "an undecryptable secret is dropped with a warning, not raised" do
+      slack = Enum.find(ChannelSecrets.encrypt(channels()), &(&1["type"] == "slack"))
+      tampered = put_in(slack, ["config", "url", "ciphertext"], "not-a-valid-token")
+
+      {result, log} =
+        ExUnit.CaptureLog.with_log(fn ->
+          ChannelSecrets.decrypt([tampered, %{"type" => "email", "config" => %{"to" => "a@b.c"}}])
+        end)
+
+      assert [%{"type" => "slack", "config" => config}, %{"type" => "email"}] = result
+      refute Map.has_key?(config, "url")
+      refute ChannelSecrets.stored?(result, "slack")
+      assert log =~ "could not decrypt an alert channel secret (url)"
+      refute log =~ "not-a-valid-token"
+    end
+
     test "tolerates malformed channels and non-lists" do
       odd = [%{"type" => "slack"}, %{"config" => %{"url" => @slack_url}}, "junk"]
       assert ChannelSecrets.encrypt(odd) == odd

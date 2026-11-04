@@ -22,6 +22,8 @@ defmodule Flux.Alerts.ChannelSecrets do
 
   alias Flux.Vault
 
+  require Logger
+
   @redacted "[REDACTED]"
 
   @secret_keys %{
@@ -55,16 +57,29 @@ defmodule Flux.Alerts.ChannelSecrets do
   @doc """
   Decrypts each channel's secret values. Only the locations named by
   `secret_keys/1` are decrypted; legacy plaintext passes through unchanged.
+
+  A secret that can't be decrypted (the Vault key changed, or the ciphertext
+  was tampered with) is dropped with a warning instead of raising. The channel
+  then reads as "not set": it fails delivery cleanly, and the owner can
+  re-enter the value, rather than one bad row breaking every rule.
   """
   @spec decrypt([map()]) :: [map()]
   def decrypt(channels) when is_list(channels),
-    do:
-      Enum.map(
-        channels,
-        &map_config(&1, fn config, paths -> Vault.decrypt_map(config, paths) end)
-      )
+    do: Enum.map(channels, &map_config(&1, fn config, paths -> decrypt_config(config, paths) end))
 
   def decrypt(other), do: other
+
+  defp decrypt_config(config, paths) do
+    Vault.decrypt_map(config, paths)
+  rescue
+    Flux.Vault.DecryptError ->
+      Logger.warning(
+        "[Alerts] could not decrypt an alert channel secret (#{Enum.map_join(paths, ", ", &hd/1)}); " <>
+          "it must be re-entered"
+      )
+
+      Map.drop(config, Enum.map(paths, &hd/1))
+  end
 
   @doc """
   Masks every secret value with `"[REDACTED]"`, then masks any encrypted
