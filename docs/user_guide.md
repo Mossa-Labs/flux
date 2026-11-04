@@ -11,6 +11,7 @@ This guide covers how to use the Flux web interface to manage pipelines, sinks, 
 - [Managing Pipelines](#managing-pipelines)
 - [Visual Pipeline Builder](#visual-pipeline-builder)
 - [Managing Sinks](#managing-sinks)
+- [Alerts](#alerts)
 - [System Settings](#system-settings)
 - [User Settings](#user-settings)
 
@@ -177,6 +178,9 @@ A pipeline's Source node is a **queue consumer** -- it reads from one internal q
 | Webhook | `webhooks.<path>` | `POST /api/webhooks/<path>`, or a matching webhook source |
 | Scheduled Poll | `polling.<source>` (derived from the node label) | a matching scheduled-poll source |
 | Kafka / SQS / Kinesis / Pub/Sub / RabbitMQ (Pro) | the connector's queue | the corresponding managed source |
+| gRPC (Enterprise) | `grpc.<channel>` | a gRPC source with that channel, in server or client mode. See [gRPC](connectors/grpc.md) |
+
+Every connector, with its edition, is listed in the [connectors index](connectors/README.md).
 
 > **Configuring a source node only wires the *consumer* side.** For Webhook and Scheduled Poll, the upstream endpoint/poller that *publishes* into the queue must still be provisioned separately -- for a webhook, by POSTing to `/api/webhooks/<path>` (or creating a webhook source with the same name); for a scheduled poll, by creating a scheduled-poll source whose id matches the derived `<source>`. A source node whose upstream is never provisioned will simply receive no data.
 
@@ -287,6 +291,36 @@ See [Email Sink](connectors/email.md) for the full reference.
 | Subject | Subject template, e.g. `Order {order.id} failed` |
 | HTML Body / Plain-Text Body | Optional body templates. Leave both blank to send the record as JSON |
 | Max Emails per Minute | Rate limit for this sink (default: 30). Records over it wait, then are dropped |
+
+---
+
+## Alerts
+
+**Route**: `/system/alerts`
+
+Alerting is a Pro feature. On Community the page shows an upgrade prompt.
+
+An alert rule watches for one condition and notifies one or more channels when it occurs.
+
+| Trigger | Fires when |
+|---------|------------|
+| Anomaly | A pipeline's anomaly score rises above the threshold (default 3.0) |
+| Failure rate | A pipeline's failure rate rises above the threshold (default 5%) |
+| Pipeline stopped | A pipeline stops |
+| DLQ depth | The dead-letter queue holds more messages than the threshold (default 100) |
+| Freshness SLO, volume anomaly, schema drift | A source's [observability](observability.md) detector trips |
+
+| Channel | Edition | Notes |
+|---------|---------|-------|
+| Email | Pro | Sent through the configured mail relay |
+| Webhook | Pro | POSTs the alert as JSON |
+| Slack | Pro | See [Slack](connectors/slack.md) |
+| PagerDuty | Enterprise | Opens an incident through Events API v2. See [PagerDuty as an alert channel](connectors/pagerduty.md#pagerduty-as-an-alert-channel) |
+
+- **Cooldown.** After a rule fires, it stays quiet for its cooldown (15 minutes by default), so a flapping condition doesn't flood the channel.
+- **Test.** Sends a test notification through the rule's channels without waiting for the condition.
+- **Toggle.** Turns a rule off without deleting it.
+- **History.** Lists the 50 most recent firings, with what triggered them and which channels were sent.
 
 ---
 

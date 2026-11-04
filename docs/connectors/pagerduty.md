@@ -9,7 +9,7 @@ page PagerDuty*, and closes the incident again when the data says it's resolved.
 > **Enterprise feature.** On the Community and Pro editions the PagerDuty sink is
 > gated: the type appears in the UI under *Flux Enterprise* and any saved config is
 > rejected with an upgrade prompt. The real adapter ships in the Flux Enterprise
-> edition. Activate a license to enable it. See
+> edition. Activate an Enterprise license to enable it; a Pro license does not. See
 > [pricing](https://fluxdata.tech/pricing.html).
 
 A PagerDuty *sink* egresses processed records **out** of a pipeline. Each record
@@ -121,9 +121,17 @@ confirm routing end to end.
 
 PagerDuty rate-limits the Events API per integration key. The sink honors
 PagerDuty's `Retry-After` header on `429` responses and retries transient `5xx`
-failures and network errors with exponential backoff (3 attempts by default;
-`max_attempts`, `retry_delay_ms` and `timeout_ms` tune this). A `400` (invalid
-event) fails immediately with PagerDuty's error message. With a dedup key, a
+failures and network errors with exponential backoff. A `400` (invalid event)
+fails immediately with PagerDuty's error message.
+
+| Setting | Default | Allowed |
+| --- | --- | --- |
+| `max_attempts` | 3 | Whole number, 1–10 |
+| `retry_delay_ms` | 500 | Whole number, 0–60000 |
+| `timeout_ms` | | Whole number, 1–120000 |
+
+A value outside these bounds fails validation when you save, and **Test
+connection** reports it without contacting PagerDuty. With a dedup key, a
 retried trigger is idempotent.
 
 High-volume pipelines should aggregate or filter upstream — one record is one
@@ -148,4 +156,5 @@ alongside email, webhook and Slack. Paste the service's integration key into
   as custom details.
 - The key is write-only: it is never shown again after saving. Leave the field
   blank when editing to keep it, or tick **Remove the PagerDuty channel**.
+  Unlike the sink's key, an alert channel's key is not encrypted at rest.
 - **Test** checks the key the same non-paging way as the sink's connection test.

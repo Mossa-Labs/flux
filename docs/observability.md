@@ -12,9 +12,10 @@ pipeline's *inputs*, using only message **metadata** — never payload contents:
 - **Is the volume suddenly off?** (volume baseline)
 - **Did the shape of the data change?** (schema drift)
 
-These run per **source** — the identifier in your webhook URL,
-`POST /api/webhooks/:source` (e.g. `github` → the `webhooks.github` queue) — and
-surface on the **Observability** page and on each pipeline's **Observability** tab.
+These run per **source**: the identifier in your webhook URL,
+`POST /api/webhooks/:source` (e.g. `github` → the `webhooks.github` queue), or a
+[gRPC source](connectors/grpc.md) (Enterprise). They surface on the
+**Observability** page and on each pipeline's **Observability** tab.
 
 ## Table of Contents
 
@@ -84,11 +85,11 @@ won't spam your channels.
 Detection is driven entirely by telemetry — there is no extra instrumentation in
 your pipelines:
 
-- `[:flux, :queue, :published]` (emitted on every accepted webhook) feeds the
-  **freshness** last-seen timestamp and the **volume** counter.
-- `[:flux, :webhook, :received]` carries a lightweight schema **fingerprint** — a
-  stable hash of the payload's top-level keys and value types — plus the field
-  count. The raw payload never leaves the request process, so drift is detected
+- `[:flux, :queue, :published]` (emitted on every accepted webhook and gRPC
+  message) feeds the **freshness** last-seen timestamp and the **volume** counter.
+- `[:flux, :webhook, :received]` and `[:flux, :grpc, :received]` carry a
+  lightweight schema **fingerprint** (a stable hash of the payload's top-level
+  keys and value types) plus the field count. The raw payload never leaves the request process, so drift is detected
   without ever storing or forwarding message contents.
 
 See the [Operator manual](operator_manual.md#telemetry-events) for the full

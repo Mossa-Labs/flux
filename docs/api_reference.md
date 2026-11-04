@@ -144,6 +144,12 @@ curl -X POST http://localhost:4000/api/pipelines \
 Returns a pipeline's full detail — config, steps, sink ids, and a metrics
 snapshot. `404` if the pipeline is not in the key's organization.
 
+Source credentials that the pipeline builder keeps in `steps` (passwords, secret
+keys, session tokens, client keys and the like) come back as `"[REDACTED]"`.
+The create and rollback responses mask them the same way. A pipeline export
+(`GET /api/pipelines/:id/export`) drops them entirely, so re-enter them after
+importing.
+
 ### POST /api/pipelines/:id/start
 
 Starts (or resumes) a pipeline. Requires the `member` role. Returns the new
