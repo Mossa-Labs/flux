@@ -50,4 +50,37 @@ defmodule Flux.Vault.BackfillTest do
     assert raw_config(source.id) == @plain
     assert Backfill.run(Repo, "sources", "config", Flux.Sources.Secrets, :decrypt) == 0
   end
+
+  test "a save that lands between read and write is kept, not overwritten", %{source: source} do
+    newer = %{"host" => "sftp2.example.com", "password" => "rotated"}
+
+    Flux.RacingRepo.race_before_next_update(fn ->
+      Repo.query!("UPDATE sources SET config = $1 WHERE id = $2", [newer, source.id])
+    end)
+
+    assert Backfill.run(Flux.RacingRepo, "sources", "config", Flux.Sources.Secrets, :encrypt) == 1
+
+    raw = raw_config(source.id)
+    assert raw["host"] == "sftp2.example.com"
+    assert %{"encrypted" => true} = raw["password"]
+    assert Repo.get!(Source, source.id).config == newer
+  end
+
+  test "a row deleted between read and write is skipped", %{source: source} do
+    Flux.RacingRepo.race_before_next_update(fn ->
+      Repo.query!("DELETE FROM sources WHERE id = $1", [source.id])
+    end)
+
+    assert Backfill.run(Flux.RacingRepo, "sources", "config", Flux.Sources.Secrets, :encrypt) == 0
+  end
+
+  test "a config whose auth is not a map is encrypted without raising", %{source: source} do
+    legacy = %{"password" => "hunter2", "auth" => "none"}
+    Repo.query!("UPDATE sources SET config = $1 WHERE id = $2", [legacy, source.id])
+
+    assert Backfill.run(Repo, "sources", "config", Flux.Sources.Secrets, :encrypt) == 1
+    raw = raw_config(source.id)
+    assert %{"encrypted" => true} = raw["password"]
+    assert raw["auth"] == "none"
+  end
 end
