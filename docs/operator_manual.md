@@ -329,12 +329,14 @@ plaintext, and the API masks secrets as `[REDACTED]`.
   dedicated key independent of session signing.
 - **Existing deployments.** Reads of pre-existing plaintext rows keep working.
   Sources and pipelines (including version history) are encrypted by a data
-  migration on upgrade. Sinks are encrypted on their next save; to encrypt all
+  migration on upgrade. Releases before that migration read these columns as
+  plain maps, so stop every node before you run it; see
+  [Upgrading](#upgrading). Sinks are encrypted on their next save; to encrypt all
   sink rows immediately, run `mix flux.vault.encrypt_sinks` (add `--dry-run` to
   preview).
 - **Rolling back.** The source and pipeline migrations decrypt again on
-  rollback. Roll the database back *before* you deploy an older release, or the
-  older code will read ciphertext.
+  rollback. Stop the new release, roll the database back, and only then start
+  the older release, or the older code will read ciphertext.
 - **Key rotation.** Changing the base key (`SECRET_KEY_BASE` or
   `FLUX_VAULT_KEY`) invalidates existing ciphertext. Rotate by keeping the old
   key in place, re-encrypting via `mix flux.vault.encrypt_sinks`, then switching
@@ -407,6 +409,23 @@ version 14. The migration `20261023045219_upgrade_oban_to_v14` does three things
 
 Nodes still on 0.2.6 keep running against the upgraded schema. A rolling
 upgrade, or a rollback to the previous release, is safe.
+
+The release after 0.2.7 encrypts source credentials at rest
+(`20261104143626_encrypt_source_config_secrets` and
+`20261104143810_encrypt_pipeline_step_secrets`). It is **not** safe to roll out
+node by node. A 0.2.7 node reads `sources.config` and pipeline `steps` as plain
+maps, so once the migrations run it would hand ciphertext to its source
+adapters and show it in the pipeline builder. Upgrade in a short maintenance
+window:
+
+1. Stop every Flux node.
+2. Back up the database and run the migrations.
+3. Start the new release on every node.
+
+To roll back, stop the new release, run
+`bin/flux eval "Flux.Release.rollback(20261104143626)"` (or
+`mix ecto.rollback --step 2` from a source checkout) to decrypt again, then
+start 0.2.7.
 
 ### Starting the Application
 
