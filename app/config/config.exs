@@ -67,7 +67,11 @@ config :flux,
   ecto_repos: [Flux.Repo],
   generators: [timestamp_type: :utc_datetime],
   # :org_centric
-  rbac_mode: :team_centric
+  rbac_mode: :team_centric,
+  # Whether AWS connectors may sign with the server's own identity (iam_role, or
+  # assume_role without base keys). Set from FLUX_AWS_SERVER_CREDENTIALS in
+  # runtime.exs; see Flux.AWS.ServerCredentials.
+  aws_server_credentials: :allowed
 
 # Configure the endpoint
 config :flux, FluxWeb.Endpoint,

@@ -28,6 +28,28 @@ end
 
 config :flux, FluxWeb.Endpoint, http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# Whether AWS connectors may act with the server's own AWS identity: `iam_role`
+# auth, or `assume_role` without base keys. Set it to "disabled" when several
+# organizations share this deployment, so no member can borrow the server's role
+# to reach another organization's buckets, tables, queues or streams.
+if aws_server_credentials = System.get_env("FLUX_AWS_SERVER_CREDENTIALS") do
+  config :flux,
+    aws_server_credentials:
+      (case aws_server_credentials |> String.trim() |> String.downcase() do
+         "" ->
+           :allowed
+
+         "allowed" ->
+           :allowed
+
+         "disabled" ->
+           :disabled
+
+         other ->
+           raise "FLUX_AWS_SERVER_CREDENTIALS must be \"allowed\" or \"disabled\", got: #{inspect(other)}"
+       end)
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
