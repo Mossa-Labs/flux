@@ -23,8 +23,9 @@ queue, which your pipeline consumes.
 | `assume_role` | Assume a `role_arn` (cross-account), optionally with an `external_id`. The STS call is signed with base `access_key_id` + `secret_access_key` when you give them, and with the server's identity otherwise |
 | `sso` | _Planned — not yet supported._ AWS IAM Identity Center (SSO) profile |
 
-Static credentials are stored in the source config and are masked (`[REDACTED]`)
-when configuration leaves the system (e.g. API reads). Prefer `iam_role` or
+Static credentials (`secret_access_key`, `session_token`) are encrypted at rest
+in the source config and are masked (`[REDACTED]`) when configuration leaves the
+system (e.g. API reads). Prefer `iam_role` or
 `assume_role` in AWS-hosted deployments so no long-lived secrets are stored.
 
 AWS SSO (IAM Identity Center) is an interactive, browser-based login unsuited to

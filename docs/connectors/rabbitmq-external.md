@@ -22,13 +22,13 @@ detect → sink*.
 
 | `auth_mode` | Description |
 | --- | --- |
-| `plain` (default) | Username / password (AMQP PLAIN). Credentials stored in the source config, masked when configuration leaves the system. |
+| `plain` (default) | Username / password (AMQP PLAIN). Credentials encrypted at rest in the source config, masked when configuration leaves the system. |
 | `mtls` | X.509 mutual TLS. The broker verifies the client certificate; Flux verifies the broker against the supplied CA. No username/password. |
 | `external` | SASL `EXTERNAL` — the broker derives the identity from the presented client certificate (e.g. the `rabbitmq_auth_mechanism_ssl` plugin, or LDAP mapping). Requires TLS client certs, same as `mtls`. |
 
 For `mtls` and `external`, supply `ca_cert`, `client_cert`, and `client_key` as PEM.
-Certificate material and passwords are stored in the source config and are masked
-(`[REDACTED]`) when configuration leaves the system (e.g. API reads). Use `mtls` or
+The password and `client_key` are encrypted at rest in the source config. They are
+masked (`[REDACTED]`) when configuration leaves the system (e.g. API reads). Use `mtls` or
 `external` with a private CA where you want to avoid storing a shared password.
 
 ## Source configuration

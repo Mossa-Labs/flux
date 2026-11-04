@@ -25,9 +25,9 @@ bounded memory footprint.
 | `private_key` | Username + PEM `private_key` (RSA or Ed25519), optional `passphrase` |
 | `cert` | OpenSSH user `certificate` + its `private_key`, optional `passphrase` |
 
-Secrets (`password`, `private_key`, `passphrase`, `certificate`) are stored in the
-source config and are masked (`[REDACTED]`) when configuration leaves the system
-(e.g. API reads). Prefer key-based auth (`private_key` / `cert`) over `password`.
+Secrets (`password`, `private_key`, `passphrase`, `certificate`) are encrypted at
+rest in the source config and are masked (`[REDACTED]`) when configuration leaves
+the system (e.g. API reads). Prefer key-based auth (`private_key` / `cert`) over `password`.
 
 The remote host key is verified by default against the configured known-hosts /
 fingerprint; an explicit opt-in accepts any host key for development only (logged

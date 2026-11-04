@@ -114,8 +114,9 @@ The listener only accepts TLS. Plaintext (h2c) is not offered in server mode.
 `allowed_client_subjects` is required for the mTLS modes. Without it, any
 certificate the deployment CA signed could publish into the source. Failed checks
 return `UNAUTHENTICATED` (missing or invalid credentials) or `PERMISSION_DENIED`
-(valid certificate, subject not allowed). The bearer token is masked
-(`[REDACTED]`) when configuration leaves the system (e.g. API reads).
+(valid certificate, subject not allowed). The bearer token is encrypted
+at rest and masked (`[REDACTED]`) when configuration leaves the system (e.g. API
+reads).
 
 ### Server-mode configuration
 
@@ -227,8 +228,8 @@ metadata. `request` accepts either spelling of field names.
 | `deadline_ms` | no | Time allowed to connect and receive the first message (default `10000`) |
 | `idle_timeout_ms` | no | Reconnect when no message arrives for this long (default: never) |
 
-`bearer_token` and `client_key` are masked (`[REDACTED]`) when configuration
-leaves the system.
+`bearer_token`, `client_key` and `metadata` are encrypted at rest and masked
+(`[REDACTED]`) when configuration leaves the system.
 
 ```json
 {
