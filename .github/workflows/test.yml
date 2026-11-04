@@ -92,3 +92,18 @@ jobs:
           POSTGRES_DB: flux_test
           POSTGRES_HOST: localhost
         run: mix test
+
+      # The same lockfile scan as "Dependency audit / Lockfiles", repeated here
+      # because `test` is the required check and that job is not. It catches
+      # what `mix hex.audit` misses: EEF advisories (EEF-CVE-*) and the npm
+      # lockfile. It must be a step, not a job this one `needs`: a required job
+      # skipped because a dependency failed counts as passing. `!cancelled()`
+      # runs it even after a test failure, so one run reports both. Keep the
+      # args in sync with audit.yml.
+      - name: Scan lockfiles for known vulnerabilities (OSV)
+        if: ${{ !cancelled() }}
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+        with:
+          scan-args: |-
+            --lockfile=app/mix.lock
+            --lockfile=app/assets/package-lock.json
