@@ -120,6 +120,16 @@ defmodule Flux.Sources.SecretEncryptionTest do
     assert Sources.queue_name(source) == "webhooks.github"
   end
 
+  test "a config whose auth is a plain value saves and loads", %{org_id: org_id} do
+    config = %{"password" => "hunter2", "auth" => "none"}
+    source = insert_source!(org_id, "sftp", config)
+
+    assert %{"encrypted" => true} = raw_config(source.id)["password"]
+    assert raw_config(source.id)["auth"] == "none"
+    assert Sources.get_source(source.id, org_id).config == config
+    assert Flux.Sources.Secrets.paths(config) == Enum.map(Flux.Sources.Secrets.top_keys(), &[&1])
+  end
+
   test "a legacy plaintext row loads without re-encryption", %{org_id: org_id} do
     source = insert_source!(org_id, "sftp", %{"host" => "h"})
     Repo.query!("UPDATE sources SET config = $1 WHERE id = $2", [@sftp, source.id])

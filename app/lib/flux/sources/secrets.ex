@@ -53,9 +53,13 @@ defmodule Flux.Sources.Secrets do
   end
 
   @doc """
-  `Flux.Vault.SecretPaths` callback: the secret paths are the same for every
-  source config, so this ignores `config` and returns `paths/0`.
+  `Flux.Vault.SecretPaths` callback: the secret paths present in `config`.
+
+  The `"auth"` paths are only included when `"auth"` is a map. A source config
+  whose `"auth"` holds a plain value (e.g. `"none"`) has nothing nested to
+  encrypt, and `get_in/2` would raise walking into it.
   """
   @impl Flux.Vault.SecretPaths
-  def paths(_config), do: paths()
+  def paths(%{"auth" => auth}) when is_map(auth), do: paths()
+  def paths(_config), do: Enum.map(@top_keys, &[&1])
 end
