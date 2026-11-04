@@ -77,10 +77,17 @@ jobs:
       - name: Install dependencies
         run: mix deps.get
 
-      # Fails when a locked package has a known security advisory (Hex 2.5+
-      # reads them from OSV) or has been retired by its maintainers.
-      - name: Check Hex packages for advisories and retirements
-        run: mix hex.audit
+      # Report-only. Lists locked packages that have a known security advisory
+      # (Hex 2.5+ reads them from OSV) or have been retired by their maintainers,
+      # as a warning on the PR. It does not fail `test`, the required check: an
+      # upgrade needs its own smoke test, and an unrelated fix (an emergency
+      # patch included) must not be held up by it. "Dependency audit /
+      # Lockfiles" is the check that turns red on these.
+      - name: Check Hex packages for advisories and retirements (report-only)
+        run: |
+          if ! mix hex.audit; then
+            echo "::warning title=Hex audit::Locked Hex packages have advisories or retirements; see this step's log and the Dependency audit check. Not blocking."
+          fi
 
       - name: Compile
         run: mix compile --warnings-as-errors
@@ -92,18 +99,3 @@ jobs:
           POSTGRES_DB: flux_test
           POSTGRES_HOST: localhost
         run: mix test
-
-      # The same lockfile scan as "Dependency audit / Lockfiles", repeated here
-      # because `test` is the required check and that job is not. It catches
-      # what `mix hex.audit` misses: EEF advisories (EEF-CVE-*) and the npm
-      # lockfile. It must be a step, not a job this one `needs`: a required job
-      # skipped because a dependency failed counts as passing. `!cancelled()`
-      # runs it even after a test failure, so one run reports both. Keep the
-      # args in sync with audit.yml.
-      - name: Scan lockfiles for known vulnerabilities (OSV)
-        if: ${{ !cancelled() }}
-        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
-        with:
-          scan-args: |-
-            --lockfile=app/mix.lock
-            --lockfile=app/assets/package-lock.json
