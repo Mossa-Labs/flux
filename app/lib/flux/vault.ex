@@ -41,6 +41,7 @@ defmodule Flux.Vault do
 
   @wrapper_key "encrypted"
   @ciphertext_key "ciphertext"
+  @undecryptable_key "undecryptable"
 
   @aes_salt "flux.vault.aes256.v1"
   @sign_salt "flux.vault.sign.v1"
@@ -49,10 +50,14 @@ defmodule Flux.Vault do
   @doc """
   Encrypts a single JSON-serializable value, returning the wrapper map.
 
-  Values already wrapped are returned unchanged, making this idempotent.
+  Values already wrapped are returned unchanged, making this idempotent. The
+  one exception is an undecryptable marker (see `decrypt_map/2`): its
+  `"undecryptable"` flag is dropped, so the stored row keeps the original
+  ciphertext and never stores a flag that depends on which key is loaded.
   """
   @spec encrypt_value(term()) :: map()
-  def encrypt_value(%{@wrapper_key => true} = wrapper), do: wrapper
+  def encrypt_value(%{@wrapper_key => true} = wrapper),
+    do: Map.delete(wrapper, @undecryptable_key)
 
   def encrypt_value(value) do
     {aes, sign} = keys()
@@ -159,13 +164,28 @@ defmodule Flux.Vault do
   decryption oracle.
 
   Legacy plaintext values sitting at a secret path pass through unchanged.
+
+  ## Undecryptable values
+
+  This function never raises. A wrapper whose ciphertext cannot be decrypted
+  (a rotated or wrong key, a backup restored next to a different key, or
+  tampering), or a damaged wrapper with a missing or non-string `ciphertext`,
+  is replaced by an *undecryptable marker*: the same wrapper with
+  `"undecryptable" => true` added. One bad secret therefore can't stop the
+  whole row from loading, and with it every list query that includes the row.
+
+  The marker keeps the original ciphertext. `encrypt_value/1` strips the flag,
+  so writing the row back stores the untouched ciphertext and loses nothing.
+  If the right key is restored later, the secret decrypts again. Callers detect
+  the marker with `undecryptable_paths/2` and `undecryptable?/1`. Redaction
+  masks it like any other wrapper (`scrub_wrappers/2`).
   """
   @spec decrypt_map(map(), [[String.t()]]) :: map()
   def decrypt_map(config, paths) when is_map(config) do
     Enum.reduce(paths, config, fn path, acc ->
       case get_in(acc, path) do
-        %{@wrapper_key => true, @ciphertext_key => _} = wrapper ->
-          put_in_path(acc, path, decrypt_value(wrapper))
+        %{@wrapper_key => true} = wrapper ->
+          put_in_path(acc, path, decrypt_or_mark(wrapper))
 
         _ ->
           acc
@@ -174,6 +194,40 @@ defmodule Flux.Vault do
   end
 
   def decrypt_map(config, _paths), do: config
+
+  @doc """
+  Returns `true` if `value` is an undecryptable marker left by `decrypt_map/2`.
+  """
+  @spec undecryptable?(term()) :: boolean()
+  def undecryptable?(%{@wrapper_key => true, @undecryptable_key => true}), do: true
+  def undecryptable?(_value), do: false
+
+  @doc """
+  Returns the subset of `paths` whose value in `config` is an undecryptable
+  marker (see `decrypt_map/2`).
+  """
+  @spec undecryptable_paths(map(), [list()]) :: [list()]
+  def undecryptable_paths(config, paths) when is_map(config),
+    do: Enum.filter(paths, &undecryptable?(get_in(config, &1)))
+
+  def undecryptable_paths(_config, _paths), do: []
+
+  defp decrypt_or_mark(%{@ciphertext_key => token} = wrapper) when is_binary(token) do
+    {aes, sign} = keys()
+
+    case Plug.Crypto.MessageEncryptor.decrypt(token, aes, sign) do
+      {:ok, json} -> Jason.decode!(json)
+      :error -> mark_undecryptable(wrapper)
+    end
+  end
+
+  defp decrypt_or_mark(wrapper), do: mark_undecryptable(wrapper)
+
+  defp mark_undecryptable(wrapper) do
+    wrapper
+    |> Map.take([@wrapper_key, @ciphertext_key])
+    |> Map.put(@undecryptable_key, true)
+  end
 
   @doc """
   Replaces every encrypted wrapper anywhere in `value` with `replacement`.

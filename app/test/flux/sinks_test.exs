@@ -581,4 +581,72 @@ defmodule Flux.SinksTest do
       assert redacted["bucket"] == "my-bucket"
     end
   end
+
+  describe "undecryptable secrets (MOS-665)" do
+    import ExUnit.CaptureLog
+
+    test "list_sinks/1 still returns every sink when one secret can't be decrypted",
+         %{org_id: org_id} do
+      good = sink_fixture(org_id, %{name: "good"})
+
+      log =
+        capture_log(fn ->
+          bad = undecryptable_sink_fixture(org_id, %{name: "bad"})
+          sinks = Sinks.list_sinks(org_id)
+
+          assert Enum.map(sinks, & &1.id) |> Enum.sort() == Enum.sort([good.id, bad.id])
+          send(self(), {:bad, bad})
+        end)
+
+      assert_received {:bad, bad}
+      assert log =~ "Sink #{bad.id} has stored secrets that can't be decrypted"
+      assert log =~ "auth.token"
+      refute log =~ bad.config["auth"]["token"]["ciphertext"]
+    end
+
+    test "undecryptable_secrets/1 names the affected keys", %{org_id: org_id} do
+      good = sink_fixture(org_id)
+      bad = undecryptable_sink_fixture(org_id)
+
+      assert Sinks.undecryptable_secrets(bad) == ["auth.token"]
+      assert Sinks.undecryptable_secrets?(bad)
+      refute Sinks.undecryptable_secrets?(good)
+    end
+
+    test "redact_config/1 masks the marker", %{org_id: org_id} do
+      bad = undecryptable_sink_fixture(org_id)
+      assert Sinks.redact_config(bad.config)["auth"]["token"] == "[REDACTED]"
+    end
+
+    @tag :capture_log
+    test "toggling enabled keeps the stored ciphertext", %{org_id: org_id} do
+      bad = undecryptable_sink_fixture(org_id)
+      ciphertext = bad.config["auth"]["token"]["ciphertext"]
+
+      {:ok, _} = Sinks.toggle_enabled(bad)
+
+      reloaded = Sinks.get_sink!(bad.id)
+      refute reloaded.enabled
+      assert reloaded.config["auth"]["token"]["ciphertext"] == ciphertext
+    end
+
+    test "changing config without re-entering the secret is rejected", %{org_id: org_id} do
+      bad = undecryptable_sink_fixture(org_id)
+      config = Map.put(bad.config, "url", "https://example.com/other")
+
+      assert {:error, changeset} = Sinks.update_sink(bad, %{config: config})
+      assert {"auth type 'bearer' requires proper configuration", _} = changeset.errors[:config]
+    end
+
+    test "re-entering the secret saves and clears the marker", %{org_id: org_id} do
+      bad = undecryptable_sink_fixture(org_id)
+      config = put_in(bad.config, ["auth", "token"], "new-token")
+
+      assert {:ok, _} = Sinks.update_sink(bad, %{config: config})
+
+      reloaded = Sinks.get_sink!(bad.id)
+      assert reloaded.config["auth"]["token"] == "new-token"
+      refute Sinks.undecryptable_secrets?(reloaded)
+    end
+  end
 end

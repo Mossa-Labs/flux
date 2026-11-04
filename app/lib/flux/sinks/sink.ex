@@ -46,6 +46,27 @@ defmodule Flux.Sinks.Sink do
   end
 
   defp validate_config(changeset) do
+    if unchanged_config_with_undecryptable_secrets?(changeset),
+      do: changeset,
+      else: do_validate_config(changeset)
+  end
+
+  # A stored secret that couldn't be decrypted loads as a marker (see
+  # `Flux.Vault.decrypt_map/2`), which no adapter accepts as a secret. When the
+  # update doesn't touch `config` (for example, disabling the broken sink),
+  # skip re-validating it, so the sink can still be disabled or renamed. Any
+  # change to `config` is validated as usual, so the secret has to be
+  # re-entered before it saves.
+  defp unchanged_config_with_undecryptable_secrets?(changeset) do
+    config = changeset.data.config
+
+    changeset.data.__meta__.state == :loaded and
+      not Map.has_key?(changeset.changes, :config) and
+      is_map(config) and
+      Flux.Vault.undecryptable_paths(config, Flux.Sinks.Secrets.paths(config)) != []
+  end
+
+  defp do_validate_config(changeset) do
     type = get_field(changeset, :type)
     config = get_field(changeset, :config) || %{}
 

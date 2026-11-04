@@ -175,4 +175,59 @@ defmodule Flux.VaultTest do
       assert Vault.scrub_wrappers("plain", "X") == "plain"
     end
   end
+
+  describe "undecryptable values (MOS-665)" do
+    setup do
+      %{foreign: Flux.SinksFixtures.foreign_encrypted_wrapper("old-routing-key")}
+    end
+
+    test "decrypt_map marks a wrapper it can't decrypt instead of raising", %{foreign: foreign} do
+      good = Vault.encrypt_value("tok")
+      config = %{"url" => "https://x", "routing_key" => foreign, "auth" => %{"token" => good}}
+
+      result = Vault.decrypt_map(config, Secrets.paths(config))
+
+      assert result["url"] == "https://x"
+      assert result["auth"]["token"] == "tok"
+
+      assert result["routing_key"] == %{
+               "encrypted" => true,
+               "ciphertext" => foreign["ciphertext"],
+               "undecryptable" => true
+             }
+    end
+
+    test "a damaged wrapper (missing or non-string ciphertext) is marked too" do
+      for wrapper <- [%{"encrypted" => true, "ciphertext" => 123}, %{"encrypted" => true}] do
+        config = %{"routing_key" => wrapper}
+        result = Vault.decrypt_map(config, Secrets.paths(config))
+        assert Vault.undecryptable?(result["routing_key"])
+      end
+    end
+
+    test "undecryptable_paths/2 and undecryptable?/1 find the markers", %{foreign: foreign} do
+      config = %{"routing_key" => foreign, "auth" => %{"token" => foreign}, "url" => "x"}
+      paths = Secrets.paths(config)
+      result = Vault.decrypt_map(config, paths)
+
+      assert Enum.sort(Vault.undecryptable_paths(result, paths)) ==
+               [["auth", "token"], ["routing_key"]]
+
+      refute Vault.undecryptable?(foreign)
+      refute Vault.undecryptable?("plain")
+      assert Vault.undecryptable_paths("not a map", paths) == []
+    end
+
+    test "re-encrypting a marker drops the flag and keeps the original ciphertext",
+         %{foreign: foreign} do
+      config = %{"routing_key" => foreign}
+      marked = Vault.decrypt_map(config, Secrets.paths(config))
+
+      assert Vault.encrypt_map(marked, Secrets.paths(marked)) == config
+    end
+
+    test "decrypt_value/1 still raises on an undecryptable wrapper", %{foreign: foreign} do
+      assert_raise Flux.Vault.DecryptError, fn -> Vault.decrypt_value(foreign) end
+    end
+  end
 end
