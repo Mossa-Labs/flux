@@ -12,6 +12,7 @@ defmodule FluxWeb.AlertsLive.Index do
   use FluxWeb, :live_view
 
   alias Flux.Alerts
+  alias Flux.Alerts.ChannelSecrets
   alias FluxWeb.Components.UpgradePrompt
 
   @redirect_after_ms 20_000
@@ -61,7 +62,7 @@ defmodule FluxWeb.AlertsLive.Index do
     |> assign(:history, [])
     |> assign(:show_form, false)
     |> assign(:editing_id, nil)
-    |> assign(:pagerduty_stored, false)
+    |> assign(:stored_secrets, MapSet.new())
     |> assign(:form, blank_form())
   end
 
@@ -116,7 +117,7 @@ defmodule FluxWeb.AlertsLive.Index do
          socket
          |> assign(:show_form, true)
          |> assign(:editing_id, rule.id)
-         |> assign(:pagerduty_stored, stored_pagerduty(rule) != nil)
+         |> assign(:stored_secrets, stored_secrets(rule))
          |> assign(:form, to_form(rule_to_params(rule), as: :rule))}
     end
   end
@@ -131,8 +132,7 @@ defmodule FluxWeb.AlertsLive.Index do
 
   def handle_event("save_rule", %{"rule" => params}, socket) do
     org_id = socket.assigns.current_scope.organization_id
-    editing = Enum.find(socket.assigns.rules, &(&1.id == socket.assigns.editing_id))
-    attrs = build_attrs(params, editing, socket.assigns.pagerduty_entitled)
+    attrs = build_attrs(params, socket.assigns.stored_secrets, socket.assigns.pagerduty_entitled)
 
     result =
       case socket.assigns.editing_id do
@@ -179,30 +179,29 @@ defmodule FluxWeb.AlertsLive.Index do
     end
   end
 
+  # The rule's channel secrets never reach this process, so the provider loads
+  # and sends to the stored channels itself.
   def handle_event("test_rule", %{"id" => id}, socket) do
-    rule = Enum.find(socket.assigns.rules, &(to_string(&1.id) == id))
+    org_id = socket.assigns.current_scope.organization_id
 
     socket =
-      case rule do
+      case Enum.find(socket.assigns.rules, &(to_string(&1.id) == id)) do
         nil ->
           socket
 
         %{channels: []} ->
           put_flash(socket, :error, "This rule has no channels configured.")
 
-        %{channels: channels} ->
-          {ok, failed} =
-            Enum.reduce(channels, {0, 0}, fn channel, {ok, failed} ->
-              case Alerts.test_channel(channel) do
-                :ok -> {ok + 1, failed}
-                {:error, _} -> {ok, failed + 1}
-              end
-            end)
+        rule ->
+          case Alerts.test_rule(org_id, rule.id) do
+            {:ok, %{sent: sent, failed: 0}} ->
+              put_flash(socket, :info, "Sent a test to #{sent} channel(s).")
 
-          if failed == 0 do
-            put_flash(socket, :info, "Sent a test to #{ok} channel(s).")
-          else
-            put_flash(socket, :error, "#{ok} channel(s) delivered, #{failed} failed.")
+            {:ok, %{sent: sent, failed: failed}} ->
+              put_flash(socket, :error, "#{sent} channel(s) delivered, #{failed} failed.")
+
+            {:error, reason} ->
+              put_flash(socket, :error, "Could not send a test: #{format_error(reason)}")
           end
       end
 
@@ -212,7 +211,7 @@ defmodule FluxWeb.AlertsLive.Index do
   # -- Form helpers --
 
   defp reset_form(socket),
-    do: socket |> assign(:form, blank_form()) |> assign(:pagerduty_stored, false)
+    do: socket |> assign(:form, blank_form()) |> assign(:stored_secrets, MapSet.new())
 
   defp blank_form do
     to_form(
@@ -240,10 +239,11 @@ defmodule FluxWeb.AlertsLive.Index do
       "threshold" => threshold_string(rule.trigger_config),
       "cooldown_minutes" => Integer.to_string(rule.cooldown_minutes || @default_cooldown),
       "email_to" => get_in(channels, ["email", "to"]) || "",
-      "webhook_url" => get_in(channels, ["webhook", "url"]) || "",
-      "slack_url" => get_in(channels, ["slack", "url"]) || "",
-      # The PagerDuty integration key is write-only: never echoed back into the
-      # form. A blank field on save keeps the stored key.
+      # Channel secrets (webhook and Slack URLs, the PagerDuty integration key)
+      # are write-only: the provider returns them redacted, they are never put
+      # back into the form, and a blank field on save keeps the stored value.
+      "webhook_url" => "",
+      "slack_url" => "",
       "pagerduty_routing_key" => "",
       "pagerduty_severity" => get_in(channels, ["pagerduty", "severity"]) || "error"
     }
@@ -259,12 +259,20 @@ defmodule FluxWeb.AlertsLive.Index do
   defp threshold_string(%{"threshold" => t}) when not is_nil(t), do: to_string(t)
   defp threshold_string(_), do: ""
 
-  defp build_attrs(params, editing, pagerduty_entitled?) do
+  # The channel types whose secret is stored, read from the redacted rule.
+  defp stored_secrets(rule) do
+    for type <- ~w(webhook slack pagerduty),
+        ChannelSecrets.stored?(rule.channels, type),
+        into: MapSet.new(),
+        do: type
+  end
+
+  defp build_attrs(params, stored_secrets, pagerduty_entitled?) do
     %{
       "name" => String.trim(params["name"] || ""),
       "trigger_type" => params["trigger_type"],
       "trigger_config" => build_trigger_config(params),
-      "channels" => build_channels(params, stored_pagerduty(editing), pagerduty_entitled?),
+      "channels" => build_channels(params, stored_secrets, pagerduty_entitled?),
       "cooldown_minutes" => parse_int(params["cooldown_minutes"], @default_cooldown)
     }
   end
@@ -276,48 +284,49 @@ defmodule FluxWeb.AlertsLive.Index do
     end
   end
 
-  defp build_channels(params, stored_pagerduty, pagerduty_entitled?) do
+  defp build_channels(params, stored, pagerduty_entitled?) do
     [
       channel("email", "to", params["email_to"]),
-      channel("webhook", "url", params["webhook_url"]),
-      channel("slack", "url", params["slack_url"]),
-      pagerduty_channel(params, stored_pagerduty, pagerduty_entitled?)
+      secret_channel("webhook", "url", params["webhook_url"], params["webhook_remove"], stored),
+      secret_channel("slack", "url", params["slack_url"], params["slack_remove"], stored),
+      pagerduty_channel(params, stored, pagerduty_entitled?)
     ]
     |> Enum.reject(&is_nil/1)
   end
 
   # Without the entitlement the PagerDuty fields aren't shown, so a stored
-  # channel is carried over untouched rather than silently dropped. Otherwise a
-  # new key replaces the stored one, a blank key keeps it, and "remove" drops it.
-  defp pagerduty_channel(_params, stored, false), do: stored
+  # channel is kept as it is (the provider fills in its stored config) rather
+  # than silently dropped.
+  defp pagerduty_channel(_params, stored, false) do
+    if MapSet.member?(stored, "pagerduty"), do: %{"type" => "pagerduty", "config" => %{}}
+  end
 
   defp pagerduty_channel(params, stored, true) do
-    key = String.trim(params["pagerduty_routing_key"] || "")
-    severity = params["pagerduty_severity"] || "error"
+    severity = %{"severity" => params["pagerduty_severity"] || "error"}
+
+    secret_channel(
+      "pagerduty",
+      "routing_key",
+      params["pagerduty_routing_key"],
+      params["pagerduty_remove"],
+      stored,
+      severity
+    )
+  end
+
+  # A write-only secret field: "remove" drops the channel, a new value replaces
+  # the stored one, and a blank field keeps it. A kept channel is sent without
+  # its secret, and the provider fills the stored value back in.
+  defp secret_channel(type, key, value, remove, stored, config \\ %{}) do
+    value = String.trim(value || "")
 
     cond do
-      params["pagerduty_remove"] == "true" ->
-        nil
-
-      key != "" ->
-        %{"type" => "pagerduty", "config" => %{"routing_key" => key, "severity" => severity}}
-
-      stored != nil ->
-        put_in(stored, ["config", "severity"], severity)
-
-      true ->
-        nil
+      remove == "true" -> nil
+      value != "" -> %{"type" => type, "config" => Map.put(config, key, value)}
+      MapSet.member?(stored, type) -> %{"type" => type, "config" => config}
+      true -> nil
     end
   end
-
-  defp stored_pagerduty(%{channels: channels}) when is_list(channels) do
-    Enum.find_value(channels, fn ch ->
-      if (ch["type"] || ch[:type]) == "pagerduty",
-        do: %{"type" => "pagerduty", "config" => ch["config"] || ch[:config] || %{}}
-    end)
-  end
-
-  defp stored_pagerduty(_rule), do: nil
 
   defp channel(type, key, value) do
     case value && String.trim(value) do
@@ -449,16 +458,51 @@ defmodule FluxWeb.AlertsLive.Index do
               />
               <.input
                 field={@form[:webhook_url]}
-                type="text"
+                type="password"
                 label="Webhook URL"
-                placeholder="https://…"
+                autocomplete="off"
+                placeholder={
+                  if MapSet.member?(@stored_secrets, "webhook"),
+                    do: "Stored — leave blank to keep it",
+                    else: "https://…"
+                }
               />
               <.input
                 field={@form[:slack_url]}
-                type="text"
+                type="password"
                 label="Slack webhook URL"
-                placeholder="https://hooks.slack.com/…"
+                autocomplete="off"
+                placeholder={
+                  if MapSet.member?(@stored_secrets, "slack"),
+                    do: "Stored — leave blank to keep it",
+                    else: "https://hooks.slack.com/…"
+                }
               />
+            </div>
+            <div
+              :if={
+                MapSet.member?(@stored_secrets, "webhook") or
+                  MapSet.member?(@stored_secrets, "slack")
+              }
+              class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-1"
+            >
+              <div class="hidden md:block"></div>
+              <div>
+                <.input
+                  :if={MapSet.member?(@stored_secrets, "webhook")}
+                  field={@form[:webhook_remove]}
+                  type="checkbox"
+                  label="Remove the webhook channel"
+                />
+              </div>
+              <div>
+                <.input
+                  :if={MapSet.member?(@stored_secrets, "slack")}
+                  field={@form[:slack_remove]}
+                  type="checkbox"
+                  label="Remove the Slack channel"
+                />
+              </div>
             </div>
 
             <div id="alert-pagerduty-channel" class="mt-4">
@@ -469,7 +513,7 @@ defmodule FluxWeb.AlertsLive.Index do
                     type="password"
                     label="PagerDuty integration key"
                     placeholder={
-                      if @pagerduty_stored,
+                      if MapSet.member?(@stored_secrets, "pagerduty"),
                         do: "Stored — leave blank to keep it",
                         else: "Events API v2 integration key"
                     }
@@ -481,7 +525,10 @@ defmodule FluxWeb.AlertsLive.Index do
                   label="PagerDuty severity"
                   options={pagerduty_severities()}
                 />
-                <div :if={@pagerduty_stored} class="md:col-span-3 -mt-2">
+                <div
+                  :if={MapSet.member?(@stored_secrets, "pagerduty")}
+                  class="md:col-span-3 -mt-2"
+                >
                   <.input
                     field={@form[:pagerduty_remove]}
                     type="checkbox"
