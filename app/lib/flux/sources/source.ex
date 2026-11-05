@@ -47,9 +47,43 @@ defmodule Flux.Sources.Source do
     |> foreign_key_constraint(:organization_id)
   end
 
+  # A stored secret that couldn't be decrypted loads as a marker (see
+  # `Flux.Vault.decrypt_map/2`), which no adapter accepts as a secret, so the
+  # adapter never validates a config that holds one:
+  #
+  #   * When the update touches neither `config` nor `type` (for example,
+  #     disabling the broken source), skip validation, so the source can still
+  #     be disabled or renamed. The original ciphertext is stored back as is.
+  #   * Otherwise, say which secret has to be re-entered, instead of letting
+  #     the adapter report it as missing.
   defp validate_config(changeset) do
-    type = get_field(changeset, :type)
     config = get_field(changeset, :config) || %{}
+
+    case Flux.Sources.undecryptable_secrets(config) do
+      [] ->
+        do_validate_config(changeset, config)
+
+      keys ->
+        if config_and_type_unchanged?(changeset),
+          do: changeset,
+          else: add_error(changeset, :config, undecryptable_message(keys))
+    end
+  end
+
+  defp config_and_type_unchanged?(changeset) do
+    changeset.data.__meta__.state == :loaded and
+      not Map.has_key?(changeset.changes, :config) and
+      not Map.has_key?(changeset.changes, :type)
+  end
+
+  defp undecryptable_message([key]),
+    do: "#{key} can't be decrypted with the current vault key; re-enter it"
+
+  defp undecryptable_message(keys),
+    do: "#{Enum.join(keys, ", ")} can't be decrypted with the current vault key; re-enter them"
+
+  defp do_validate_config(changeset, config) do
+    type = get_field(changeset, :type)
 
     case validate_config_for_type(type, config) do
       :ok ->
