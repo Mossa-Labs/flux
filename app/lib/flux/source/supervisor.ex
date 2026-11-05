@@ -31,10 +31,32 @@ defmodule Flux.Source.Supervisor do
 
   Returns `{:ok, pid}` for an active source, `{:ok, :passive}` when the source
   type needs no process, or `{:error, reason}` if the process fails to start.
+
+  Returns `{:error, :undecryptable_secret}` without asking the adapter for a
+  child spec when a stored secret couldn't be decrypted with the current vault
+  key (see `Flux.Vault.decrypt_map/2`). The operator fixes it by re-entering
+  the secret.
   """
   @spec start_source(String.t(), map(), keyword()) ::
           {:ok, pid()} | {:ok, :passive} | {:error, term()}
   def start_source(type, config, opts \\ []) do
+    case Flux.Sources.undecryptable_secrets(config) do
+      [] ->
+        do_start_source(type, config, opts)
+
+      keys ->
+        # Key names and the source id only, never ciphertext.
+        Logger.warning(
+          "[Flux.Source.Supervisor] not starting #{type} source #{inspect(opts[:source_id])}: " <>
+            "stored secrets can't be decrypted with the current vault key " <>
+            "(#{Enum.join(keys, ", ")}). Re-enter them to start the source."
+        )
+
+        {:error, :undecryptable_secret}
+    end
+  end
+
+  defp do_start_source(type, config, opts) do
     case Flux.Source.ingestion_spec(type, config, opts) do
       nil ->
         {:ok, :passive}
