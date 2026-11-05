@@ -96,9 +96,17 @@ defmodule Flux.Source do
 
   Returns `:ok` if the connection is successful, or `{:error, reason}` if not.
   Passive sources that do not implement `test_connection/1` return `:ok`.
+  Returns `{:error, :undecryptable_secret}` without contacting the source when
+  a stored secret couldn't be decrypted with the current vault key.
   """
   @spec test_connection(String.t(), source_config()) :: :ok | {:error, term()}
   def test_connection(type, config) do
+    with :ok <- check_secrets_decrypted(config) do
+      do_test_connection(type, config)
+    end
+  end
+
+  defp do_test_connection(type, config) do
     case adapter_for_type(type) do
       {:ok, adapter} ->
         if exported?(adapter, :test_connection, 1) do
@@ -110,6 +118,16 @@ defmodule Flux.Source do
       {:error, :unknown_type} ->
         {:error, {:unknown_source_type, type}}
     end
+  end
+
+  # A secret that couldn't be decrypted with the current vault key loads as a
+  # marker map, not as the secret (see `Flux.Vault.decrypt_map/2`). Stop here
+  # with a clear reason instead of handing the marker to the adapter as a
+  # password, key or token. Checking once in this facade covers every adapter.
+  defp check_secrets_decrypted(config) do
+    if Flux.Sources.undecryptable_secrets?(config),
+      do: {:error, :undecryptable_secret},
+      else: :ok
   end
 
   # `function_exported?/3` returns false for a module that has not been loaded

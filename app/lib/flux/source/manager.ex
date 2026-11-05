@@ -62,8 +62,16 @@ defmodule Flux.Source.Manager do
   # A source is passive if its adapter advertises no ingestion process. We probe
   # via the facade so the check stays correct as EE swaps the Kafka stub for the
   # real adapter.
+  #
+  # A source with an undecryptable secret is never probed: its config would
+  # hand the adapter a marker map (see `Flux.Vault.decrypt_map/2`). It goes to
+  # `start_ingestion/1` instead, which refuses it and logs which keys to fix.
   defp passive?(source) do
-    config = Map.put(source.config, "type", source.type)
-    Flux.Source.ingestion_spec(source.type, config, source_id: source.id) == nil
+    if Flux.Sources.undecryptable_secrets?(source) do
+      false
+    else
+      config = Map.put(source.config, "type", source.type)
+      Flux.Source.ingestion_spec(source.type, config, source_id: source.id) == nil
+    end
   end
 end
