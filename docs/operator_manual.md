@@ -271,7 +271,7 @@ MIX_ENV=prod mix release
 | `POD_IP` | No | Host/pod address used to build the node name when `RELEASE_NODE` is unset. Kubernetes can inject it via `fieldRef` |
 | `RELEASE_COOKIE` | No | Shared distribution secret. **Set it explicitly for any multi-node deployment** — otherwise each build bakes a random cookie and separately-built images cannot connect |
 | `FLUX_VAULT_KEY` | No | Dedicated key for encrypting sink, source and alert-channel secrets at rest. If unset, derived from `SECRET_KEY_BASE`. See [Secret Encryption at Rest](#secret-encryption-at-rest) |
-| `FLUX_TRUSTED_PROXIES` | No | Comma-separated reverse-proxy CIDRs. Required for the IP allowlist to see the real client IP behind a load balancer. See [IP Allowlist](#ip-allowlist) |
+| `FLUX_TRUSTED_PROXIES` | No | Comma-separated reverse-proxy IPs or CIDRs. Required for the IP allowlist to see the real client IP behind a load balancer. See [IP Allowlist](#ip-allowlist) |
 | `FLUX_AWS_SERVER_CREDENTIALS` | No | `allowed` (default) or `disabled`. Whether AWS connectors may sign with the server's own AWS identity. Set `disabled` when several organizations share the deployment. See [Server AWS Credentials](#server-aws-credentials) |
 
 ### IP Allowlist
@@ -286,12 +286,23 @@ allows all IPs.
   It does **not** restrict the web UI, so an owner can never be locked out of the
   settings page.
 - **Client IP behind a proxy.** Enforcement uses the real client IP. Behind an
-  L7 load balancer, set `FLUX_TRUSTED_PROXIES` to your proxy CIDRs (e.g.
-  `FLUX_TRUSTED_PROXIES="10.0.0.0/8,172.16.0.0/12"`). Only then is
-  `X-Forwarded-For` trusted — and only from those proxies, so a spoofed header
-  from an untrusted client is ignored. If unset, the immediate TCP peer IP is
-  used (correct when Flux is directly exposed or fronted by an L4/PROXY-protocol
-  proxy).
+  L7 load balancer, set `FLUX_TRUSTED_PROXIES` to the addresses of your proxies,
+  as IPs or CIDRs (e.g. `FLUX_TRUSTED_PROXIES="10.0.4.0/24"`). If unset, the
+  immediate TCP peer IP is used (correct when Flux is directly exposed or
+  fronted by an L4/PROXY-protocol proxy). When set:
+  - `X-Forwarded-For` is read **only** when the request arrives directly from
+    one of those addresses. A client connecting from anywhere else keeps its
+    TCP peer IP, whatever header it sends.
+  - The header is read from the right, skipping only the listed proxies; the
+    first address that is not one of them is the client. Private ranges are not
+    skipped unless you list them, so internal clients are reported correctly.
+  - **List the proxies, not a whole network.** Every listed address is trusted
+    to report the client IP — a broad range such as `10.0.0.0/8` lets any host
+    in it that can reach Flux directly choose its own IP.
+  - Each proxy must **append** to `X-Forwarded-For` (nginx:
+    `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`) the address
+    it received the request from, rather than pass the client's header through
+    unchanged.
 
 ### Session Management
 
