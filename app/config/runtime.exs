@@ -86,9 +86,11 @@ if config_env() == :prod do
     config :flux, Flux.Vault, key: vault_key
   end
 
-  # Trusted reverse-proxy CIDRs (MOS-588), comma-separated, e.g.
-  # FLUX_TRUSTED_PROXIES="10.0.0.0/8,172.16.0.0/12". Only when the immediate
-  # peer is one of these is X-Forwarded-For trusted for the real client IP.
+  # Trusted reverse proxies (MOS-588, MOS-603): comma-separated IPs or CIDRs,
+  # e.g. FLUX_TRUSTED_PROXIES="10.0.4.0/24". X-Forwarded-For is read only when
+  # the immediate TCP peer is one of these, and only these hops are skipped
+  # when walking it. Every address listed is trusted to report the client IP,
+  # so list the proxies themselves rather than a whole private range.
   if trusted = System.get_env("FLUX_TRUSTED_PROXIES") do
     proxies = trusted |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
     config :flux, FluxWeb.Plugs.ClientIp, proxies: proxies
