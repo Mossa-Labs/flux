@@ -44,6 +44,28 @@ defmodule Flux.Sources do
 
   defp redact_auth(config), do: config
 
+  @doc """
+  Returns the names of a source's secret keys that couldn't be decrypted with
+  the current vault key, e.g. `["password"]` or `["auth.token"]`.
+
+  An empty list means every stored secret decrypted (or there are none). See
+  `Flux.Vault.decrypt_map/2` for how such secrets load.
+  """
+  @spec undecryptable_secrets(%Source{} | map()) :: [String.t()]
+  def undecryptable_secrets(%Source{config: config}), do: undecryptable_secrets(config)
+
+  def undecryptable_secrets(config) when is_map(config) do
+    config
+    |> Flux.Vault.undecryptable_paths(Secrets.paths(config))
+    |> Enum.map(&Enum.join(&1, "."))
+  end
+
+  def undecryptable_secrets(_config), do: []
+
+  @doc "Returns `true` if any of the source's stored secrets couldn't be decrypted."
+  @spec undecryptable_secrets?(%Source{} | map()) :: boolean()
+  def undecryptable_secrets?(source_or_config), do: undecryptable_secrets(source_or_config) != []
+
   @doc "Returns the list of sources for an organization."
   def list_sources(organization_id) do
     Source
