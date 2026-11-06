@@ -37,7 +37,25 @@ defmodule Flux.DataCase do
   """
   def setup_sandbox(tags) do
     pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Flux.Repo, shared: not tags[:async])
-    on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
+
+    on_exit(fn ->
+      drain_api_key_usage()
+      Ecto.Adapters.SQL.Sandbox.stop_owner(pid)
+    end)
+  end
+
+  # ApiAuth casts an async `last_used_at` write to the app-wide ApiKeyUsage
+  # GenServer on every authenticated request. In shared sandbox mode that write
+  # runs on this test's connection, so if it is still in flight when the owner
+  # stops, Postgrex logs a disconnect and the next test can inherit the race.
+  # A sync call drains the mailbox while the connection is still alive.
+  defp drain_api_key_usage do
+    if Process.whereis(Flux.Accounts.ApiKeyUsage) do
+      :sys.get_state(Flux.Accounts.ApiKeyUsage)
+    end
+  catch
+    # The tracker restarting or stopping mid-call just means nothing to drain.
+    :exit, _ -> :ok
   end
 
   @doc """

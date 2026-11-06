@@ -39,10 +39,5 @@ defmodule Flux.Load.WebhookIngestionTest do
     assert result.failed == 0, "#{result.extra.non_2xx} non-2xx responses (burst limit?)"
     assert result.extra.accepted == result.sent
     assert result.throughput_per_sec > 0
-
-    # ApiAuth casts an async usage write per request; drain that GenServer's
-    # mailbox (a sync call) while the sandbox connection is still alive, so no
-    # in-flight write races the owner's teardown.
-    :sys.get_state(Flux.Accounts.ApiKeyUsage)
   end
 end
