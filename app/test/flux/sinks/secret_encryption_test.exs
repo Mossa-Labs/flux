@@ -135,6 +135,48 @@ defmodule Flux.Sinks.SecretEncryptionTest do
     assert Sinks.redact_config(sink.config)["api_key"] != "SG.super-secret-key"
   end
 
+  describe "PagerDuty REST credentials" do
+    # The public build backs "pagerduty" with the Enterprise stub, which rejects
+    # every save; a permissive adapter stands in for the licensed one.
+    setup do
+      Flux.Sink.Registry.register("pagerduty", Flux.Test.PermissiveSinkAdapter)
+      on_exit(fn -> Flux.Sink.Registry.register("pagerduty", Flux.Sink.Adapters.Stub) end)
+      :ok
+    end
+
+    test "an OAuth client secret and a REST API key are ciphertext at rest", %{org_id: org_id} do
+      {:ok, sink} =
+        Sinks.create_sink(%{
+          name: "pagerduty-enc-sink",
+          type: "pagerduty",
+          organization_id: org_id,
+          config: %{
+            "auth_mode" => "rest_oauth",
+            "client_id" => "pd-client-id",
+            "client_secret" => "pdus+oauth-client-secret",
+            "api_key" => "u+PagerDutyRestApiKey",
+            "subdomain" => "acme",
+            "service_id" => "PSERVIC"
+          }
+        })
+
+      raw = raw_config(sink.id)
+
+      for key <- ~w(client_secret api_key) do
+        assert %{"encrypted" => true, "ciphertext" => ct} = raw[key]
+        refute ct =~ "pdus+oauth-client-secret"
+        refute ct =~ "u+PagerDutyRestApiKey"
+      end
+
+      # The client ID identifies the app; it isn't a secret.
+      assert raw["client_id"] == "pd-client-id"
+
+      config = Sinks.get_sink(sink.id, org_id).config
+      assert config["client_secret"] == "pdus+oauth-client-secret"
+      assert config["api_key"] == "u+PagerDutyRestApiKey"
+    end
+  end
+
   test "a ciphertext relocated into a non-secret field is not decrypted (no oracle)", %{
     org_id: org_id
   } do

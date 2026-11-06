@@ -562,7 +562,9 @@ defmodule Flux.SinksTest do
         "webhook_url" => "https://hooks.slack.com/services/T0/B0/s3cr3t",
         "bot_token" => "xoxb-super-secret",
         "session_token" => "FwoGZXIvYXdzEXAMPLESESSIONTOKEN",
-        "routing_key" => "R0123456789ABCDEF0123456789ABCDE"
+        "routing_key" => "R0123456789ABCDEF0123456789ABCDE",
+        "api_key" => "u+PagerDutyRestApiKey",
+        "client_secret" => "pdus+oauth-client-secret"
       }
 
       redacted = Sinks.redact_config(config)
@@ -577,6 +579,8 @@ defmodule Flux.SinksTest do
       assert redacted["webhook_url"] == "[REDACTED]"
       assert redacted["bot_token"] == "[REDACTED]"
       assert redacted["routing_key"] == "[REDACTED]"
+      assert redacted["api_key"] == "[REDACTED]"
+      assert redacted["client_secret"] == "[REDACTED]"
       # Non-secret fields pass through untouched.
       assert redacted["bucket"] == "my-bucket"
     end
