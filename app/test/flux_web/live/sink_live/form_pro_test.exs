@@ -524,6 +524,65 @@ defmodule FluxWeb.SinkLive.FormProTest do
       refute Map.has_key?(config, "priority_id")
     end
 
+    test "a changed client ID asks for a new client secret instead of keeping the stored one",
+         %{conn: conn, scope: scope} do
+      sink =
+        sink_fixture(scope.organization_id, %{
+          type: "pagerduty",
+          config: %{
+            "auth_mode" => "rest_oauth",
+            "client_id" => "pd-client",
+            "client_secret" => "pdus+STOREDSECRET",
+            "subdomain" => "acme",
+            "service_id" => "PSERVIC",
+            "from_email" => "flux@example.com"
+          }
+        })
+
+      {:ok, lv, html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+      refute html =~ ~s(Client Secret<span class="text-error)
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_client_id" => "other-client"}})
+        |> render_change()
+
+      assert html =~ ~s(Client Secret<span class="text-error)
+
+      refute has_element?(
+               lv,
+               ~s(input[name="sink[config_client_secret]"][placeholder="Leave blank to keep current"])
+             )
+
+      # Back to the stored client ID, the stored secret is kept again.
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_client_id" => "pd-client"}})
+        |> render_change()
+
+      refute html =~ ~s(Client Secret<span class="text-error)
+    end
+
+    test "a stored secret that can't be decrypted is asked for again",
+         %{conn: conn, scope: scope} do
+      # A ciphertext the current vault key can't open, as after a key rotation.
+      sink =
+        scope.organization_id
+        |> sink_fixture(%{
+          type: "pagerduty",
+          config: %{
+            "auth_mode" => "rest_api_key",
+            "api_key" => "u+STOREDKEY",
+            "service_id" => "PSERVIC",
+            "from_email" => "flux@example.com"
+          }
+        })
+        |> make_secret_undecryptable(["api_key"])
+
+      {:ok, _lv, html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+      assert html =~ ~s(REST API Key<span class="text-error)
+    end
+
     test "a new client ID without a new secret drops the stored client secret",
          %{conn: conn, scope: scope} do
       sink =
