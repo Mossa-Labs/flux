@@ -36,6 +36,16 @@ tags.
 - Source config redaction now also masks AWS secret keys and session tokens,
   Pub/Sub credentials, MQTT JWTs and gRPC metadata, which it previously missed.
 
+### Added
+
+- **PagerDuty sink: REST API auth modes** (Enterprise, MOS-661). Besides the
+  Events API v2 integration key, the sink can authenticate to the PagerDuty REST
+  API with an API key or a Scoped OAuth app (client credentials). REST mode adds
+  urgency, priority, escalation policy, incident notes, and acknowledge/resolve
+  by incident ID. The OAuth client secret is a new sink secret, encrypted at
+  rest and redacted like the others. Existing sinks keep using Events API v2.
+  See [PagerDuty](docs/connectors/pagerduty.md#choosing-an-auth-mode).
+
 ### Fixed
 
 - A changeset error on a list-typed or encrypted field (for example a
