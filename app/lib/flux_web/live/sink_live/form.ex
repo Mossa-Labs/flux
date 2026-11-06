@@ -1630,25 +1630,121 @@ defmodule FluxWeb.SinkLive.Form do
 
   # Rendered only on a licensed build (Community shows the upgrade prompt instead).
   defp type_config_fields(%{type: "pagerduty"} = assigns) do
+    mode = pagerduty_auth_mode(cfg(assigns.form, "config_auth_mode"))
+
+    # A saved secret is only kept while the auth mode stays the same (see
+    # carried_config/3), so a new sink or a mode switch needs fresh ones.
+    keeps_secrets? =
+      not is_nil(assigns.form.data.id) and
+        pagerduty_auth_mode((assigns.form.data.config || %{})["auth_mode"]) == mode
+
+    assigns =
+      assign(assigns, mode: mode, rest?: mode != "events_v2", keeps_secrets?: keeps_secrets?)
+
     ~H"""
     <div class="space-y-4">
       <.input
-        field={@form[:config_routing_key]}
-        type="password"
-        label="Integration Key"
-        placeholder="32-character Events API v2 integration key"
-        required
+        field={@form[:config_auth_mode]}
+        type="select"
+        label="Auth Mode"
+        value={@mode}
+        options={[
+          {"Events API v2 (integration key)", "events_v2"},
+          {"REST API key", "rest_api_key"},
+          {"REST API OAuth app (client credentials)", "rest_oauth"}
+        ]}
       />
       <p class="text-xs text-base-content/60 -mt-2">
-        From a PagerDuty service's <em>Events API v2</em>
-        integration (Service → Integrations). It is write-only here and left blank when editing.
+        Events API v2 sends events to one service's integration. The REST API creates incidents
+        directly on a service and adds urgency, priority, escalation policy and notes.
       </p>
+
+      <div :if={@mode == "events_v2"} id="pagerduty-events-auth" class="space-y-4">
+        <.input
+          field={@form[:config_routing_key]}
+          type="password"
+          label="Integration Key"
+          placeholder={
+            if @keeps_secrets?,
+              do: "Leave blank to keep current",
+              else: "32-character Events API v2 integration key"
+          }
+          required={!@keeps_secrets?}
+        />
+        <p class="text-xs text-base-content/60 -mt-2">
+          From a PagerDuty service's <em>Events API v2</em>
+          integration (Service → Integrations). It is write-only here and left blank when editing.
+        </p>
+      </div>
+
+      <div :if={@mode == "rest_api_key"} id="pagerduty-api-key-auth" class="space-y-4">
+        <.input
+          field={@form[:config_api_key]}
+          type="password"
+          label="REST API Key"
+          placeholder={if @keeps_secrets?, do: "Leave blank to keep current", else: ""}
+          required={!@keeps_secrets?}
+        />
+        <p class="text-xs text-base-content/60 -mt-2">
+          A general access REST API key (Integrations → API Access Keys) that is not read-only.
+          It is write-only here and left blank when editing.
+        </p>
+      </div>
+
+      <div :if={@mode == "rest_oauth"} id="pagerduty-oauth-auth" class="space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <.input field={@form[:config_client_id]} type="text" label="Client ID" required />
+          <.input
+            field={@form[:config_client_secret]}
+            type="password"
+            label="Client Secret"
+            placeholder={if @keeps_secrets?, do: "Leave blank to keep current", else: ""}
+            required={!@keeps_secrets?}
+          />
+        </div>
+        <.input
+          field={@form[:config_subdomain]}
+          type="text"
+          label="Account Subdomain"
+          placeholder="acme"
+          required
+        />
+        <p class="text-xs text-base-content/60 -mt-2">
+          From a Scoped OAuth app registered in your account (Integrations → App Registration)
+          with the <code>incidents.read</code>, <code>incidents.write</code>
+          and <code>services.read</code>
+          scopes. The subdomain is the <code>acme</code>
+          in <code>acme.pagerduty.com</code>. The client secret is write-only here.
+        </p>
+      </div>
+
+      <div :if={@rest?} class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <.input
+          field={@form[:config_service_id]}
+          type="text"
+          label="Service ID"
+          placeholder="PABC123"
+          required
+        />
+        <.input
+          field={@form[:config_from_email]}
+          type="email"
+          label="Requester Email"
+          placeholder="flux@example.com"
+          required
+        />
+      </div>
+      <p :if={@rest?} class="text-xs text-base-content/60 -mt-2">
+        The service ID is the last part of the service's URL. PagerDuty records the requester email,
+        which must belong to a user on the account, as the author of each change.
+      </p>
+
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <.input
           field={@form[:config_region]}
           type="select"
           label="Service Region"
-          options={[{"US (events.pagerduty.com)", "us"}, {"EU (events.eu.pagerduty.com)", "eu"}]}
+          options={[{"US", "us"}, {"EU", "eu"}]}
         />
         <.input
           field={@form[:config_event_action]}
@@ -1674,21 +1770,34 @@ defmodule FluxWeb.SinkLive.Form do
         label="Dedup Key Template"
         placeholder="{pipeline_id}-{anomaly_type}"
         required={
-          cfg(@form, "config_event_action") in ["acknowledge", "resolve"] or
-            cfg(@form, "config_action_field") not in [nil, ""]
+          (cfg(@form, "config_event_action") in ["acknowledge", "resolve"] or
+             cfg(@form, "config_action_field") not in [nil, ""]) and
+            not (@rest? and cfg(@form, "config_incident_id_template") not in [nil, ""])
         }
       />
       <p class="text-xs text-base-content/60 -mt-2">
         Events with the same key update one incident instead of opening duplicates; acknowledge and
-        resolve need it to find the incident. Interpolates
+        resolve need it to find the incident<span :if={@rest?}> unless an incident ID is set</span>. Interpolates
         <code phx-no-curly-interpolation>{field}</code>
         placeholders from the record, plus <code phx-no-curly-interpolation>{pipeline_id}</code>
         and <code phx-no-curly-interpolation>{sink_id}</code>.
       </p>
       <.input
+        :if={@rest?}
+        field={@form[:config_incident_id_template]}
+        type="text"
+        label="Incident ID Template (optional)"
+        placeholder="{pagerduty_incident_id}"
+      />
+      <p :if={@rest?} class="text-xs text-base-content/60 -mt-2">
+        For acknowledge and resolve: when this interpolates to an incident ID, that incident is
+        updated directly, provided it is on this service; otherwise the open incident with the
+        record's dedup key is looked up.
+      </p>
+      <.input
         field={@form[:config_summary_template]}
         type="text"
-        label="Summary Template (optional)"
+        label={if @rest?, do: "Title Template (optional)", else: "Summary Template (optional)"}
         placeholder="Anomaly in {metric} on pipeline {pipeline_id}"
       />
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1724,7 +1833,47 @@ defmodule FluxWeb.SinkLive.Form do
         label="Severity Mapping (optional JSON)"
         placeholder={~s({"sev1": "critical", "sev2": "error", "sev3": "warning"})}
       />
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+      <div :if={@rest?} id="pagerduty-rest-incident" class="space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <.input
+            field={@form[:config_urgency]}
+            type="select"
+            label="Urgency"
+            options={[{"From severity", ""}, {"High", "high"}, {"Low", "low"}]}
+          />
+          <.input
+            field={@form[:config_priority_id]}
+            type="text"
+            label="Priority ID (optional)"
+            placeholder="P53ZZH5"
+          />
+          <.input
+            field={@form[:config_escalation_policy_id]}
+            type="text"
+            label="Escalation Policy ID (optional)"
+            placeholder="PT20YPA"
+          />
+        </div>
+        <p class="text-xs text-base-content/60 -mt-2">
+          By default, critical and error records open high-urgency incidents and warning and info
+          records open low-urgency ones. Without an escalation policy, the service's own policy
+          is used.
+        </p>
+        <.input
+          field={@form[:config_note_template]}
+          type="textarea"
+          label="Note Template (optional)"
+          placeholder="{metric} was {value} at {timestamp}"
+        />
+        <p class="text-xs text-base-content/60 -mt-2">
+          Adds a note to the incident for every record, with
+          <code phx-no-curly-interpolation>{field}</code>
+          interpolation.
+        </p>
+      </div>
+
+      <div :if={!@rest?} class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <.input
           field={@form[:config_source]}
           type="text"
@@ -2360,6 +2509,28 @@ defmodule FluxWeb.SinkLive.Form do
     end
   end
 
+  # A PagerDuty sink's stored secret belongs to its auth mode: the integration
+  # key to Events API v2, the API key to REST API-key auth, the client secret to
+  # the OAuth app. On a switch the other modes' secrets are dropped, so a later
+  # switch back asks for them again instead of reviving a stale one. A client
+  # secret only works with the client ID it was issued for, so a new client ID
+  # entered without a new secret drops the stored one.
+  @pagerduty_mode_secrets %{
+    "events_v2" => "routing_key",
+    "rest_api_key" => "api_key",
+    "rest_oauth" => "client_secret"
+  }
+
+  defp carried_config("pagerduty", config, built) do
+    keep = Map.fetch!(@pagerduty_mode_secrets, built["auth_mode"])
+    config = Map.drop(config, Map.values(@pagerduty_mode_secrets) -- [keep])
+
+    if keep == "client_secret" and not Map.has_key?(built, "client_secret") and
+         config["client_id"] != built["client_id"],
+       do: Map.delete(config, "client_secret"),
+       else: config
+  end
+
   defp carried_config(_type, config, _built), do: config
 
   # A GCS sink's byte threshold is edited in whole MB, so the field shows a
@@ -2548,8 +2719,18 @@ defmodule FluxWeb.SinkLive.Form do
   end
 
   defp config_form_params("pagerduty", config) do
-    # routing_key is secret — left blank on edit.
+    # routing_key, api_key and client_secret are secret — left blank on edit.
     %{}
+    |> put_field("config_auth_mode", config["auth_mode"])
+    |> put_field("config_client_id", config["client_id"])
+    |> put_field("config_subdomain", config["subdomain"])
+    |> put_field("config_service_id", config["service_id"])
+    |> put_field("config_from_email", config["from_email"])
+    |> put_field("config_urgency", config["urgency"])
+    |> put_field("config_priority_id", config["priority_id"])
+    |> put_field("config_escalation_policy_id", config["escalation_policy_id"])
+    |> put_field("config_incident_id_template", config["incident_id_template"])
+    |> put_field("config_note_template", config["note_template"])
     |> put_field("config_region", config["region"])
     |> put_field("config_event_action", config["event_action"])
     |> put_field("config_action_field", config["action_field"])
@@ -2867,11 +3048,32 @@ defmodule FluxWeb.SinkLive.Form do
     |> Map.put("ttl_seconds", parse_int(params["config_ttl_seconds"]))
   end
 
-  # Optional settings are clearable (a blank field removes the stored value);
-  # the integration key keeps "blank means unchanged" — see carried_config/3.
+  # Optional settings are clearable (a blank field removes the stored value),
+  # and a field that belongs to an auth mode is cleared whenever that mode isn't
+  # selected. Only the secrets keep "blank means unchanged" — see
+  # carried_config/3.
   defp build_config(params, "pagerduty") do
+    mode = pagerduty_auth_mode(params["config_auth_mode"])
+    rest? = mode != "events_v2"
+    events? = not rest?
+    secret = fn key, mode_key -> if(mode == mode_key, do: trim(params["config_" <> key])) end
+    rest_field = fn key -> if(rest?, do: params["config_" <> key]) end
+    events_field = fn key -> if(events?, do: params["config_" <> key]) end
+
     %{}
-    |> maybe_put("routing_key", trim(params["config_routing_key"]))
+    |> Map.put("auth_mode", mode)
+    |> maybe_put("routing_key", secret.("routing_key", "events_v2"))
+    |> maybe_put("api_key", secret.("api_key", "rest_api_key"))
+    |> maybe_put("client_secret", secret.("client_secret", "rest_oauth"))
+    |> put_clearable("client_id", if(mode == "rest_oauth", do: params["config_client_id"]))
+    |> put_clearable("subdomain", if(mode == "rest_oauth", do: params["config_subdomain"]))
+    |> put_clearable("service_id", rest_field.("service_id"))
+    |> put_clearable("from_email", rest_field.("from_email"))
+    |> put_clearable("urgency", rest_field.("urgency"))
+    |> put_clearable("priority_id", rest_field.("priority_id"))
+    |> put_clearable("escalation_policy_id", rest_field.("escalation_policy_id"))
+    |> put_clearable("incident_id_template", rest_field.("incident_id_template"))
+    |> put_clearable("note_template", rest_field.("note_template"))
     |> maybe_put("region", params["config_region"])
     |> maybe_put("event_action", params["config_event_action"])
     |> put_clearable("action_field", params["config_action_field"])
@@ -2880,9 +3082,9 @@ defmodule FluxWeb.SinkLive.Form do
     |> maybe_put("severity", params["config_severity"])
     |> put_clearable("severity_field", params["config_severity_field"])
     |> put_clearable("severity_map", params["config_severity_map"])
-    |> put_clearable("source", params["config_source"])
-    |> put_clearable("component", params["config_component"])
-    |> put_clearable("group", params["config_group"])
+    |> put_clearable("source", events_field.("source"))
+    |> put_clearable("component", events_field.("component"))
+    |> put_clearable("group", events_field.("group"))
     |> put_clearable("custom_details_template", params["config_custom_details_template"])
   end
 
@@ -3155,6 +3357,13 @@ defmodule FluxWeb.SinkLive.Form do
   # to drive the dynamic `*` marker on mode-dependent required fields. The form
   # re-renders on `phx-change="validate"`, so params hold the latest selection.
   defp cfg(form, key), do: form.params[key]
+
+  # The auth mode a PagerDuty config or form value selects; a missing or
+  # unknown value is the original Events API v2 mode.
+  @pagerduty_auth_modes ~w(events_v2 rest_api_key rest_oauth)
+
+  defp pagerduty_auth_mode(mode) when mode in @pagerduty_auth_modes, do: mode
+  defp pagerduty_auth_mode(_mode), do: "events_v2"
 
   defp pro_locked?(type) do
     case Map.fetch(@gated_sink_features, type) do

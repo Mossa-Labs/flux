@@ -358,6 +358,66 @@ defmodule FluxWeb.SinkLive.FormProTest do
 
       assert html =~ ~s(Dedup Key Template<span class="text-error)
     end
+
+    test "the auth mode reveals its own credential fields", %{conn: conn} do
+      put_license_tier(:enterprise)
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "pagerduty"})
+
+      assert has_element?(lv, "#pagerduty-events-auth")
+      refute has_element?(lv, "#pagerduty-oauth-auth")
+      refute has_element?(lv, "#pagerduty-rest-incident")
+      assert has_element?(lv, "input[name='sink[config_source]']")
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_auth_mode" => "rest_oauth"}})
+        |> render_change()
+
+      refute has_element?(lv, "#pagerduty-events-auth")
+      refute has_element?(lv, "#pagerduty-api-key-auth")
+      assert has_element?(lv, "#pagerduty-oauth-auth")
+      assert has_element?(lv, "#pagerduty-rest-incident")
+      refute has_element?(lv, "input[name='sink[config_source]']")
+
+      for label <- ["Client ID", "Client Secret", "Account Subdomain", "Service ID"] do
+        assert html =~ ~s(#{label}<span class="text-error)
+      end
+
+      assert html =~ ~s(Requester Email<span class="text-error)
+      assert html =~ "Title Template"
+
+      lv
+      |> form("form", %{"sink" => %{"config_auth_mode" => "rest_api_key"}})
+      |> render_change()
+
+      assert has_element?(lv, "#pagerduty-api-key-auth")
+      refute has_element?(lv, "#pagerduty-oauth-auth")
+    end
+
+    test "in REST mode an incident ID template stands in for the dedup key", %{conn: conn} do
+      put_license_tier(:enterprise)
+      {:ok, lv, _html} = live(conn, ~p"/sinks/new")
+      render_click(lv, "select_type", %{"type" => "pagerduty"})
+
+      lv
+      |> form("form", %{"sink" => %{"config_auth_mode" => "rest_api_key"}})
+      |> render_change()
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_event_action" => "resolve"}})
+        |> render_change()
+
+      assert html =~ ~s(Dedup Key Template<span class="text-error)
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_incident_id_template" => "{incident_id}"}})
+        |> render_change()
+
+      refute html =~ ~s(Dedup Key Template<span class="text-error)
+    end
   end
 
   describe "editing a PagerDuty sink" do
@@ -413,6 +473,120 @@ defmodule FluxWeb.SinkLive.FormProTest do
       lv |> form("form") |> render_submit()
 
       assert Flux.Sinks.get_sink(sink.id, scope.organization_id).config["severity"] == "error"
+    end
+
+    test "a REST OAuth sink round-trips its mode and keeps a blank client secret",
+         %{conn: conn, scope: scope} do
+      sink =
+        sink_fixture(scope.organization_id, %{
+          type: "pagerduty",
+          config: %{
+            "auth_mode" => "rest_oauth",
+            "client_id" => "pd-client",
+            "client_secret" => "pdus+STOREDSECRET",
+            "subdomain" => "acme",
+            "service_id" => "PSERVIC",
+            "from_email" => "flux@example.com",
+            "priority_id" => "P53ZZH5"
+          }
+        })
+
+      {:ok, lv, html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      refute html =~ "STOREDSECRET"
+
+      assert has_element?(
+               lv,
+               ~s(select[name="sink[config_auth_mode]"] option[value="rest_oauth"][selected])
+             )
+
+      assert has_element?(
+               lv,
+               ~s(input[name="sink[config_client_secret]"][placeholder="Leave blank to keep current"])
+             )
+
+      refute html =~ ~s(Client Secret<span class="text-error)
+
+      lv
+      |> form("form", %{
+        "sink" => %{
+          "config_client_secret" => "",
+          "config_priority_id" => "",
+          "config_urgency" => "low"
+        }
+      })
+      |> render_submit()
+
+      config = Flux.Sinks.get_sink(sink.id, scope.organization_id).config
+      assert config["client_secret"] == "pdus+STOREDSECRET"
+      assert config["auth_mode"] == "rest_oauth"
+      assert config["urgency"] == "low"
+      refute Map.has_key?(config, "priority_id")
+    end
+
+    test "a new client ID without a new secret drops the stored client secret",
+         %{conn: conn, scope: scope} do
+      sink =
+        sink_fixture(scope.organization_id, %{
+          type: "pagerduty",
+          config: %{
+            "auth_mode" => "rest_oauth",
+            "client_id" => "pd-client",
+            "client_secret" => "pdus+STOREDSECRET",
+            "subdomain" => "acme",
+            "service_id" => "PSERVIC",
+            "from_email" => "flux@example.com"
+          }
+        })
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      lv
+      |> form("form", %{"sink" => %{"config_client_id" => "other-client"}})
+      |> render_submit()
+
+      config = Flux.Sinks.get_sink(sink.id, scope.organization_id).config
+      assert config["client_id"] == "other-client"
+      refute Map.has_key?(config, "client_secret")
+    end
+
+    test "switching auth mode drops the old mode's secret and fields",
+         %{conn: conn, scope: scope} do
+      sink =
+        sink_fixture(scope.organization_id, %{
+          type: "pagerduty",
+          config: %{
+            "routing_key" => "R0STOREDKEY0000000000000000000000",
+            "source" => "flux-prod"
+          }
+        })
+
+      {:ok, lv, _html} = live(conn, ~p"/sinks/#{sink.id}/edit")
+
+      html =
+        lv
+        |> form("form", %{"sink" => %{"config_auth_mode" => "rest_api_key"}})
+        |> render_change()
+
+      # A different mode's secret isn't stored yet, so it is required.
+      assert html =~ ~s(REST API Key<span class="text-error)
+
+      lv
+      |> form("form", %{
+        "sink" => %{
+          "config_api_key" => "u+NEWRESTKEY",
+          "config_service_id" => "PSERVIC",
+          "config_from_email" => "flux@example.com"
+        }
+      })
+      |> render_submit()
+
+      config = Flux.Sinks.get_sink(sink.id, scope.organization_id).config
+      assert config["auth_mode"] == "rest_api_key"
+      assert config["api_key"] == "u+NEWRESTKEY"
+      assert config["service_id"] == "PSERVIC"
+      refute Map.has_key?(config, "routing_key")
+      refute Map.has_key?(config, "source")
     end
   end
 
