@@ -22,7 +22,7 @@ defmodule Flux.Sinks.Secrets do
   # Top-level secret keys, across all sink types.
   @top_keys ~w(password private_key private_key_passphrase secret_access_key session_token
                credentials database_url sasl_password ssl_keyfile uri
-               webhook_url bot_token api_key routing_key)
+               webhook_url bot_token api_key routing_key client_secret)
 
   # Secret keys nested under the HTTP-style `"auth"` map.
   @auth_keys ~w(token password username key)
