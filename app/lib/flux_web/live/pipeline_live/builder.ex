@@ -135,6 +135,7 @@ defmodule FluxWeb.PipelineLive.Builder do
               <.node_config_form
                 node={@selected_node}
                 advanced_ai={@advanced_ai}
+                pii_redaction={@pii_redaction}
                 kafka_source={@kafka_source}
                 sqs_source={@sqs_source}
                 kinesis_source={@kinesis_source}
@@ -305,7 +306,8 @@ defmodule FluxWeb.PipelineLive.Builder do
 />"
 
   defp node_config_form(%{node: %{type: "step"}} = assigns),
-    do: ~H"<.step_config node={@node} advanced_ai={@advanced_ai} />"
+    do:
+      ~H"<.step_config node={@node} advanced_ai={@advanced_ai} pii_redaction={@pii_redaction} />"
 
   defp node_config_form(%{node: %{type: "sink"}} = assigns), do: ~H"<.sink_config node={@node} />"
   defp node_config_form(assigns), do: ~H"<.empty_config_state />"
