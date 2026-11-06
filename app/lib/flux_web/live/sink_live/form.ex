@@ -1632,11 +1632,18 @@ defmodule FluxWeb.SinkLive.Form do
   defp type_config_fields(%{type: "pagerduty"} = assigns) do
     mode = pagerduty_auth_mode(cfg(assigns.form, "config_auth_mode"))
 
-    # A saved secret is only kept while the auth mode stays the same (see
-    # carried_config/3), so a new sink or a mode switch needs fresh ones.
+    # A saved secret is only kept while the auth mode stays the same, and a
+    # client secret only while the client ID does (see carried_config/3), so a
+    # new sink, a mode switch or a new client ID needs a fresh one. So does a
+    # stored secret that can't be decrypted.
+    stored = assigns.form.data.config || %{}
+
     keeps_secrets? =
       not is_nil(assigns.form.data.id) and
-        pagerduty_auth_mode((assigns.form.data.config || %{})["auth_mode"]) == mode
+        pagerduty_auth_mode(stored["auth_mode"]) == mode and
+        usable_secret?(stored[pagerduty_mode_secret(mode)]) and
+        (mode != "rest_oauth" or
+           trim(cfg(assigns.form, "config_client_id")) == stored["client_id"])
 
     assigns =
       assign(assigns, mode: mode, rest?: mode != "events_v2", keeps_secrets?: keeps_secrets?)
@@ -2522,7 +2529,7 @@ defmodule FluxWeb.SinkLive.Form do
   }
 
   defp carried_config("pagerduty", config, built) do
-    keep = Map.fetch!(@pagerduty_mode_secrets, built["auth_mode"])
+    keep = pagerduty_mode_secret(built["auth_mode"])
     config = Map.drop(config, Map.values(@pagerduty_mode_secrets) -- [keep])
 
     if keep == "client_secret" and not Map.has_key?(built, "client_secret") and
@@ -3364,6 +3371,13 @@ defmodule FluxWeb.SinkLive.Form do
 
   defp pagerduty_auth_mode(mode) when mode in @pagerduty_auth_modes, do: mode
   defp pagerduty_auth_mode(_mode), do: "events_v2"
+
+  # The config key holding a PagerDuty auth mode's secret.
+  defp pagerduty_mode_secret(mode), do: Map.fetch!(@pagerduty_mode_secrets, mode)
+
+  # A stored secret the form can keep: present, and not an undecryptable
+  # ciphertext wrapper (a map).
+  defp usable_secret?(value), do: is_binary(value) and value != ""
 
   defp pro_locked?(type) do
     case Map.fetch(@gated_sink_features, type) do
