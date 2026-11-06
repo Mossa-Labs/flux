@@ -109,6 +109,34 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
       assert html =~ ~s(Queue<span class="text-error)
     end
 
+    test "redact step renders its gated config form without crashing", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      html =
+        render_hook(lv, "select_node", %{
+          "nodeId" => "node_1",
+          "nodeType" => "step",
+          "nodeData" => %{"label" => "Redact PII", "stepType" => "redact", "config" => %{}}
+        })
+
+      assert html =~ "Fields to Scan"
+      assert html =~ "PII redaction is an Enterprise feature"
+    end
+
+    test "classify step renders its gated config form without crashing", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      html =
+        render_hook(lv, "select_node", %{
+          "nodeId" => "node_1",
+          "nodeType" => "step",
+          "nodeData" => %{"label" => "Classify", "stepType" => "classify", "config" => %{}}
+        })
+
+      assert html =~ "Output Field"
+      assert html =~ "Classification is an Enterprise feature"
+    end
+
     test "mqtt source renders its Pro config form with required markers", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
 
