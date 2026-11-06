@@ -41,7 +41,7 @@ active license for that edition (see
 | [Amazon DynamoDB](dynamodb.md) | Pro | |
 | [Apache Cassandra](cassandra.md) | Pro | Includes ScyllaDB and Amazon Keyspaces. |
 | [Slack](slack.md) | Pro | Also an alert channel. |
-| [PagerDuty](pagerduty.md) | Enterprise | Also an alert channel. |
+| [PagerDuty](pagerduty.md) | Enterprise | Events API v2 or REST API (API key or OAuth app). Also an alert channel. |
 
 Snowflake is a Pro sink without a page here yet.
 
