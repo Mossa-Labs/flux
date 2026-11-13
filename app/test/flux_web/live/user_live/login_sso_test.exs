@@ -55,6 +55,20 @@ defmodule FluxWeb.UserLive.LoginSSOTest do
     assert has_element?(lv, "#login_form_magic")
   end
 
+  # New UI is custom Tailwind, not daisyUI component classes (CLAUDE.md). The
+  # core <.input> inside the panel is the sanctioned exception.
+  test "the SSO panel and its divider are styled without daisyUI components", %{conn: conn} do
+    use_sso(%{available: true})
+    {:ok, lv, _html} = live(conn, ~p"/users/log-in")
+
+    refute has_element?(lv, "#sso-login.rounded-box")
+    refute has_element?(lv, "#sso-login .btn")
+    refute has_element?(lv, "#sso-login + .divider")
+    # Restyled, not removed.
+    assert has_element?(lv, "#login_form_sso button", "Continue with SSO")
+    assert has_element?(lv, "#sso-login + #sso-login-divider", "or use a password or email link")
+  end
+
   test "an SSO-only member gets no magic link, and the reply doesn't say why", %{conn: conn} do
     user = user_fixture()
     use_sso(%{available: true, sso_only: [user.id]})

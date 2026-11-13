@@ -55,11 +55,16 @@ defmodule FluxWeb.UserLive.Login do
         domain, so it works however many organizations share the deployment.
         A plain HTTP post (no phx-submit): the next stop is the identity
         provider.
+
+        Custom Tailwind rather than daisyUI component classes (see CLAUDE.md),
+        on the theme's colour tokens so it follows light/dark and a branded
+        accent colour. The button passes its own class, which replaces the core
+        button's daisyUI defaults.
         --%>
         <div
           :if={@sso_available}
           id="sso-login"
-          class="rounded-box border border-base-content/10 bg-base-200/60 p-4 transition-colors hover:border-primary/30"
+          class="rounded-xl border border-base-content/10 bg-base-200/60 p-4 transition-colors hover:border-primary/30"
         >
           <div class="mb-3 flex items-center gap-2">
             <span class="flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -80,14 +85,23 @@ defmodule FluxWeb.UserLive.Login do
               placeholder="you@company.com"
               required
             />
-            <.button class="btn btn-primary w-full" phx-disable-with="Redirecting…">
+            <.button
+              class="inline-flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-semibold text-primary-content transition-colors hover:bg-primary/90 active:bg-primary/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary/50"
+              phx-disable-with="Redirecting…"
+            >
               Continue with SSO <span aria-hidden="true">→</span>
             </.button>
           </.form>
         </div>
 
-        <div :if={@sso_available} class="divider text-xs text-base-content/50">
-          or use a password or email link
+        <div
+          :if={@sso_available}
+          id="sso-login-divider"
+          class="flex items-center gap-3 py-1 text-xs text-base-content/50"
+        >
+          <span class="h-px flex-1 bg-base-content/10" aria-hidden="true"></span>
+          <span class="shrink-0">or use a password or email link</span>
+          <span class="h-px flex-1 bg-base-content/10" aria-hidden="true"></span>
         </div>
 
         <.form
