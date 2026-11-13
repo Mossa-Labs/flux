@@ -1,5 +1,5 @@
 defmodule FluxWeb.UserLive.Login do
-  @moduledoc "LiveView for user login via magic link or password."
+  @moduledoc "LiveView for user login via single sign-on, magic link or password."
   use FluxWeb, :live_view
 
   alias Flux.Accounts
@@ -47,6 +47,47 @@ defmodule FluxWeb.UserLive.Login do
               To see sent emails, visit <.link href="/dev/mailbox" class="underline">the mailbox page</.link>.
             </p>
           </div>
+        </div>
+
+        <%!--
+        Single sign-on first when it's available: in an organization that has
+        it, this is the path most people should take. Discovery is by email
+        domain, so it works however many organizations share the deployment.
+        A plain HTTP post (no phx-submit): the next stop is the identity
+        provider.
+        --%>
+        <div
+          :if={@sso_available}
+          id="sso-login"
+          class="rounded-box border border-base-content/10 bg-base-200/60 p-4 transition-colors hover:border-primary/30"
+        >
+          <div class="mb-3 flex items-center gap-2">
+            <span class="flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <.icon name="hero-building-office-2" class="size-4" />
+            </span>
+            <div>
+              <p class="text-sm font-semibold">Sign in with SSO</p>
+              <p class="text-xs text-base-content/60">Use your company's identity provider.</p>
+            </div>
+          </div>
+          <.form :let={f} for={@sso_form} id="login_form_sso" action={~p"/sso/start"}>
+            <.input
+              readonly={!!@current_scope}
+              field={f[:email]}
+              type="email"
+              label="Work email"
+              autocomplete="email"
+              placeholder="you@company.com"
+              required
+            />
+            <.button class="btn btn-primary w-full" phx-disable-with="Redirecting…">
+              Continue with SSO <span aria-hidden="true">→</span>
+            </.button>
+          </.form>
+        </div>
+
+        <div :if={@sso_available} class="divider text-xs text-base-content/50">
+          or use a password or email link
         </div>
 
         <.form
@@ -114,7 +155,13 @@ defmodule FluxWeb.UserLive.Login do
 
     form = to_form(%{"email" => email}, as: "user")
 
-    {:ok, assign(socket, form: form, trigger_submit: false)}
+    {:ok,
+     assign(socket,
+       form: form,
+       sso_form: to_form(%{"email" => email}, as: "sso"),
+       sso_available: Flux.Auth.SSO.available?(),
+       trigger_submit: false
+     )}
   end
 
   @impl true
@@ -123,7 +170,9 @@ defmodule FluxWeb.UserLive.Login do
   end
 
   def handle_event("submit_magic", %{"user" => %{"email" => email}}, socket) do
-    if user = Accounts.get_user_by_email(email) do
+    # SSO-enforced members are skipped silently: the reply below is identical
+    # either way, so it gives nothing away about who must use SSO.
+    if (user = Accounts.get_user_by_email(email)) && Flux.Auth.SSO.password_login_allowed?(user) do
       Accounts.deliver_login_instructions(
         user,
         &url(~p"/users/log-in/#{&1}")
