@@ -35,6 +35,7 @@ defmodule Flux.Application do
       Flux.Accounts.PasswordPolicy.Registry,
       Flux.Branding.Registry,
       Flux.Accounts.MfaEnforcement.Registry,
+      Flux.Auth.SSO.Registry,
       # Abuse-protection safety valves (burst / pipeline-start limits) — owns the
       # rate-limiter ETS table; must be up before the endpoint serves requests.
       Flux.RateLimiter,
