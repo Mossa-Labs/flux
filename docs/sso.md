@@ -101,6 +101,8 @@ What it doesn't change:
 - **Passwords aren't deleted.** Turning enforcement off restores password sign-in at once.
 - **API keys keep working.** They're for machines, not people.
 
+While SSO is required, Flux won't let you remove your last verified domain, because members would be left with no way to sign in. Stop requiring SSO first, or verify another domain.
+
 If your Enterprise license lapses, SSO is switched off and enforcement stops, so members can use passwords and email links again. Members who were created through SSO have no password. They can sign in with an email link.
 
 ## Two-factor authentication
@@ -113,7 +115,7 @@ SSO sessions don't offer "keep me logged in". When the session ends, members sig
 
 - **New host or domain.** The Entity ID is fixed when SSO is set up, so it doesn't change. The ACS URL does follow the host, though. If it changes, Flux shows a warning; update the ACS URL in your IdP.
 - **Rotating the IdP's signing certificate.** Paste the IdP's updated metadata. If it lists both the old and new certificates, Flux trusts both until you paste metadata that drops the old one.
-- **Switching IdPs.** Paste the new IdP's metadata. Members linked to the old IdP link again on their first sign-in with the new one.
+- **Switching IdPs.** Paste the new IdP's metadata. When its Entity ID differs from the old one, Flux drops every member's link, because a user ID at one IdP says nothing about who that is at another. Members link again on their first sign-in with the new IdP, by their verified email address. Readiness starts again from zero.
 - **Removing SSO.** **Remove** deletes the IdP connection, its domains and all member links, and ends enforcement.
 
 ## Troubleshooting
