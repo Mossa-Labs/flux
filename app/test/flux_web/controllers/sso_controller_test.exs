@@ -217,6 +217,35 @@ defmodule FluxWeb.SSOControllerTest do
       refute get_session(conn, :user_token)
     end
 
+    test "an MFA challenge begun before SSO was required can't be finished", %{conn: conn} do
+      user = user_fixture() |> set_password()
+      %{secret: secret} = Flux.Accounts.Mfa.start_enrollment(user)
+
+      {:ok, _codes} =
+        Flux.Accounts.Mfa.confirm_enrollment(user, secret, NimbleTOTP.verification_code(secret))
+
+      conn =
+        post(conn, ~p"/users/log-in", %{
+          "user" => %{"email" => user.email, "password" => valid_user_password()}
+        })
+
+      assert redirected_to(conn) == ~p"/users/two-factor"
+
+      # An owner requires SSO while the challenge is still open.
+      put_sso(:sso_only, [user.id])
+
+      conn =
+        conn
+        |> recycle()
+        |> post(~p"/users/two-factor", %{
+          "totp" => %{"code" => NimbleTOTP.verification_code(secret)}
+        })
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "requires single sign-on"
+      refute get_session(conn, :user_token)
+      refute get_session(conn, :mfa_pending_user_id)
+    end
+
     test "a wrong password still reads as a wrong password", %{conn: conn} do
       user = user_fixture() |> set_password()
       put_sso(:sso_only, [user.id])

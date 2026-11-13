@@ -97,6 +97,15 @@ defmodule FluxWeb.UserSessionController do
         |> put_flash(:error, "Your login request expired. Please sign in again.")
         |> redirect(to: ~p"/users/log-in")
 
+      # The organization may have started requiring SSO since the password step
+      # (the challenge stays open for 10 minutes, in a cookie that revoking
+      # session tokens can't reach). Checked before the code, so a refused
+      # attempt doesn't spend a backup code.
+      not SSO.password_login_allowed?(user) ->
+        conn
+        |> clear_mfa_pending()
+        |> refuse_sso_required(user)
+
       verify_second_factor(user, code) ->
         remember_me = get_session(conn, :mfa_pending_remember_me)
 
