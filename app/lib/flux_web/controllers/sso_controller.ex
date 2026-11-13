@@ -15,8 +15,10 @@ defmodule FluxWeb.SSOController do
   So `acs/2` only validates the response. It then redirects with a short-lived
   signed ticket to `complete/2`, a same-site top-level `GET` that *does* carry
   the session. There the ticket's request ID must match the one `start/2` stored
-  in this browser's session, which proves the sign-in was started here. Only
-  then is a session created.
+  in this browser's session, which proves the sign-in was started here, and its
+  nonce must still be unclaimed on the server, which makes it single use even
+  against a replayed copy of the old session cookie. Only then is a session
+  created.
 
   RelayState carries nothing but that request ID. It is public and at most 80
   bytes, so it never holds anything trusted.
@@ -94,7 +96,11 @@ defmodule FluxWeb.SSOController do
              acs_url: acs_url(config_id)
            }) do
       ticket =
-        Phoenix.Token.sign(FluxWeb.Endpoint, @ticket_salt, %{"u" => user.id, "r" => rid})
+        Phoenix.Token.sign(FluxWeb.Endpoint, @ticket_salt, %{
+          "u" => user.id,
+          "r" => rid,
+          "n" => Accounts.create_sso_ticket(user)
+        })
 
       redirect(conn, to: ~p"/sso/complete?#{[ticket: ticket]}")
     else
@@ -118,15 +124,18 @@ defmodule FluxWeb.SSOController do
   @doc "Finishes a sign-in in the browser that started it."
   def complete(conn, %{"ticket" => ticket}) when is_binary(ticket) do
     pending = get_session(conn, :sso_pending)
-    # Single use, whatever the outcome.
+    # Cleared whatever the outcome. That alone isn't single use: the session is
+    # a signed cookie, so a copy of the old one still carries the pending
+    # attempt. The ticket's nonce, consumed on the server, is what makes it so.
     conn = delete_session(conn, :sso_pending)
 
     with %{"request_id" => rid, "at" => at} <- pending,
          true <- fresh?(at),
-         {:ok, %{"u" => user_id, "r" => ^rid}} <-
+         {:ok, %{"u" => user_id, "r" => ^rid, "n" => nonce}} <-
            Phoenix.Token.verify(FluxWeb.Endpoint, @ticket_salt, ticket,
              max_age: @ticket_max_age_seconds
            ),
+         :ok <- Accounts.consume_sso_ticket(user_id, nonce, @ticket_max_age_seconds),
          %User{} = user <- Accounts.get_user(user_id),
          true <- Scope.user_can_log_in?(user) do
       conn

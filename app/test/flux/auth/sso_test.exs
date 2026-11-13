@@ -144,6 +144,30 @@ defmodule Flux.Auth.SSOTest do
     end
   end
 
+  describe "SSO hand-off nonces" do
+    test "are consumed exactly once, by the user they were issued to" do
+      user = user_fixture()
+      other = user_fixture()
+      nonce = Accounts.create_sso_ticket(user)
+
+      assert Accounts.consume_sso_ticket(other.id, nonce, 120) == :error
+      assert Accounts.consume_sso_ticket(user.id, nonce, 120) == :ok
+      assert Accounts.consume_sso_ticket(user.id, nonce, 120) == :error
+    end
+
+    test "expire, and refuse junk" do
+      user = user_fixture()
+      nonce = Accounts.create_sso_ticket(user)
+
+      from(t in UserToken, where: t.context == "sso_ticket")
+      |> Repo.update_all(set: [inserted_at: DateTime.add(DateTime.utc_now(:second), -121)])
+
+      assert Accounts.consume_sso_ticket(user.id, nonce, 120) == :error
+      assert Accounts.consume_sso_ticket(user.id, "not base64!", 120) == :error
+      assert Accounts.consume_sso_ticket(user.id, nil, 120) == :error
+    end
+  end
+
   defp session_count(user) do
     Repo.aggregate(
       from(t in UserToken, where: t.user_id == ^user.id and t.context == "session"),

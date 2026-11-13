@@ -283,6 +283,59 @@ defmodule Flux.Accounts do
     tokens
   end
 
+  @sso_ticket_context "sso_ticket"
+
+  @doc """
+  Issues a single-use nonce for an SSO sign-in hand-off and returns it encoded.
+
+  Only its hash is stored. Signed session cookies can be replayed, so "single
+  use" has to be enforced here, on the server: `consume_sso_ticket/3` deletes
+  the row, and a second attempt finds nothing. Unclaimed nonces older than an
+  hour are swept on each issue.
+  """
+  @spec create_sso_ticket(User.t()) :: String.t()
+  def create_sso_ticket(%User{} = user) do
+    nonce = :crypto.strong_rand_bytes(32)
+    cutoff = DateTime.add(DateTime.utc_now(:second), -3600)
+
+    Repo.delete_all(
+      from(t in UserToken, where: t.context == @sso_ticket_context and t.inserted_at < ^cutoff)
+    )
+
+    Repo.insert!(%UserToken{
+      token: :crypto.hash(:sha256, nonce),
+      context: @sso_ticket_context,
+      user_id: user.id
+    })
+
+    Base.url_encode64(nonce, padding: false)
+  end
+
+  @doc """
+  Atomically consumes an SSO hand-off nonce issued for `user_id` within the last
+  `max_age_seconds`. `:ok` exactly once; `:error` for anything else.
+  """
+  @spec consume_sso_ticket(term(), String.t(), pos_integer()) :: :ok | :error
+  def consume_sso_ticket(user_id, encoded, max_age_seconds) when is_binary(encoded) do
+    with {:ok, nonce} <- Base.url_decode64(encoded, padding: false) do
+      cutoff = DateTime.add(DateTime.utc_now(:second), -max_age_seconds)
+      hash = :crypto.hash(:sha256, nonce)
+
+      from(t in UserToken,
+        where:
+          t.context == @sso_ticket_context and t.token == ^hash and t.user_id == ^user_id and
+            t.inserted_at >= ^cutoff
+      )
+      |> Repo.delete_all()
+      |> case do
+        {1, _} -> :ok
+        _ -> :error
+      end
+    end
+  end
+
+  def consume_sso_ticket(_user_id, _encoded, _max_age_seconds), do: :error
+
   @doc """
   Gets the user with the given magic link token.
   """
