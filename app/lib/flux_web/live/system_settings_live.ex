@@ -11,6 +11,8 @@ defmodule FluxWeb.SystemSettingsLive do
   """
   use FluxWeb, :live_view
 
+  import Ecto.Query, only: [from: 2]
+
   alias Flux.Accounts
   alias Flux.Permissions
   alias Flux.Repo
@@ -25,7 +27,8 @@ defmodule FluxWeb.SystemSettingsLive do
     GeneralTab,
     LicenseCard,
     MembersTab,
-    SecurityTab
+    SecurityTab,
+    SSOTab
   }
 
   @redirect_after_ms 20_000
@@ -86,6 +89,7 @@ defmodule FluxWeb.SystemSettingsLive do
        )
        |> assign(:usage, load_usage(org_id))
        |> assign_security_settings(org_id)
+       |> assign_sso_defaults()
        |> stream(:teams_stream, teams)}
     else
       Process.send_after(self(), :redirect_to_dashboard, @redirect_after_ms)
@@ -124,6 +128,7 @@ defmodule FluxWeb.SystemSettingsLive do
     # A modal belongs to the tab that opened it; the back button must not leave
     # one floating over another tab.
     |> assign(team_form: nil, editing_team_id: nil, member_form: nil, editing_member_id: nil)
+    |> assign(:sso_confirm, nil)
     |> then(&if from == :branding, do: cancel_staged_uploads(&1), else: &1)
   end
 
@@ -140,6 +145,10 @@ defmodule FluxWeb.SystemSettingsLive do
     |> assign(:node_states, Flux.License.node_states())
     |> assign(:node_capacity, Flux.License.node_capacity())
   end
+
+  # SSO state is loaded on entry rather than at mount: it costs a few queries
+  # nobody on the other tabs needs, and readiness is a stream.
+  defp enter_tab(socket, :sso), do: load_sso(socket)
 
   defp enter_tab(socket, _tab), do: socket
 
@@ -218,6 +227,7 @@ defmodule FluxWeb.SystemSettingsLive do
     |> assign(:password_policy_enabled, Flux.License.has_feature?(:password_policy))
     |> assign(:mfa_enforcement_enabled, Flux.License.has_feature?(:mfa_enforcement))
     |> assign(:branding_enabled, Flux.Branding.entitled?())
+    |> assign(:sso_enabled, Flux.Auth.SSO.entitled?())
     |> assign(:usage_metering_enabled, usage_metering_enabled?())
   end
 
@@ -360,6 +370,172 @@ defmodule FluxWeb.SystemSettingsLive do
 
   defp load_members(scope, _org_id, :team_centric), do: Structure.list_team_members(scope)
 
+  # ── Single sign-on ────────────────────────────────────────────────────────
+
+  defp assign_sso_defaults(socket) do
+    socket
+    |> assign(:sso_config, nil)
+    |> assign(:sso_form, sso_form(nil))
+    |> assign(:sso_domain_form, to_form(%{"domain" => ""}, as: :sso_domain))
+    |> assign(:sso_base_url, FluxWeb.Endpoint.url())
+    |> assign(:sso_readiness, %{total: 0, linked: 0})
+    |> assign(:sso_confirm, nil)
+    |> stream_configure(:sso_readiness, dom_id: &"sso-member-#{&1.user_id}")
+    |> stream(:sso_readiness, [])
+  end
+
+  defp load_sso(%{assigns: %{org_id: nil}} = socket), do: socket
+
+  defp load_sso(socket) do
+    org_id = socket.assigns.org_id
+    config = Flux.Auth.SSO.get_config(org_id)
+    rows = sso_readiness_rows(socket.assigns.members, org_id)
+    countable = Enum.reject(rows, & &1.owner?)
+
+    socket
+    |> assign(:sso_config, config)
+    |> assign(:sso_form, sso_form(config))
+    |> assign(:sso_readiness, %{
+      total: length(countable),
+      linked: Enum.count(countable, & &1.linked?)
+    })
+    |> stream(:sso_readiness, rows, reset: true)
+  end
+
+  # One row per user, however many teams they are in. Owners are listed but not
+  # counted: enforcement never applies to them.
+  defp sso_readiness_rows(members, org_id) do
+    linked = Flux.Auth.SSO.linked_users(org_id)
+    owner_id = org_owner_id(org_id)
+
+    members
+    |> Enum.uniq_by(& &1.user_id)
+    |> Enum.map(fn m ->
+      %{
+        user_id: m.user_id,
+        email: member_email(m),
+        role: m.role,
+        owner?: m.role == "owner" or m.user_id == owner_id,
+        linked?: Map.has_key?(linked, m.user_id),
+        last_sso_at: Map.get(linked, m.user_id)
+      }
+    end)
+    |> Enum.sort_by(&{&1.owner?, &1.linked?, &1.email})
+  end
+
+  defp member_email(%{user: %Accounts.User{email: email}}), do: email
+  defp member_email(_), do: "—"
+
+  defp org_owner_id(org_id) do
+    Repo.one(from(o in Flux.Structure.Organization, where: o.id == ^org_id, select: o.user_id))
+  end
+
+  @sso_attributes ~w(email first_name last_name groups)
+
+  defp sso_form(config, errors \\ []) do
+    mapping = (config && config.attribute_mapping) || %{}
+
+    params =
+      %{
+        "idp_metadata" => (config && config.idp_metadata) || "",
+        "role_mapping" => format_role_mapping((config && config.role_mapping) || []),
+        "default_role" => (config && config.default_role) || "member",
+        "default_team_id" => config && config.default_team_id
+      }
+      |> Map.merge(Map.new(@sso_attributes, &{"#{&1}_attribute", Map.get(mapping, &1, "")}))
+
+    to_form(params, as: :sso, errors: form_errors(errors))
+  end
+
+  # The provider speaks in its own field names; the form has one input per
+  # attribute.
+  defp form_errors(errors) do
+    Enum.map(errors, fn
+      {:attribute_mapping, msg} -> {:email_attribute, {msg, []}}
+      {field, msg} -> {field, {msg, []}}
+    end)
+  end
+
+  defp format_role_mapping(pairs) do
+    Enum.map_join(pairs, "\n", fn {group, role} -> "#{group} = #{role}" end)
+  end
+
+  # "Group = role" per line. The role is whatever follows the last "=", so a
+  # group name may itself contain one.
+  defp parse_role_mapping(text) do
+    text
+    |> to_string()
+    |> String.split(["\r\n", "\n"], trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.reduce_while({:ok, []}, fn line, {:ok, acc} ->
+      case String.split(line, "=") do
+        [_only] ->
+          {:halt,
+           {:error,
+            [{:role_mapping, "line \"#{String.slice(line, 0, 60)}\" needs the form Group = role"}]}}
+
+        parts ->
+          {group_parts, [role]} = Enum.split(parts, -1)
+          group = group_parts |> Enum.join("=") |> String.trim()
+          {:cont, {:ok, [{group, role |> String.trim() |> String.downcase()} | acc]}}
+      end
+    end)
+    |> case do
+      {:ok, pairs} -> {:ok, Enum.reverse(pairs)}
+      error -> error
+    end
+  end
+
+  defp sso_attrs(params, role_mapping) do
+    %{
+      "idp_metadata" => params["idp_metadata"] || "",
+      "attribute_mapping" =>
+        @sso_attributes
+        |> Map.new(&{&1, String.trim(params["#{&1}_attribute"] || "")})
+        |> Map.reject(fn {_k, v} -> v == "" end),
+      "role_mapping" => role_mapping,
+      "default_role" => params["default_role"] || "member",
+      "default_team_id" => blank_to_nil(params["default_team_id"])
+    }
+  end
+
+  defp blank_to_nil(""), do: nil
+  defp blank_to_nil(v), do: v
+
+  # Entitlement and permission are re-checked on every SSO write: a hidden form
+  # is not an access control, and a license can lapse between mount and submit.
+  defp with_sso_access(socket, fun) do
+    scope = socket.assigns.current_scope
+
+    cond do
+      not Permissions.can?(scope, :manage_security_settings) ->
+        {:noreply, put_flash(socket, :error, "You are not allowed to manage single sign-on.")}
+
+      not Flux.Auth.SSO.entitled?() ->
+        {:noreply,
+         socket
+         |> assign(:sso_enabled, false)
+         |> put_flash(:error, "Single sign-on requires Flux Enterprise.")}
+
+      true ->
+        fun.(scope)
+    end
+  end
+
+  defp sso_error_message(errors) do
+    case errors do
+      [{:base, msg} | _] ->
+        msg
+
+      [{field, msg} | _] ->
+        "#{field |> to_string() |> String.replace("_", " ") |> String.capitalize()} #{msg}."
+
+      _ ->
+        "Could not update single sign-on."
+    end
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -369,7 +545,7 @@ defmodule FluxWeb.SystemSettingsLive do
           <header class="space-y-1">
             <h1 class="text-2xl font-bold tracking-tight text-base-content">System Settings</h1>
             <p class="text-base-content/60">
-              Licensing, access, security and branding for this Flux deployment.
+              Licensing, access, security, single sign-on and branding for this Flux deployment.
             </p>
           </header>
 
@@ -416,6 +592,19 @@ defmodule FluxWeb.SystemSettingsLive do
                   error={@security_error}
                   password_policy_enabled={@password_policy_enabled}
                   mfa_enforcement_enabled={@mfa_enforcement_enabled}
+                />
+              <% @settings_tab == :sso -> %>
+                <SSOTab.sso_tab
+                  enabled={@sso_enabled}
+                  config={@sso_config}
+                  form={@sso_form}
+                  domain_form={@sso_domain_form}
+                  base_url={@sso_base_url}
+                  rbac_mode={@rbac_mode}
+                  teams={@teams}
+                  readiness={@sso_readiness}
+                  streams={@streams}
+                  confirm={@sso_confirm}
                 />
               <% @settings_tab == :branding -> %>
                 <BrandingTab.branding_tab
@@ -698,6 +887,128 @@ defmodule FluxWeb.SystemSettingsLive do
     else
       {:noreply, put_flash(socket, :error, "You are not allowed to manage security settings.")}
     end
+  end
+
+  def handle_event("save_sso_config", %{"sso" => params}, socket) do
+    with_sso_access(socket, fn scope ->
+      with {:ok, role_mapping} <- parse_role_mapping(params["role_mapping"]),
+           {:ok, _config} <-
+             Flux.Auth.SSO.put_config(
+               scope,
+               sso_attrs(params, role_mapping),
+               socket.assigns.sso_base_url
+             ) do
+        {:noreply,
+         socket
+         |> load_sso()
+         |> put_flash(:info, "Identity provider saved.")}
+      else
+        {:error, errors} ->
+          {:noreply,
+           socket
+           |> assign(:sso_form, to_form(params, as: :sso, errors: form_errors(errors)))
+           |> put_flash(:error, sso_error_message(errors))}
+      end
+    end)
+  end
+
+  def handle_event("add_sso_domain", %{"sso_domain" => %{"domain" => domain}}, socket) do
+    with_sso_access(socket, fn scope ->
+      case Flux.Auth.SSO.add_domain(scope, String.trim(domain)) do
+        {:ok, d} ->
+          {:noreply,
+           socket
+           |> load_sso()
+           |> assign(:sso_domain_form, to_form(%{"domain" => ""}, as: :sso_domain))
+           |> put_flash(:info, "Added #{d.domain}. Publish the TXT record, then verify.")}
+
+        {:error, errors} ->
+          {:noreply,
+           socket
+           |> assign(
+             :sso_domain_form,
+             to_form(%{"domain" => domain}, as: :sso_domain, errors: form_errors(errors))
+           )
+           |> put_flash(:error, sso_error_message(errors))}
+      end
+    end)
+  end
+
+  def handle_event("verify_sso_domain", %{"id" => id}, socket) do
+    with_sso_access(socket, fn scope ->
+      case Flux.Auth.SSO.verify_domain(scope, id) do
+        {:ok, d} ->
+          {:noreply, socket |> load_sso() |> put_flash(:info, "#{d.domain} is verified.")}
+
+        {:error, errors} ->
+          {:noreply, put_flash(socket, :error, sso_error_message(errors))}
+      end
+    end)
+  end
+
+  def handle_event("remove_sso_domain", %{"id" => id}, socket) do
+    with_sso_access(socket, fn scope ->
+      case Flux.Auth.SSO.remove_domain(scope, id) do
+        :ok -> {:noreply, socket |> load_sso() |> put_flash(:info, "Domain removed.")}
+        {:error, errors} -> {:noreply, put_flash(socket, :error, sso_error_message(errors))}
+      end
+    end)
+  end
+
+  def handle_event("confirm_sso_enforcement", _params, socket),
+    do: {:noreply, assign(socket, :sso_confirm, :enforce)}
+
+  def handle_event("confirm_sso_delete", _params, socket),
+    do: {:noreply, assign(socket, :sso_confirm, :delete)}
+
+  def handle_event("cancel_sso_confirm", _params, socket),
+    do: {:noreply, assign(socket, :sso_confirm, nil)}
+
+  def handle_event("set_sso_enforcement", %{"enforce" => enforce}, socket) do
+    enforce = enforce == "true"
+
+    with_sso_access(socket, fn scope ->
+      case Flux.Auth.SSO.set_enforcement(scope, enforce) do
+        {:ok, _config, revoked} ->
+          FluxWeb.UserAuth.disconnect_sessions(revoked)
+
+          message =
+            if enforce,
+              do: "Single sign-on is now required. Members other than owners were signed out.",
+              else: "Single sign-on is no longer required. Passwords work again."
+
+          {:noreply,
+           socket
+           |> assign(:sso_confirm, nil)
+           |> load_sso()
+           |> put_flash(:info, message)}
+
+        {:error, errors} ->
+          {:noreply,
+           socket
+           |> assign(:sso_confirm, nil)
+           |> put_flash(:error, sso_error_message(errors))}
+      end
+    end)
+  end
+
+  def handle_event("delete_sso_config", _params, socket) do
+    with_sso_access(socket, fn scope ->
+      case Flux.Auth.SSO.delete_config(scope) do
+        :ok ->
+          {:noreply,
+           socket
+           |> assign(:sso_confirm, nil)
+           |> load_sso()
+           |> put_flash(:info, "Single sign-on removed.")}
+
+        {:error, errors} ->
+          {:noreply,
+           socket
+           |> assign(:sso_confirm, nil)
+           |> put_flash(:error, sso_error_message(errors))}
+      end
+    end)
   end
 
   def handle_event("clear_team_form", _params, socket) do
