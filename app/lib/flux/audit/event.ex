@@ -27,7 +27,10 @@ defmodule Flux.Audit.Event do
     team_created team_updated team_deleted
     team_member_added team_member_updated team_member_removed
     api_key_created api_key_revoked
-    rbac_mode_changed sso_configured
+    rbac_mode_changed
+    sso_configured sso_config_deleted sso_enforcement_changed sso_sessions_revoked
+    sso_domain_added sso_domain_verified sso_domain_removed
+    sso_login_failed sso_user_provisioned sso_identity_linked
     alert_rule_created alert_rule_updated alert_rule_deleted alert_fired
     pii_redacted pii_classified
   )a

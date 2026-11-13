@@ -265,6 +265,25 @@ defmodule Flux.Accounts do
   end
 
   @doc """
+  Deletes every session token belonging to the given users and returns the
+  deleted tokens (for socket disconnect). Used when an organization starts
+  requiring single sign-on, so sessions established under the old rules end.
+  """
+  @spec delete_session_tokens_for_users([term()]) :: [UserToken.t()]
+  def delete_session_tokens_for_users([]), do: []
+
+  def delete_session_tokens_for_users(user_ids) when is_list(user_ids) do
+    {_count, tokens} =
+      from(t in UserToken,
+        where: t.user_id in ^user_ids and t.context == "session",
+        select: t
+      )
+      |> Repo.delete_all()
+
+    tokens
+  end
+
+  @doc """
   Gets the user with the given magic link token.
   """
   def get_user_by_magic_link_token(token) do
