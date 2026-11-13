@@ -185,5 +185,26 @@ defmodule FluxWeb.Router do
     post("/users/log-in", UserSessionController, :create)
     post("/users/two-factor", UserSessionController, :verify_totp)
     delete("/users/log-out", UserSessionController, :delete)
+
+    # Single sign-on, browser side (Enterprise-gated in Flux.Auth.SSO). start/2
+    # is a same-site form post, so it keeps CSRF protection; complete/2 is where
+    # the session is bound — see FluxWeb.SSOController.
+    post("/sso/start", SSOController, :start)
+    get("/sso/complete", SSOController, :complete)
+  end
+
+  # Single sign-on, identity-provider side. The IdP posts the response
+  # cross-site, so there is no CSRF token to check and no session cookie to
+  # read; the controller validates and hands off to /sso/complete. The metadata
+  # route is fetched by IdPs and admins, so it has no session either.
+  pipeline :sso_callback do
+    plug(:put_secure_browser_headers)
+  end
+
+  scope "/sso", FluxWeb do
+    pipe_through(:sso_callback)
+
+    post("/:config_id/acs", SSOController, :acs)
+    get("/:config_id/metadata", SSOController, :metadata)
   end
 end
