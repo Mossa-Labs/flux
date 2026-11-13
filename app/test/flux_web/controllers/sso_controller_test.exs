@@ -132,13 +132,30 @@ defmodule FluxWeb.SSOControllerTest do
       refute get_session(conn, :user_token)
     end
 
-    test "a pending attempt is single use", %{conn: conn} do
+    test "replaying the original cookie with the same ticket signs no one in twice",
+         %{conn: conn} do
       user = user_fixture()
-      conn = sign_in_via_sso(conn, user)
+      put_sso(:consume, {:ok, user})
 
-      # The pending attempt was consumed; replaying the same complete URL in the
-      # same browser (now logged in) must not mint anything new.
-      assert get_session(conn, :sso_pending) == nil
+      started = post(conn, ~p"/sso/start", %{"sso" => %{"email" => "pat@acme.test"}})
+
+      %{"RelayState" => rid} =
+        redirected_to(started) |> URI.parse() |> Map.fetch!(:query) |> URI.decode_query()
+
+      acs =
+        post(build_conn(), ~p"/sso/cfg_test/acs", %{"SAMLResponse" => "x", "RelayState" => rid})
+
+      complete_path = redirected_to(acs)
+
+      first = started |> recycle() |> get(complete_path)
+      assert get_session(first, :user_token)
+
+      # The cookie the browser held before completing, which still carries the
+      # pending attempt, presented again with the same ticket.
+      replay = started |> recycle() |> get(complete_path)
+
+      assert redirected_to(replay) == ~p"/users/log-in"
+      refute get_session(replay, :user_token)
     end
   end
 
