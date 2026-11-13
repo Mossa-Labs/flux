@@ -14,6 +14,7 @@ defmodule FluxWeb.SystemSettingsLive.Components do
     {:members, "members", "Members & teams", "hero-users"},
     {:api_keys, "api-keys", "API keys", "hero-key"},
     {:security, "security", "Security", "hero-shield-check"},
+    {:sso, "sso", "Single sign-on", "hero-finger-print"},
     {:branding, "branding", "Branding", "hero-paint-brush"}
   ]
 
@@ -132,7 +133,8 @@ defmodule FluxWeb.SystemSettingsLive.Components do
         <.icon name="hero-building-office-2" class="size-7 text-base-content/50" />
         <h2 class="text-base font-semibold">No organization in scope</h2>
         <p class="max-w-md text-sm text-base-content/60">
-          Members, API keys, security and branding are set per organization.
+          Members, API keys, security, single sign-on and branding are set per
+          organization.
           Create or select an organization first.
         </p>
       </div>

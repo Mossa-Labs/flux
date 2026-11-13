@@ -15,7 +15,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
       {:ok, _lv, html} = live(conn, ~p"/system/settings")
 
       assert html =~ "System Settings"
-      assert html =~ "Licensing, access, security and branding"
+      assert html =~ "Licensing, access, security, single sign-on and branding"
     end
 
     test "shows Teams section", %{conn: conn} do
@@ -690,6 +690,7 @@ defmodule FluxWeb.SystemSettingsLiveTest do
             {"members", "#members-card"},
             {"api-keys", "#api-keys-card"},
             {"security", "#ip-allowlist-form"},
+            {"sso", "#sso-upgrade-card"},
             {"branding", "#branding-card"}
           ] do
         {:ok, lv, _html} = live(conn, ~p"/system/settings?#{[tab: slug]}")
