@@ -20,6 +20,13 @@ defmodule FluxWeb.SystemSettingsLive.SSOTab do
   alias Flux.Auth.SSO.{Config, Domain}
   alias FluxWeb.Components.UpgradePrompt
 
+  # Custom Tailwind rather than daisyUI component classes (see CLAUDE.md). Theme
+  # colour tokens (base-content, primary, …) keep it in step with light/dark.
+  @code_textarea "w-full rounded-lg border border-base-content/20 bg-base-100 px-3 py-2 font-mono text-xs leading-relaxed transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+  @quiet_button "inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-base-content/70 transition-colors hover:bg-base-content/10 hover:text-base-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+  @danger_quiet_button "inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-error transition-colors hover:bg-error/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/40"
+  @danger_button "inline-flex items-center justify-center rounded-lg bg-error px-4 py-2 text-sm font-semibold text-error-content shadow-sm transition-colors hover:bg-error/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/40"
+
   attr :enabled, :boolean, required: true
   attr :config, :any, default: nil, doc: "a Flux.Auth.SSO.Config or nil"
   attr :form, :any, required: true
@@ -55,7 +62,7 @@ defmodule FluxWeb.SystemSettingsLive.SSOTab do
                 type="button"
                 id="sso-delete-button"
                 phx-click="confirm_sso_delete"
-                class="btn btn-ghost btn-xs text-error hover:bg-error/10"
+                class={danger_quiet_button()}
               >
                 <.icon name="hero-trash" class="size-4" /> Remove
               </button>
@@ -68,7 +75,8 @@ defmodule FluxWeb.SystemSettingsLive.SSOTab do
                 rows="6"
                 label="IdP metadata XML"
                 placeholder="Paste the EntityDescriptor XML from your identity provider"
-                class="textarea w-full font-mono text-xs"
+                class={code_textarea()}
+                error_class="border-error"
               />
 
               <fieldset class="space-y-1">
@@ -111,7 +119,8 @@ defmodule FluxWeb.SystemSettingsLive.SSOTab do
                   rows="3"
                   label="Group → role"
                   placeholder="Flux Admins = admin\nData Eng = member"
-                  class="textarea w-full font-mono text-xs"
+                  class={code_textarea()}
+                  error_class="border-error"
                 />
                 <div>
                   <.input
@@ -135,7 +144,7 @@ defmodule FluxWeb.SystemSettingsLive.SSOTab do
                 when none does, and SSO never changes an owner.
               </p>
 
-              <.button class="btn btn-primary btn-sm" phx-disable-with="Saving…">
+              <.button variant="primary" phx-disable-with="Saving…">
                 {if @config, do: "Save identity provider", else: "Set up SSO"}
               </.button>
             </.form>
@@ -154,9 +163,9 @@ defmodule FluxWeb.SystemSettingsLive.SSOTab do
                 :if={@config.base_url && @config.base_url != @base_url}
                 id="sso-host-mismatch"
                 role="alert"
-                class="alert alert-warning text-sm"
+                class="flex gap-3 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm"
               >
-                <.icon name="hero-exclamation-triangle" class="size-5 shrink-0" />
+                <.icon name="hero-exclamation-triangle" class="size-5 shrink-0 text-warning" />
                 <span>
                   SSO was set up at <span class="font-mono">{@config.base_url}</span>, but this
                   deployment now answers at <span class="font-mono">{@base_url}</span>.
@@ -219,14 +228,14 @@ defmodule FluxWeb.SystemSettingsLive.SSOTab do
               <div class="min-w-0 space-y-1">
                 <p class="flex items-center gap-2 font-medium">
                   {d.domain}
-                  <span :if={Domain.verified?(d)} class="badge badge-success badge-sm gap-1">
+                  <.pill :if={Domain.verified?(d)} tone={:success}>
                     <.icon name="hero-check-badge" class="size-3.5" /> Verified
-                  </span>
-                  <span :if={!Domain.verified?(d)} class="badge badge-warning badge-sm">Pending</span>
+                  </.pill>
+                  <.pill :if={!Domain.verified?(d)} tone={:warning}>Pending</.pill>
                 </p>
                 <div :if={!Domain.verified?(d)} class="space-y-1 text-xs text-base-content/70">
                   <p>Add this TXT record at your DNS provider, then verify:</p>
-                  <dl class="grid grid-cols-[auto_1fr] gap-x-2 rounded-box bg-base-300 px-3 py-2 font-mono">
+                  <dl class="grid grid-cols-[auto_1fr] gap-x-2 rounded-lg bg-base-300 px-3 py-2 font-mono">
                     <dt class="text-base-content/50">Name</dt>
                     <dd class="break-all select-all">{d.txt_record_name}</dd>
                     <dt class="text-base-content/50">Value</dt>
@@ -235,21 +244,20 @@ defmodule FluxWeb.SystemSettingsLive.SSOTab do
                 </div>
               </div>
               <div class="flex shrink-0 gap-2">
-                <button
+                <.button
                   :if={!Domain.verified?(d)}
-                  type="button"
+                  variant="primary"
                   phx-click="verify_sso_domain"
                   phx-value-id={d.id}
                   phx-disable-with="Checking DNS…"
-                  class="btn btn-primary btn-xs"
                 >
                   Verify
-                </button>
+                </.button>
                 <button
                   type="button"
                   phx-click="remove_sso_domain"
                   phx-value-id={d.id}
-                  class="btn btn-ghost btn-xs"
+                  class={quiet_button()}
                   aria-label={"Remove #{d.domain}"}
                 >
                   Remove
@@ -273,7 +281,7 @@ defmodule FluxWeb.SystemSettingsLive.SSOTab do
               />
             </div>
             <div class="mb-2">
-              <.button class="btn btn-sm">Add domain</.button>
+              <.button>Add domain</.button>
             </div>
           </.form>
         </.settings_card>
@@ -291,26 +299,23 @@ defmodule FluxWeb.SystemSettingsLive.SSOTab do
           </:description>
           <:actions>
             <%= if @config.enforce_sso do %>
-              <button
-                type="button"
+              <.button
                 id="sso-enforce-off"
                 phx-click="set_sso_enforcement"
                 phx-value-enforce="false"
-                class="btn btn-sm"
               >
                 Stop requiring SSO
-              </button>
+              </.button>
             <% else %>
-              <button
-                type="button"
+              <.button
                 id="sso-enforce-on"
+                variant="primary"
                 phx-click="confirm_sso_enforcement"
                 disabled={!Config.verified_domain?(@config)}
                 title={!Config.verified_domain?(@config) && "Verify a domain first"}
-                class="btn btn-primary btn-sm"
               >
                 Require SSO
-              </button>
+              </.button>
             <% end %>
           </:actions>
 
@@ -322,45 +327,58 @@ defmodule FluxWeb.SystemSettingsLive.SSOTab do
               </span>
               <span class="text-base-content/60">{percent(@readiness)}%</span>
             </div>
-            <progress
-              class="progress progress-primary w-full"
-              value={@readiness.linked}
-              max={max(@readiness.total, 1)}
-            ></progress>
+            <div
+              class="h-2 w-full overflow-hidden rounded-full bg-base-content/10"
+              role="progressbar"
+              aria-label="Members who have signed in with SSO"
+              aria-valuemin="0"
+              aria-valuemax={@readiness.total}
+              aria-valuenow={@readiness.linked}
+            >
+              <div
+                class="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+                style={"width: #{percent(@readiness)}%"}
+              >
+              </div>
+            </div>
           </div>
 
           <div class="overflow-x-auto">
-            <table class="table table-sm">
-              <thead>
-                <tr>
-                  <th>Member</th>
-                  <th>Role</th>
-                  <th>SSO</th>
+            <table class="w-full text-left text-sm">
+              <thead class="text-xs uppercase tracking-wide text-base-content/50">
+                <tr class="border-b border-base-content/10">
+                  <th class="px-3 py-2 font-medium">Member</th>
+                  <th class="px-3 py-2 font-medium">Role</th>
+                  <th class="px-3 py-2 font-medium">SSO</th>
                 </tr>
               </thead>
-              <tbody id="sso-readiness" phx-update="stream">
+              <tbody id="sso-readiness" phx-update="stream" class="divide-y divide-base-content/5">
                 <tr id="sso-readiness-empty" class="hidden only:table-row">
-                  <td colspan="3" class="text-base-content/60">No members yet.</td>
+                  <td colspan="3" class="px-3 py-3 text-base-content/60">No members yet.</td>
                 </tr>
-                <tr :for={{dom_id, row} <- @streams.sso_readiness} id={dom_id}>
-                  <td class="font-medium">{row.email}</td>
-                  <td class="capitalize">{row.role}</td>
-                  <td>
+                <tr
+                  :for={{dom_id, row} <- @streams.sso_readiness}
+                  id={dom_id}
+                  class="transition-colors hover:bg-base-content/5"
+                >
+                  <td class="px-3 py-2 font-medium">{row.email}</td>
+                  <td class="px-3 py-2 capitalize">{row.role}</td>
+                  <td class="px-3 py-2">
                     <%= cond do %>
                       <% row.owner? -> %>
-                        <span class="badge badge-ghost badge-sm">Owner · password kept</span>
+                        <.pill tone={:neutral}>Owner · password kept</.pill>
                       <% row.linked? -> %>
-                        <span
-                          class="badge badge-success badge-sm"
+                        <.pill
+                          tone={:success}
                           title={
                             row.last_sso_at &&
                               "Last SSO sign-in #{Calendar.strftime(row.last_sso_at, "%Y-%m-%d %H:%M UTC")}"
                           }
                         >
                           Linked
-                        </span>
+                        </.pill>
                       <% true -> %>
-                        <span class="badge badge-ghost badge-sm text-base-content/60">Not yet</span>
+                        <.pill tone={:neutral}>Not yet</.pill>
                     <% end %>
                   </td>
                 </tr>
@@ -388,15 +406,93 @@ defmodule FluxWeb.SystemSettingsLive.SSOTab do
   attr :readiness, :map, required: true
 
   defp status_strip(assigns) do
+    assigns =
+      assign(assigns, :steps, [
+        {"Identity provider", !!assigns.config},
+        {"Verified domain", !!assigns.config && Config.verified_domain?(assigns.config)},
+        {"Members linked", !!assigns.config && assigns.readiness.linked > 0},
+        {"SSO required", !!assigns.config && assigns.config.enforce_sso}
+      ])
+
     ~H"""
-    <ol id="sso-status" class="steps steps-horizontal w-full text-xs">
-      <li class={["step", @config && "step-primary"]}>Identity provider</li>
-      <li class={["step", @config && Config.verified_domain?(@config) && "step-primary"]}>
-        Verified domain
+    <ol id="sso-status" class="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="SSO setup progress">
+      <li
+        :for={{{label, done}, index} <- Enum.with_index(@steps, 1)}
+        aria-current={!done && "step"}
+        class={[
+          "flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
+          if(done,
+            do: "border-primary/30 bg-primary/5 text-base-content",
+            else: "border-base-content/10 text-base-content/50"
+          )
+        ]}
+      >
+        <span class={[
+          "flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold",
+          if(done, do: "bg-primary text-primary-content", else: "bg-base-content/10")
+        ]}>
+          <.icon :if={done} name="hero-check" class="size-3" />
+          <span :if={!done}>{index}</span>
+        </span>
+        {label}
       </li>
-      <li class={["step", @config && @readiness.linked > 0 && "step-primary"]}>Members linked</li>
-      <li class={["step", @config && @config.enforce_sso && "step-primary"]}>SSO required</li>
     </ol>
+    """
+  end
+
+  attr :tone, :atom, values: [:success, :warning, :neutral], required: true
+  attr :rest, :global
+  slot :inner_block, required: true
+
+  defp pill(assigns) do
+    ~H"""
+    <span
+      class={[
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
+        pill_tone(@tone)
+      ]}
+      {@rest}
+    >
+      {render_slot(@inner_block)}
+    </span>
+    """
+  end
+
+  defp pill_tone(:success), do: "bg-success/10 text-success ring-success/30"
+  defp pill_tone(:warning), do: "bg-warning/10 text-warning ring-warning/30"
+  defp pill_tone(:neutral), do: "bg-base-content/5 text-base-content/70 ring-base-content/15"
+
+  attr :id, :string, required: true
+  attr :title_id, :string, required: true
+  slot :inner_block, required: true
+  slot :actions, required: true
+
+  # A confirmation dialog. Escape and a click on the backdrop both cancel.
+  defp confirm_dialog(assigns) do
+    ~H"""
+    <div
+      id={@id}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={@title_id}
+      class="fixed inset-0 z-50 flex items-center justify-center p-4"
+      phx-window-keydown="cancel_sso_confirm"
+      phx-key="escape"
+    >
+      <div
+        class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        phx-click="cancel_sso_confirm"
+        aria-hidden="true"
+      >
+      </div>
+      <div class="relative w-full max-w-md space-y-3 rounded-2xl border border-base-content/10 bg-base-100 p-6 shadow-xl">
+        {render_slot(@inner_block)}
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" phx-click="cancel_sso_confirm" class={quiet_button()}>Cancel</button>
+          {render_slot(@actions)}
+        </div>
+      </div>
+    </div>
     """
   end
 
@@ -410,7 +506,7 @@ defmodule FluxWeb.SystemSettingsLive.SSOTab do
       <dt class="mb-1 text-xs font-medium text-base-content/60">{@label}</dt>
       <dd
         id={@id}
-        class="select-all break-all rounded-box bg-base-300 px-3 py-2 font-mono text-xs transition-colors hover:bg-base-100"
+        class="select-all break-all rounded-lg bg-base-300 px-3 py-2 font-mono text-xs transition-colors hover:bg-base-100"
       >
         {@value}
       </dd>
@@ -424,48 +520,38 @@ defmodule FluxWeb.SystemSettingsLive.SSOTab do
     assigns = assign(assigns, :unlinked, assigns.readiness.total - assigns.readiness.linked)
 
     ~H"""
-    <div
-      class="modal modal-open"
-      id="sso-enforce-modal"
-      role="dialog"
-      aria-labelledby="sso-enforce-title"
-    >
-      <div class="modal-box space-y-3">
-        <h3 id="sso-enforce-title" class="text-lg font-semibold">Require single sign-on?</h3>
-        <ul class="list-disc space-y-1 pl-5 text-sm text-base-content/80">
-          <li>
-            Members other than owners will no longer be able to sign in with a
-            password or email link.
-          </li>
-          <li>
-            <span class="font-semibold">Everyone except owners is signed out now</span>
-            and must sign in again with SSO.
-          </li>
-          <li :if={@unlinked > 0}>
-            <span class="font-semibold">{@unlinked} {if @unlinked == 1,
-              do: "member hasn't",
-              else: "members haven't"}</span>
-            signed in with SSO yet. They can still do so, provided your identity
-            provider has them.
-          </li>
-          <li>Passwords are kept, so turning this off restores access. API keys are unaffected.</li>
-        </ul>
-        <div class="modal-action">
-          <button type="button" phx-click="cancel_sso_confirm" class="btn btn-ghost">Cancel</button>
-          <button
-            type="button"
-            id="sso-enforce-confirm"
-            phx-click="set_sso_enforcement"
-            phx-value-enforce="true"
-            phx-disable-with="Applying…"
-            class="btn btn-primary"
-          >
-            Require SSO and sign members out
-          </button>
-        </div>
-      </div>
-      <div class="modal-backdrop" phx-click="cancel_sso_confirm"></div>
-    </div>
+    <.confirm_dialog id="sso-enforce-modal" title_id="sso-enforce-title">
+      <h3 id="sso-enforce-title" class="text-lg font-semibold">Require single sign-on?</h3>
+      <ul class="list-disc space-y-1 pl-5 text-sm text-base-content/80">
+        <li>
+          Members other than owners will no longer be able to sign in with a
+          password or email link.
+        </li>
+        <li>
+          <span class="font-semibold">Everyone except owners is signed out now</span>
+          and must sign in again with SSO.
+        </li>
+        <li :if={@unlinked > 0}>
+          <span class="font-semibold">
+            {@unlinked} {if @unlinked == 1, do: "member hasn't", else: "members haven't"}
+          </span>
+          signed in with SSO yet. They can still do so, provided your identity
+          provider has them.
+        </li>
+        <li>Passwords are kept, so turning this off restores access. API keys are unaffected.</li>
+      </ul>
+      <:actions>
+        <.button
+          id="sso-enforce-confirm"
+          variant="primary"
+          phx-click="set_sso_enforcement"
+          phx-value-enforce="true"
+          phx-disable-with="Applying…"
+        >
+          Require SSO and sign members out
+        </.button>
+      </:actions>
+    </.confirm_dialog>
     """
   end
 
@@ -473,39 +559,35 @@ defmodule FluxWeb.SystemSettingsLive.SSOTab do
 
   defp delete_modal(assigns) do
     ~H"""
-    <div
-      class="modal modal-open"
-      id="sso-delete-modal"
-      role="dialog"
-      aria-labelledby="sso-delete-title"
-    >
-      <div class="modal-box space-y-3">
-        <h3 id="sso-delete-title" class="text-lg font-semibold">Remove single sign-on?</h3>
-        <p class="text-sm text-base-content/80">
-          This deletes the identity provider, its domains and every member's SSO
-          link. <span :if={@enforced}>Enforcement ends and members can use passwords again.</span>
-          Members created through SSO have no password; they can sign in with an
-          email link.
-        </p>
-        <div class="modal-action">
-          <button type="button" phx-click="cancel_sso_confirm" class="btn btn-ghost">Cancel</button>
-          <button
-            type="button"
-            id="sso-delete-confirm"
-            phx-click="delete_sso_config"
-            class="btn btn-error"
-          >
-            Remove SSO
-          </button>
-        </div>
-      </div>
-      <div class="modal-backdrop" phx-click="cancel_sso_confirm"></div>
-    </div>
+    <.confirm_dialog id="sso-delete-modal" title_id="sso-delete-title">
+      <h3 id="sso-delete-title" class="text-lg font-semibold">Remove single sign-on?</h3>
+      <p class="text-sm text-base-content/80">
+        This deletes the identity provider, its domains and every member's SSO
+        link. <span :if={@enforced}>Enforcement ends and members can use passwords again.</span>
+        Members created through SSO have no password; they can sign in with an
+        email link.
+      </p>
+      <:actions>
+        <button
+          type="button"
+          id="sso-delete-confirm"
+          phx-click="delete_sso_config"
+          class={danger_button()}
+        >
+          Remove SSO
+        </button>
+      </:actions>
+    </.confirm_dialog>
     """
   end
 
   defp percent(%{total: 0}), do: 0
   defp percent(%{total: total, linked: linked}), do: round(linked * 100 / total)
+
+  defp code_textarea, do: @code_textarea
+  defp quiet_button, do: @quiet_button
+  defp danger_quiet_button, do: @danger_quiet_button
+  defp danger_button, do: @danger_button
 
   defp role_options, do: [{"Admin", "admin"}, {"Member", "member"}, {"Viewer", "viewer"}]
 
