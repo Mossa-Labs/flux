@@ -505,11 +505,17 @@ defmodule FluxWeb.SystemSettingsLive do
 
   # Entitlement and permission are re-checked on every SSO write: a hidden form
   # is not an access control, and a license can lapse between mount and submit.
+  #
+  # The role is re-read from the database rather than taken from the scope
+  # captured at mount. Demoting or removing an owner doesn't disconnect their
+  # open page, and SSO writes are the ones that matter most: a former owner who
+  # could still swap the identity provider could sign in as anyone on the
+  # organization's verified domains.
   defp with_sso_access(socket, fun) do
-    scope = socket.assigns.current_scope
+    scope = current_scope_from_db(socket)
 
     cond do
-      not Permissions.can?(scope, :manage_security_settings) ->
+      is_nil(scope) or not Permissions.can?(scope, :manage_security_settings) ->
         {:noreply, put_flash(socket, :error, "You are not allowed to manage single sign-on.")}
 
       not Flux.Auth.SSO.entitled?() ->
@@ -520,6 +526,19 @@ defmodule FluxWeb.SystemSettingsLive do
 
       true ->
         fun.(scope)
+    end
+  end
+
+  # Fails closed: a deleted user, or a default organization that is no longer
+  # the one this page manages, gets no scope.
+  defp current_scope_from_db(socket) do
+    with %{user: %Accounts.User{id: user_id}} <- socket.assigns.current_scope,
+         %Accounts.User{} = user <- Accounts.get_user(user_id),
+         %Accounts.Scope{organization_id: org_id} = scope when org_id == socket.assigns.org_id <-
+           Accounts.Scope.for_user(user) do
+      scope
+    else
+      _ -> nil
     end
   end
 

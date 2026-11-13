@@ -214,6 +214,24 @@ defmodule FluxWeb.SystemSettingsSSOTest do
     assert has_element?(lv, "#sso-config-form", "Set up SSO")
   end
 
+  test "an owner demoted while the page is open can no longer change SSO",
+       %{conn: conn, owner_scope: owner_scope} do
+    use_sso(%{config: configured(domains: [verified()])})
+    {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=sso")
+
+    # Ownership moves to someone else; this page stays connected.
+    successor = user_fixture()
+
+    from(o in Flux.Structure.Organization, where: o.id == ^owner_scope.organization_id)
+    |> Flux.Repo.update_all(set: [user_id: successor.id])
+
+    lv |> element("#sso-enforce-on") |> render_click()
+    html = lv |> element("#sso-enforce-confirm") |> render_click()
+
+    assert html =~ "not allowed to manage single sign-on"
+    refute_received {:sso, :set_enforcement, _}
+  end
+
   test "a lapsed license between render and submit refuses the write", %{conn: conn} do
     use_sso(%{config: configured(domains: [verified()])})
     {:ok, lv, _html} = live(conn, ~p"/system/settings?tab=sso")
