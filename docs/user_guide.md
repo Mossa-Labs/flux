@@ -25,10 +25,11 @@ Navigate to `/users/register` to create an account. Provide an email address and
 
 ### Login
 
-Flux supports two authentication methods at `/users/log-in`:
+Flux supports these authentication methods at `/users/log-in`:
 
 - **Password login**: Enter your email and password. Optionally check "Keep me logged in" for a persistent session (60 days).
 - **Magic link**: Enter your email and click "Send magic link." A one-time login link is sent to your email. Click the link to log in without a password.
+- **Single sign-on** (Enterprise): When your organization has set up SSO, click **Sign in with SSO** and enter your work email to sign in through your identity provider. If your organization requires SSO, password and magic-link login are turned off for everyone except owners. See [Single sign-on](sso.md).
 
 ### Email Confirmation
 
@@ -339,6 +340,7 @@ The page is split into tabs. Each has its own URL, so you can bookmark or link s
 | Members & teams | `/system/settings?tab=members` | Organization or team members, and teams |
 | API keys | `/system/settings?tab=api-keys` | Create and revoke API keys |
 | Security | `/system/settings?tab=security` | IP allowlist, session timeout, password policy, two-factor enforcement |
+| Single sign-on | `/system/settings?tab=sso` | SAML identity provider, verified domains, member readiness, require SSO ([guide](sso.md)) |
 | Branding | `/system/settings?tab=branding` | White-label name, colour, logo and favicon |
 
 A dot on the **General** tab means the license needs attention: it is expiring or expired, the cluster's nodes are not yet running the same license, or more nodes are running than the license covers.
