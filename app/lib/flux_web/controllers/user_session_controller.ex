@@ -4,6 +4,7 @@ defmodule FluxWeb.UserSessionController do
 
   alias Flux.Accounts
   alias Flux.Accounts.Scope
+  alias Flux.Auth.SSO
   alias FluxWeb.UserAuth
 
   def create(conn, %{"_action" => "confirmed"} = params) do
@@ -20,13 +21,18 @@ defmodule FluxWeb.UserSessionController do
 
     case strategy.authenticate(user_params) do
       {:ok, {user, tokens_to_disconnect}} ->
-        if Scope.user_can_log_in?(user) do
-          UserAuth.disconnect_sessions(tokens_to_disconnect)
-          log_in_or_challenge(conn, user, user_params, info)
-        else
-          conn
-          |> put_flash(:error, "Your account has been disabled. Contact your administrator.")
-          |> redirect(to: ~p"/users/log-in")
+        cond do
+          not Scope.user_can_log_in?(user) ->
+            conn
+            |> put_flash(:error, "Your account has been disabled. Contact your administrator.")
+            |> redirect(to: ~p"/users/log-in")
+
+          not SSO.password_login_allowed?(user) ->
+            refuse_sso_required(conn, user)
+
+          true ->
+            UserAuth.disconnect_sessions(tokens_to_disconnect)
+            log_in_or_challenge(conn, user, user_params, info)
         end
 
       _ ->
@@ -43,13 +49,20 @@ defmodule FluxWeb.UserSessionController do
 
     case strategy.authenticate(user_params) do
       {:ok, user} ->
-        if Scope.user_can_log_in?(user) do
-          log_in_or_challenge(conn, user, user_params, info)
-        else
-          conn
-          |> put_flash(:error, "Your account has been disabled. Contact your administrator.")
-          |> put_flash(:email, String.slice(email, 0, 160))
-          |> redirect(to: ~p"/users/log-in")
+        cond do
+          not Scope.user_can_log_in?(user) ->
+            conn
+            |> put_flash(:error, "Your account has been disabled. Contact your administrator.")
+            |> put_flash(:email, String.slice(email, 0, 160))
+            |> redirect(to: ~p"/users/log-in")
+
+          # Checked only after the password is proven, so it reveals nothing to
+          # someone guessing which addresses are SSO-only.
+          not SSO.password_login_allowed?(user) ->
+            refuse_sso_required(conn, user)
+
+          true ->
+            log_in_or_challenge(conn, user, user_params, info)
         end
 
       {:error, _} ->
@@ -128,6 +141,24 @@ defmodule FluxWeb.UserSessionController do
       |> put_flash(:info, info)
       |> UserAuth.log_in_user(user, user_params)
     end
+  end
+
+  # The organization requires single sign-on and this user isn't an owner of it.
+  # The credentials were valid, so this is a policy refusal, not a failed login;
+  # it is audited as one so an owner can see who is still trying passwords.
+  defp refuse_sso_required(conn, user) do
+    Flux.Audit.log(%{
+      action: :failed_login,
+      actor_type: :system,
+      resource_type: :user,
+      resource_id: user.id,
+      metadata: Map.put(FluxWeb.AuditMeta.from_conn(conn), "reason", "sso_required")
+    })
+
+    conn
+    |> put_flash(:error, "Your organization requires single sign-on. Use “Sign in with SSO”.")
+    |> put_flash(:email, String.slice(user.email, 0, 160))
+    |> redirect(to: ~p"/users/log-in")
   end
 
   # Accepts a 6-digit TOTP code or a single-use backup code (consumed on use).

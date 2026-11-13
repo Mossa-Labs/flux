@@ -32,8 +32,18 @@ defmodule FluxWeb.UserAuth do
 
   Redirects to the session's `:user_return_to` path
   or falls back to the `signed_in_path/1`.
+
+  ## Options
+
+    * `:method` - how the user authenticated, `:password` (the default, which
+      also covers magic links) or `:sso`. Recorded in the session and the audit
+      event. An SSO session never gets a remember-me cookie: the identity
+      provider owns how long a sign-in lasts, so outliving it here would defeat
+      the IdP's own session policy. It also skips Flux's second-factor
+      requirements (see `sso_session?/1`).
   """
-  def log_in_user(conn, user, params \\ %{}) do
+  def log_in_user(conn, user, params \\ %{}, opts \\ []) do
+    method = Keyword.get(opts, :method, :password)
     user_return_to = get_session(conn, :user_return_to)
     scope = Scope.for_user(user)
 
@@ -43,13 +53,24 @@ defmodule FluxWeb.UserAuth do
       action: :login,
       resource_type: :user,
       resource_id: user.id,
-      metadata: FluxWeb.AuditMeta.from_conn(conn)
+      metadata: Map.put(FluxWeb.AuditMeta.from_conn(conn), "method", to_string(method))
     })
 
     conn
-    |> create_or_extend_session(user, params)
+    |> create_or_extend_session(user, params, method != :sso)
+    |> put_session(:login_method, to_string(method))
     |> redirect(to: user_return_to || signed_in_path(conn))
   end
+
+  @doc """
+  Whether the session was established through single sign-on.
+
+  SSO sessions trust the identity provider for second factors, so Flux's own
+  MFA-enrollment requirement does not apply to them. Nor does password rotation,
+  since members provisioned through SSO may have no password at all.
+  """
+  def sso_session?(%Plug.Conn{} = conn), do: get_session(conn, :login_method) == "sso"
+  def sso_session?(%{} = session), do: session["login_method"] == "sso"
 
   @doc """
   Logs the user out.
@@ -166,7 +187,8 @@ defmodule FluxWeb.UserAuth do
   # on an escape path (settings / password-change POST / log-out), otherwise the
   # redirect to settings would loop.
   defp password_rotation_required?(conn, scope) do
-    not password_change_escape_path?(conn) and Flux.Accounts.PasswordPolicy.expired?(scope)
+    not sso_session?(conn) and not password_change_escape_path?(conn) and
+      Flux.Accounts.PasswordPolicy.expired?(scope)
   end
 
   @password_change_escape_paths ~w(/users/settings /users/update-password /users/log-out)
@@ -208,14 +230,19 @@ defmodule FluxWeb.UserAuth do
   # When the session is created, rather than extended, the renew_session
   # function will clear the session to avoid fixation attacks. See the
   # renew_session function to customize this behaviour.
-  defp create_or_extend_session(conn, user, params) do
+  defp create_or_extend_session(conn, user, params, remember_allowed? \\ true) do
     token = Accounts.generate_user_session_token(user, FluxWeb.AuditMeta.from_conn(conn))
     remember_me = get_session(conn, :user_remember_me)
 
-    conn
-    |> renew_session(user)
-    |> put_token_in_session(token)
-    |> maybe_write_remember_me_cookie(token, params, remember_me)
+    conn = conn |> renew_session(user) |> put_token_in_session(token)
+
+    if remember_allowed? do
+      maybe_write_remember_me_cookie(conn, token, params, remember_me)
+    else
+      conn
+      |> delete_session(:user_remember_me)
+      |> delete_resp_cookie(@remember_me_cookie, [])
+    end
   end
 
   # Do not renew session if the user is already logged in
@@ -328,6 +355,10 @@ defmodule FluxWeb.UserAuth do
 
       # The enrollment page itself must stay reachable, or enforcement loops.
       socket.view == FluxWeb.UserLive.Settings ->
+        {:cont, socket}
+
+      # The identity provider owns the second factor for SSO sessions.
+      sso_session?(session) ->
         {:cont, socket}
 
       # Org requires MFA (entitlement re-checked in MfaEnforcement) and this user
