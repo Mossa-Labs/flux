@@ -144,6 +144,39 @@ defmodule Flux.Pipelines.PipelineQueueNameTest do
     end
   end
 
+  describe "Pipeline.consumed_queue/1" do
+    alias Flux.Pipelines.Pipeline
+
+    test "a queue-type source node's queue wins over source_queue" do
+      for config <- [%{"type" => "queue", "queue" => "events.in"}, %{"queue" => "events.in"}] do
+        pipeline = %Pipeline{source_queue: "fallback", steps: steps_with_source(config)}
+        assert Pipeline.consumed_queue(pipeline) == "events.in"
+      end
+    end
+
+    test "any other source type is fed through source_queue" do
+      config = %{"type" => "rabbitmq_external", "queue" => "Orders Queue"}
+
+      pipeline = %Pipeline{
+        source_queue: "rabbitmq_external.Orders_Queue",
+        steps: steps_with_source(config)
+      }
+
+      assert Pipeline.consumed_queue(pipeline) == "rabbitmq_external.Orders_Queue"
+    end
+
+    test "falls back to source_queue without a source node queue" do
+      for steps <- [
+            %{"version" => "1.0", "steps" => []},
+            steps_with_source(%{"type" => "webhook", "webhookPath" => "github"}),
+            steps_with_source(%{"type" => "queue", "queue" => ""})
+          ] do
+        assert Pipeline.consumed_queue(%Pipeline{source_queue: "webhooks.x", steps: steps}) ==
+                 "webhooks.x"
+      end
+    end
+  end
+
   defp steps_with_source(source_config) do
     %{
       "version" => "1.0",
