@@ -51,9 +51,34 @@ defmodule Flux.Queue.ReplayTest do
                Replay.normalize_filters(%{"pipeline_id" => pipeline.id}, org.id)
     end
 
+    test "resolves pipeline_id to the queue its queue-type source node consumes" do
+      scope = user_scope_fixture()
+      org = organization_fixture(scope)
+
+      steps = %{
+        "version" => "1.0",
+        "steps" => [],
+        "nodes" => [
+          %{"type" => "source", "sourceConfig" => %{"type" => "queue", "queue" => "events.in"}}
+        ]
+      }
+
+      pipeline = pipeline_fixture(org.id, %{source_queue: "default", steps: steps})
+
+      assert {:ok, %{"queue" => "events.in"}} =
+               Replay.normalize_filters(%{"pipeline_id" => pipeline.id}, org.id)
+    end
+
     test "returns an error for an unknown pipeline_id" do
       assert {:error, :pipeline_not_found} =
                Replay.normalize_filters(%{"pipeline_id" => 999_999}, 1)
+    end
+
+    test "returns an error for a queue filter that reaches outside the organization" do
+      for queue <- ["org.2.webhooks.stripe", "flux.events.dlq", "bad name"] do
+        assert {:error, {:invalid_queue, _}} =
+                 Replay.normalize_filters(%{"queue" => queue}, 1)
+      end
     end
   end
 

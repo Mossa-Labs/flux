@@ -1,25 +1,37 @@
 defmodule Flux.Workers.ReplayWorkerTest.FakeAdapter do
   @moduledoc """
   Test double implementing the DLQ-replay slice of `Flux.Queue.Adapter`. Batch
-  results are scripted via an `Agent`; `replay_dlq/2` pops the next one per call,
+  results are scripted via an `Agent`; `replay_dlq/3` pops the next one per call,
   letting tests drive the worker's batch loop. An `{:error, reason}` element in
-  the batch list is returned verbatim to exercise the failure path.
+  the batch list is returned verbatim to exercise the failure path. Every call
+  records the organization it was made for.
   """
   @behaviour Flux.Queue.Adapter
 
   def start(batches, depth) do
-    Agent.start_link(fn -> %{batches: batches, depth: depth} end, name: __MODULE__)
+    Agent.start_link(fn -> %{batches: batches, depth: depth, orgs: []} end, name: __MODULE__)
+  end
+
+  @doc "The organizations the worker's DLQ calls were made for, oldest first."
+  def orgs, do: Agent.get(__MODULE__, &Enum.reverse(&1.orgs))
+
+  @impl true
+  def get_dlq_depth(org_id) do
+    Agent.get_and_update(__MODULE__, fn state ->
+      {{:ok, state.depth}, %{state | orgs: [org_id | state.orgs]}}
+    end)
   end
 
   @impl true
-  def get_dlq_depth, do: {:ok, Agent.get(__MODULE__, & &1.depth)}
+  def replay_dlq(org_id, _filters, _limit) do
+    Agent.get_and_update(__MODULE__, fn state ->
+      state = %{state | orgs: [org_id | state.orgs]}
 
-  @impl true
-  def replay_dlq(_filters, _limit) do
-    Agent.get_and_update(__MODULE__, fn
-      %{batches: [{:error, _} = error | rest]} = state -> {error, %{state | batches: rest}}
-      %{batches: [batch | rest]} = state -> {{:ok, batch}, %{state | batches: rest}}
-      %{batches: []} = state -> {{:ok, %{replayed: 0, skipped: 0, exhausted?: true}}, state}
+      case state do
+        %{batches: [{:error, _} = error | rest]} -> {error, %{state | batches: rest}}
+        %{batches: [batch | rest]} -> {{:ok, batch}, %{state | batches: rest}}
+        %{batches: []} -> {{:ok, %{replayed: 0, skipped: 0, exhausted?: true}}, state}
+      end
     end)
   end
 
@@ -74,6 +86,9 @@ defmodule Flux.Workers.ReplayWorkerTest do
     assert_receive {:replay_progress, %{processed: 5, skipped: 1, failed: 0, total: total}}
     assert total >= 5
     assert_receive {:replay_done, %{processed: 5, skipped: 1, failed: 0}}
+
+    # Depth, then two replay batches: all for the job's own organization.
+    assert FakeAdapter.orgs() == [1, 1, 1]
   end
 
   test "counts a failure and stops when a batch errors" do
@@ -90,13 +105,17 @@ defmodule Flux.Workers.ReplayWorkerTest do
     assert_receive {:replay_done, %{failed: 1, processed: 0}}
   end
 
-  test "completes without a configured organization (record_event skipped)" do
+  test "cancels a job without an organization, touching no dead letters" do
     start_fake([%{replayed: 1, skipped: 0, exhausted?: true}], 1)
 
-    assert :ok =
-             ReplayWorker.perform(%Oban.Job{
-               id: 3,
-               args: %{"organization_id" => nil, "filters" => %{}, "batch_size" => 5}
-             })
+    for args <- [
+          %{"organization_id" => nil, "filters" => %{}, "batch_size" => 5},
+          %{"filters" => %{}, "batch_size" => 5}
+        ] do
+      assert {:cancel, :organization_required} =
+               ReplayWorker.perform(%Oban.Job{id: 3, args: args})
+    end
+
+    assert FakeAdapter.orgs() == []
   end
 end

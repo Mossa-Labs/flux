@@ -30,7 +30,7 @@ defmodule FluxWeb.DashboardLive.Index do
      |> assign(:active_pipeline_count, active_count)
      |> assign(:running_pipeline_count, running_count)
      |> assign(:anomaly_count, anomaly_count)
-     |> assign(:dlq_depth, dlq_depth())
+     |> assign(:dlq_depth, dlq_depth(socket.assigns.current_scope))
      |> assign(:metrics_by_node, metrics_by_node)
      |> assign_cluster_metrics(metrics_by_node)}
   end
@@ -63,7 +63,7 @@ defmodule FluxWeb.DashboardLive.Index do
      |> assign(:active_pipeline_count, active_count)
      |> assign(:running_pipeline_count, running_count)
      |> assign(:anomaly_count, anomaly_count)
-     |> assign(:dlq_depth, dlq_depth())}
+     |> assign(:dlq_depth, dlq_depth(socket.assigns.current_scope))}
   end
 
   def handle_info(_msg, socket), do: {:noreply, socket}
@@ -210,11 +210,12 @@ defmodule FluxWeb.DashboardLive.Index do
   defp format_number(num) when is_integer(num), do: Integer.to_string(num)
   defp format_number(_), do: "0"
 
-  # DLQ depth for the badge — only when the feature is licensed. Any other
-  # result (Community stub, unsupported adapter, broker error) means "no badge".
-  defp dlq_depth do
+  # The organization's own DLQ depth for the badge — only when the feature is
+  # licensed. Any other result (Community stub, unsupported adapter, broker
+  # error, no organization) means "no badge".
+  defp dlq_depth(%{organization_id: org_id}) when is_integer(org_id) do
     if Flux.License.has_feature?(:dlq) do
-      case Flux.Queue.dlq_depth() do
+      case Flux.Queue.dlq_depth(org_id) do
         {:ok, depth} -> depth
         _ -> 0
       end
@@ -222,4 +223,6 @@ defmodule FluxWeb.DashboardLive.Index do
       0
     end
   end
+
+  defp dlq_depth(_scope), do: 0
 end

@@ -32,19 +32,23 @@ defmodule Flux.Queue.Adapters.StubTest do
     assert :error = Stub.message_organization_id(%Broadway.Message{data: %{}, acknowledger: nil})
   end
 
-  test "list_dlq_messages/2 returns pro_required for :dlq" do
-    assert {:error, {:pro_required, :dlq}} = Stub.list_dlq_messages(50, 0)
+  test "list_dlq_messages/3 returns pro_required for :dlq" do
+    assert {:error, {:pro_required, :dlq}} = Stub.list_dlq_messages(1, 50, 0)
   end
 
-  test "get_dlq_depth/0 returns pro_required for :dlq" do
-    assert {:error, {:pro_required, :dlq}} = Stub.get_dlq_depth()
+  test "get_dlq_depth/1 returns pro_required for :dlq" do
+    assert {:error, {:pro_required, :dlq}} = Stub.get_dlq_depth(1)
   end
 
-  test "retry_message/1 returns pro_required for :dlq" do
-    assert {:error, {:pro_required, :dlq}} = Stub.retry_message(1)
+  test "retry_message/2 returns pro_required for :dlq" do
+    assert {:error, {:pro_required, :dlq}} = Stub.retry_message(1, 1)
   end
 
-  test "discard_message/1 returns pro_required for :dlq" do
-    assert {:error, {:pro_required, :dlq}} = Stub.discard_message(1)
+  test "discard_message/2 returns pro_required for :dlq" do
+    assert {:error, {:pro_required, :dlq}} = Stub.discard_message(1, 1)
+  end
+
+  test "replay_dlq/3 returns pro_required for :dlq" do
+    assert {:error, {:pro_required, :dlq}} = Stub.replay_dlq(1, %{}, 10)
   end
 end

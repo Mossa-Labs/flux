@@ -15,7 +15,9 @@ defmodule Flux.Queue do
   organization from the server (an API key, a pipeline, a source), never from
   user input.
 
-  Logical names are all a tenant ever sees.
+  Logical names are all a tenant ever sees: dead-letter results come back with
+  logical `original_queue` names, and the DLQ functions only ever act on the
+  given organization's dead letters.
 
   ## Usage
 
@@ -147,54 +149,70 @@ defmodule Flux.Queue do
   end
 
   @doc """
-  Lists messages currently in the dead-letter queue (non-destructive peek).
+  Lists messages currently in organization `org_id`'s dead-letter queue
+  (non-destructive peek). `original_queue` is the logical queue name.
 
   Returns `{:error, {:pro_required, :dlq}}` when the active adapter does not
   implement DLQ management (Community's Memory adapter, or the Pro stub).
   """
-  @spec list_dlq_messages(non_neg_integer(), non_neg_integer()) ::
+  @spec list_dlq_messages(organization_id(), non_neg_integer(), non_neg_integer()) ::
           {:ok, [Flux.Queue.Adapter.dlq_message()]} | error()
-  def list_dlq_messages(count \\ 50, offset \\ 0) do
-    dlq_call(:list_dlq_messages, [count, offset])
+  def list_dlq_messages(org_id, count \\ 50, offset \\ 0) do
+    with :ok <- check_org(org_id),
+         {:ok, messages} <- dlq_call(:list_dlq_messages, [org_id, count, offset]) do
+      {:ok, own_dead_letters(messages, org_id)}
+    end
   end
 
   @doc """
-  Returns the current depth (message count) of the dead-letter queue.
+  Returns the current depth (message count) of organization `org_id`'s
+  dead-letter queue.
   """
-  @spec dlq_depth() :: {:ok, non_neg_integer()} | error()
-  def dlq_depth do
-    dlq_call(:get_dlq_depth, [])
+  @spec dlq_depth(organization_id()) :: {:ok, non_neg_integer()} | error()
+  def dlq_depth(org_id) do
+    with :ok <- check_org(org_id) do
+      dlq_call(:get_dlq_depth, [org_id])
+    end
   end
 
   @doc """
-  Re-publishes a dead-lettered message back to its original queue and
-  removes it from the DLQ.
+  Re-publishes one of organization `org_id`'s dead-lettered messages back to its
+  original queue and removes it from the DLQ.
   """
-  @spec retry_message(term()) :: :ok | error()
-  def retry_message(delivery_tag) do
-    dlq_call(:retry_message, [delivery_tag])
+  @spec retry_message(organization_id(), term()) :: :ok | error()
+  def retry_message(org_id, delivery_tag) do
+    with :ok <- check_org(org_id) do
+      dlq_call(:retry_message, [org_id, delivery_tag])
+    end
   end
 
   @doc """
-  Permanently removes a message from the dead-letter queue.
+  Permanently removes one of organization `org_id`'s messages from its
+  dead-letter queue.
   """
-  @spec discard_message(term()) :: :ok | error()
-  def discard_message(delivery_tag) do
-    dlq_call(:discard_message, [delivery_tag])
+  @spec discard_message(organization_id(), term()) :: :ok | error()
+  def discard_message(org_id, delivery_tag) do
+    with :ok <- check_org(org_id) do
+      dlq_call(:discard_message, [org_id, delivery_tag])
+    end
   end
 
   @doc """
-  Bulk-replays up to `limit` dead-lettered messages matching `filters` back to
-  their original queues. Non-matching messages are left in the DLQ.
+  Bulk-replays up to `limit` of organization `org_id`'s dead-lettered messages
+  matching `filters` back to their original queues. Non-matching messages are
+  left in the DLQ. A `:queue` filter is a logical queue name.
 
   Drives one batch; `Flux.Workers.ReplayWorker` loops until the returned
   `exhausted?` flag is `true`. Returns `{:error, {:pro_required, :dlq}}` when the
   active adapter does not implement DLQ replay.
   """
-  @spec replay_dlq(Flux.Queue.Adapter.replay_filters(), pos_integer()) ::
+  @spec replay_dlq(organization_id(), Flux.Queue.Adapter.replay_filters(), pos_integer()) ::
           {:ok, Flux.Queue.Adapter.replay_result()} | error()
-  def replay_dlq(filters, limit) do
-    dlq_call(:replay_dlq, [filters, limit])
+  def replay_dlq(org_id, filters, limit) do
+    with :ok <- check_org(org_id),
+         {:ok, filters} <- physical_queue_filter(filters, org_id) do
+      dlq_call(:replay_dlq, [org_id, filters, limit])
+    end
   end
 
   defp physical(org_id, queue) do
@@ -211,6 +229,24 @@ defmodule Flux.Queue do
   defp check_message_org(%Message{organization_id: nil}, org_id), do: check_org(org_id)
   defp check_message_org(%Message{organization_id: org_id}, org_id), do: check_org(org_id)
   defp check_message_org(%Message{}, _org_id), do: {:error, :organization_mismatch}
+
+  defp physical_queue_filter(%{queue: queue} = filters, org_id) when is_binary(queue) do
+    with {:ok, physical} <- physical(org_id, queue) do
+      {:ok, %{filters | queue: physical}}
+    end
+  end
+
+  defp physical_queue_filter(filters, _org_id), do: {:ok, filters}
+
+  # Defence in depth: the adapter only reads the organization's own dead-letter
+  # queue, but keep only entries whose original queue is provably that
+  # organization's, and hand them back with their logical name.
+  defp own_dead_letters(messages, org_id) do
+    for %{original_queue: physical} = message <- messages,
+        {:ok, logical} <- [Naming.logical(org_id, physical)] do
+      %{message | original_queue: logical}
+    end
+  end
 
   # DLQ callbacks are optional on the adapter behaviour. Guard with
   # exports?/3 so an adapter that omits them (e.g. Memory) yields a clean

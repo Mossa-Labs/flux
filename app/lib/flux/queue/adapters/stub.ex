@@ -39,19 +39,19 @@ defmodule Flux.Queue.Adapters.Stub do
   def message_organization_id(_message), do: :error
 
   @impl Flux.Queue.Adapter
-  def list_dlq_messages(_count, _offset), do: dlq_required()
+  def list_dlq_messages(_org_id, _count, _offset), do: dlq_required()
 
   @impl Flux.Queue.Adapter
-  def get_dlq_depth, do: dlq_required()
+  def get_dlq_depth(_org_id), do: dlq_required()
 
   @impl Flux.Queue.Adapter
-  def retry_message(_delivery_tag), do: dlq_required()
+  def retry_message(_org_id, _delivery_tag), do: dlq_required()
 
   @impl Flux.Queue.Adapter
-  def discard_message(_delivery_tag), do: dlq_required()
+  def discard_message(_org_id, _delivery_tag), do: dlq_required()
 
   @impl Flux.Queue.Adapter
-  def replay_dlq(_filters, _limit), do: dlq_required()
+  def replay_dlq(_org_id, _filters, _limit), do: dlq_required()
 
   @impl GenServer
   def init(opts) do
