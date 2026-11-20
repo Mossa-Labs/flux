@@ -22,7 +22,8 @@ defmodule Flux.Queue.Adapter do
 
   An adapter must also carry each message's `organization_id` across the
   broker, so that a consuming pipeline can check it (see
-  `c:message_organization_id/1`).
+  `c:message_organization_id/1`), and it must keep each organization's
+  dead letters apart from every other organization's.
   """
 
   alias Flux.Queue.Message
@@ -32,11 +33,12 @@ defmodule Flux.Queue.Adapter do
   @type error :: {:error, term()}
 
   @typedoc """
-  A failed message peeked from the dead-letter queue. `delivery_tag` is the
-  broker-assigned handle used by `retry_message/1` and `discard_message/1`;
-  it is only valid for the adapter session that produced it. `source` is the
-  originating producer identifier (the published `Message.source`), surfaced so
-  the DLQ UI and `replay_dlq/2` can filter by it.
+  A failed message peeked from an organization's dead-letter queue.
+  `delivery_tag` is the broker-assigned handle used by `retry_message/2` and
+  `discard_message/2`; it is only valid for the adapter session that produced
+  it. `original_queue` is the *physical* queue the message was dead-lettered
+  from. `source` is the originating producer identifier (the published
+  `Message.source`), surfaced so the DLQ UI and `replay_dlq/3` can filter by it.
   """
   @type dlq_message :: %{
           delivery_tag: term(),
@@ -48,12 +50,12 @@ defmodule Flux.Queue.Adapter do
         }
 
   @typedoc """
-  Filter for `replay_dlq/2`. All keys are optional and combined with AND. An
-  empty map matches every dead-lettered message.
+  Filter for `replay_dlq/3`. All keys are optional and combined with AND. An
+  empty map matches every message in the organization's dead-letter queue.
 
     * `:time_range` - `%{from: DateTime.t(), to: DateTime.t()}`, matched against
       the message's dead-letter `timestamp`.
-    * `:queue` - exact match on `original_queue`.
+    * `:queue` - exact match on the *physical* `original_queue`.
     * `:source` - exact match on `source`.
   """
   @type replay_filters :: %{
@@ -63,7 +65,7 @@ defmodule Flux.Queue.Adapter do
         }
 
   @typedoc """
-  Result of one `replay_dlq/2` batch. `replayed` + `skipped` is the number of
+  Result of one `replay_dlq/3` batch. `replayed` + `skipped` is the number of
   messages drained from the DLQ this call; `exhausted?` is `true` once fewer
   than `limit` messages remained, signalling the caller to stop looping.
   """
@@ -117,35 +119,43 @@ defmodule Flux.Queue.Adapter do
   and the public `Stub` returns `{:error, {:pro_required, :dlq}}`. The
   `Flux.Queue` facade guards calls with `function_exported?/3` so an adapter
   that omits them never crashes the caller.
+
+  Every DLQ callback acts on one organization's dead letters only. An
+  organization must never see, count, retry, discard or replay another
+  organization's dead letters, including by guessing a delivery tag.
   """
-  @callback list_dlq_messages(count :: non_neg_integer(), offset :: non_neg_integer()) ::
-              {:ok, [dlq_message()]} | error()
+  @callback list_dlq_messages(
+              organization_id(),
+              count :: non_neg_integer(),
+              offset :: non_neg_integer()
+            ) :: {:ok, [dlq_message()]} | error()
 
-  @callback get_dlq_depth() :: {:ok, non_neg_integer()} | error()
+  @callback get_dlq_depth(organization_id()) :: {:ok, non_neg_integer()} | error()
 
-  @callback retry_message(delivery_tag :: term()) :: :ok | error()
+  @callback retry_message(organization_id(), delivery_tag :: term()) :: :ok | error()
 
-  @callback discard_message(delivery_tag :: term()) :: :ok | error()
+  @callback discard_message(organization_id(), delivery_tag :: term()) :: :ok | error()
 
   @doc """
-  Bulk-replays dead-lettered messages matching `filters` back to their original
-  queues, in a single broker session, up to `limit` messages per call.
+  Bulk-replays an organization's dead-lettered messages matching `filters` back
+  to their original queues, in a single broker session, up to `limit` messages
+  per call.
 
   Returns `{:ok, replay_result()}`; the caller (`Flux.Workers.ReplayWorker`)
   loops until `exhausted?` is `true`. Implementations must leave non-matching
   messages in the DLQ. This is a Pro feature; only EE broker adapters implement
   it.
   """
-  @callback replay_dlq(filters :: replay_filters(), limit :: pos_integer()) ::
+  @callback replay_dlq(organization_id(), filters :: replay_filters(), limit :: pos_integer()) ::
               {:ok, replay_result()} | error()
 
   @optional_callbacks [
     producer_spec: 1,
     message_organization_id: 1,
-    list_dlq_messages: 2,
-    get_dlq_depth: 0,
-    retry_message: 1,
-    discard_message: 1,
-    replay_dlq: 2
+    list_dlq_messages: 3,
+    get_dlq_depth: 1,
+    retry_message: 2,
+    discard_message: 2,
+    replay_dlq: 3
   ]
 end

@@ -137,25 +137,90 @@ defmodule Flux.QueueTest do
   describe "DLQ facade with an adapter that omits the optional callbacks" do
     # The active adapter in test is Memory, which does not implement the DLQ
     # callbacks. The facade must return a clean upgrade error, not crash.
-    test "list_dlq_messages/2 returns pro_required" do
-      assert {:error, {:pro_required, :dlq}} = Queue.list_dlq_messages()
-      assert {:error, {:pro_required, :dlq}} = Queue.list_dlq_messages(10, 5)
+    test "list_dlq_messages/3 returns pro_required" do
+      assert {:error, {:pro_required, :dlq}} = Queue.list_dlq_messages(@org)
+      assert {:error, {:pro_required, :dlq}} = Queue.list_dlq_messages(@org, 10, 5)
     end
 
-    test "dlq_depth/0 returns pro_required" do
-      assert {:error, {:pro_required, :dlq}} = Queue.dlq_depth()
+    test "dlq_depth/1 returns pro_required" do
+      assert {:error, {:pro_required, :dlq}} = Queue.dlq_depth(@org)
     end
 
-    test "retry_message/1 returns pro_required" do
-      assert {:error, {:pro_required, :dlq}} = Queue.retry_message(1)
+    test "retry_message/2 returns pro_required" do
+      assert {:error, {:pro_required, :dlq}} = Queue.retry_message(@org, 1)
     end
 
-    test "discard_message/1 returns pro_required" do
-      assert {:error, {:pro_required, :dlq}} = Queue.discard_message(1)
+    test "discard_message/2 returns pro_required" do
+      assert {:error, {:pro_required, :dlq}} = Queue.discard_message(@org, 1)
     end
 
-    test "replay_dlq/2 returns pro_required" do
-      assert {:error, {:pro_required, :dlq}} = Queue.replay_dlq(%{}, 100)
+    test "replay_dlq/3 returns pro_required" do
+      assert {:error, {:pro_required, :dlq}} = Queue.replay_dlq(@org, %{}, 100)
     end
+  end
+
+  describe "DLQ facade scoping" do
+    setup :use_recording_adapter
+
+    test "every DLQ call names the organization" do
+      Queue.dlq_depth(@org)
+      Queue.retry_message(@org, "t1")
+      Queue.discard_message(@org, "t2")
+      Queue.list_dlq_messages(@org, 10, 20)
+
+      assert_received {:dlq_call, :get_dlq_depth, [@org]}
+      assert_received {:dlq_call, :retry_message, [@org, "t1"]}
+      assert_received {:dlq_call, :discard_message, [@org, "t2"]}
+      assert_received {:dlq_call, :list_dlq_messages, [@org, 10, 20]}
+    end
+
+    test "refuses a call without an organization, before reaching the adapter" do
+      assert {:error, :organization_required} = Queue.dlq_depth(nil)
+      assert {:error, :organization_required} = Queue.list_dlq_messages(nil)
+      assert {:error, :organization_required} = Queue.retry_message(nil, "t")
+      assert {:error, :organization_required} = Queue.discard_message(nil, "t")
+      assert {:error, :organization_required} = Queue.replay_dlq(nil, %{}, 10)
+
+      refute_received {:dlq_call, _, _}
+    end
+
+    test "lists only the organization's own dead letters, by logical queue name" do
+      Process.put(:recording_dlq_messages, [
+        dead_letter("own", "org.42.webhooks.stripe"),
+        dead_letter("foreign", "org.43.webhooks.stripe"),
+        dead_letter("legacy", "webhooks.stripe"),
+        dead_letter("system", "org.42.flux.dlq"),
+        dead_letter("unknown", nil)
+      ])
+
+      assert {:ok, [only]} = Queue.list_dlq_messages(@org)
+      assert only.delivery_tag == "own"
+      assert only.original_queue == "webhooks.stripe"
+    end
+
+    test "replays by the physical queue of a logical queue filter" do
+      assert {:ok, _} = Queue.replay_dlq(@org, %{queue: "webhooks.stripe", source: "s"}, 10)
+
+      assert_received {:dlq_call, :replay_dlq,
+                       [@org, %{queue: "org.42.webhooks.stripe", source: "s"}, 10]}
+    end
+
+    test "refuses a replay queue filter that reaches outside the organization" do
+      assert {:error, {:invalid_queue, :reserved_prefix}} =
+               Queue.replay_dlq(@org, %{queue: "org.43.webhooks.stripe"}, 10)
+
+      refute_received {:dlq_call, :replay_dlq, _}
+    end
+  end
+
+  defp dead_letter(tag, original_queue) do
+    %{
+      delivery_tag: tag,
+      original_queue: original_queue,
+      source: "webhook",
+      reason: "rejected",
+      timestamp: nil,
+      payload: %{}
+    }
   end
 end

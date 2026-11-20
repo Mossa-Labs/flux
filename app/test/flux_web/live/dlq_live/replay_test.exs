@@ -2,6 +2,10 @@ defmodule FluxWeb.DLQLive.ReplayTest.FakeDLQAdapter do
   @moduledoc """
   Minimal DLQ-capable `Flux.Queue.Adapter` double so the DLQ LiveView renders its
   full (entitled + supported) surface in tests without a live broker.
+
+  It lists one dead letter of the calling organization, plus one that claims
+  to come from another organization's queue, which `Flux.Queue` must never
+  let through.
   """
   @behaviour Flux.Queue.Adapter
 
@@ -17,19 +21,29 @@ defmodule FluxWeb.DLQLive.ReplayTest.FakeDLQAdapter do
   def message, do: @message
 
   @impl true
-  def list_dlq_messages(_count, _offset), do: {:ok, [@message]}
+  def list_dlq_messages(org_id, _count, _offset) do
+    foreign = %{
+      @message
+      | delivery_tag: "tag-foreign",
+        original_queue: "org.#{org_id + 1}.foreign.secret",
+        payload: %{"secret" => "other-org"}
+    }
+
+    {:ok, [%{@message | original_queue: "org.#{org_id}.events.a"}, foreign]}
+  end
 
   @impl true
-  def get_dlq_depth, do: {:ok, 1}
+  def get_dlq_depth(_org_id), do: {:ok, 1}
 
   @impl true
-  def retry_message(_delivery_tag), do: :ok
+  def retry_message(_org_id, _delivery_tag), do: :ok
 
   @impl true
-  def discard_message(_delivery_tag), do: :ok
+  def discard_message(_org_id, _delivery_tag), do: :ok
 
   @impl true
-  def replay_dlq(_filters, _limit), do: {:ok, %{replayed: 1, skipped: 0, exhausted?: true}}
+  def replay_dlq(_org_id, _filters, _limit),
+    do: {:ok, %{replayed: 1, skipped: 0, exhausted?: true}}
 
   @impl true
   def publish(_queue, _message, _opts), do: :ok
@@ -97,6 +111,15 @@ defmodule FluxWeb.DLQLive.ReplayTest do
       assert html =~ "webhook"
       assert html =~ "Replay all (filtered)"
       refute html =~ "does not support dead-letter management"
+    end
+
+    test "never shows a dead letter from another organization's queue", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/system/dlq")
+
+      assert html =~ "events.a"
+      refute html =~ "foreign.secret"
+      refute html =~ "other-org"
+      refute html =~ "tag-foreign"
     end
 
     test "selecting a row reveals the 'Replay selected' action", %{conn: conn} do

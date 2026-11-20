@@ -139,7 +139,7 @@ defmodule FluxWeb.DLQLive.Index do
         {:noreply,
          run_dlq_op(
            socket,
-           &Queue.retry_message/1,
+           &Queue.retry_message/2,
            delivery_tag,
            "Message replayed to its original queue."
          )}
@@ -153,16 +153,16 @@ defmodule FluxWeb.DLQLive.Index do
 
       delivery_tag ->
         {:noreply,
-         run_dlq_op(socket, &Queue.discard_message/1, delivery_tag, "Message discarded.")}
+         run_dlq_op(socket, &Queue.discard_message/2, delivery_tag, "Message discarded.")}
     end
   end
 
   def handle_event("retry_all", _params, socket) do
-    {:noreply, run_dlq_bulk(socket, &Queue.retry_message/1, "Replayed")}
+    {:noreply, run_dlq_bulk(socket, &Queue.retry_message/2, "Replayed")}
   end
 
   def handle_event("discard_all", _params, socket) do
-    {:noreply, run_dlq_bulk(socket, &Queue.discard_message/1, "Discarded")}
+    {:noreply, run_dlq_bulk(socket, &Queue.discard_message/2, "Discarded")}
   end
 
   def handle_event("filter", %{"filters" => filters}, socket) do
@@ -202,7 +202,7 @@ defmodule FluxWeb.DLQLive.Index do
 
     {ok, failed} =
       Enum.reduce(delivery_tags, {0, 0}, fn tag, {ok, failed} ->
-        case Queue.retry_message(tag) do
+        case Queue.retry_message(org_id(socket), tag) do
           :ok -> {ok + 1, failed}
           {:error, _} -> {ok, failed + 1}
         end
@@ -255,14 +255,14 @@ defmodule FluxWeb.DLQLive.Index do
     page = socket.assigns.page
 
     socket =
-      case Queue.dlq_depth() do
+      case Queue.dlq_depth(org_id(socket)) do
         {:ok, depth} -> socket |> assign(:depth, depth) |> assign(:unsupported, false)
         {:error, {:pro_required, :dlq}} -> assign(socket, :unsupported, true)
         {:error, _} -> socket
       end
 
     socket =
-      case Queue.list_dlq_messages(@per_page, page * @per_page) do
+      case Queue.list_dlq_messages(org_id(socket), @per_page, page * @per_page) do
         {:ok, messages} ->
           assign(
             socket,
@@ -279,8 +279,13 @@ defmodule FluxWeb.DLQLive.Index do
 
   defp load_dlq(socket), do: socket
 
+  # Every DLQ operation acts on the caller's own organization's dead letters
+  # only (see `Flux.Queue`), so a delivery tag can't reach another
+  # organization's message.
+  defp org_id(socket), do: socket.assigns.current_scope.organization_id
+
   defp run_dlq_op(socket, op, delivery_tag, success_msg) do
-    case op.(delivery_tag) do
+    case op.(org_id(socket), delivery_tag) do
       :ok ->
         socket |> put_flash(:info, success_msg) |> load_dlq()
 
@@ -293,7 +298,7 @@ defmodule FluxWeb.DLQLive.Index do
     {ok, failed} =
       socket.assigns.messages
       |> Enum.reduce({0, 0}, fn msg, {ok, failed} ->
-        case op.(msg.delivery_tag) do
+        case op.(org_id(socket), msg.delivery_tag) do
           :ok -> {ok + 1, failed}
           {:error, _} -> {ok, failed + 1}
         end
@@ -681,7 +686,7 @@ defmodule FluxWeb.DLQLive.Index do
 
         case Enum.find(pipelines, fn p -> to_string(p.id) == to_string(pid) end) do
           nil -> filters["queue"]
-          pipeline -> pipeline.source_queue
+          pipeline -> Flux.Pipelines.Pipeline.consumed_queue(pipeline)
         end
     end
   end

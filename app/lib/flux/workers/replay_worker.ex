@@ -3,15 +3,18 @@ defmodule Flux.Workers.ReplayWorker do
   Oban worker that bulk-replays dead-lettered messages matching a set of filters
   (MOS-474). Enqueued by `Flux.Queue.Replay.replay_messages/2`.
 
-  It loops `Flux.Queue.replay_dlq/2` in batches until the adapter reports the
+  It loops `Flux.Queue.replay_dlq/3` in batches until the adapter reports the
   filtered set is exhausted, broadcasting `{:replay_progress, progress}` on the
   `Flux.Queue.Replay.topic/1` channel after each batch and `{:replay_done,
   progress}` on completion. The final tally is recorded to alert history via
   `Flux.Alerts.record_event/2` (a no-op in Community).
 
   Replay only works when the active queue adapter implements DLQ replay (EE
-  brokers). Under Community/Memory the first `replay_dlq/2` returns
+  brokers). Under Community/Memory the first `replay_dlq/3` returns
   `{:error, {:pro_required, :dlq}}`; the worker records the failure and stops.
+
+  A job only ever replays its own organization's dead letters; a job without an
+  `organization_id` is cancelled.
   """
 
   use Oban.Worker, queue: :default, max_attempts: 3
@@ -24,13 +27,13 @@ defmodule Flux.Workers.ReplayWorker do
   @default_batch_size 100
 
   @impl Oban.Worker
-  def perform(%Oban.Job{id: job_id, args: args}) do
-    org_id = args["organization_id"]
+  def perform(%Oban.Job{id: job_id, args: %{"organization_id" => org_id} = args})
+      when is_integer(org_id) and org_id > 0 do
     filters = build_filters(args["filters"])
     batch_size = args["batch_size"] || @default_batch_size
 
-    initial = %{Replay.zero_progress() | total: starting_total()}
-    final = drain(filters, batch_size, initial, job_id)
+    initial = %{Replay.zero_progress() | total: starting_total(org_id)}
+    final = drain(org_id, filters, batch_size, initial, job_id)
 
     broadcast(job_id, {:replay_done, final})
     record_event(org_id, final, args["filters"])
@@ -38,8 +41,13 @@ defmodule Flux.Workers.ReplayWorker do
     :ok
   end
 
-  defp drain(filters, batch_size, progress, job_id) do
-    case Queue.replay_dlq(filters, batch_size) do
+  def perform(%Oban.Job{}) do
+    Logger.error("DLQ replay cancelled: the job has no organization")
+    {:cancel, :organization_required}
+  end
+
+  defp drain(org_id, filters, batch_size, progress, job_id) do
+    case Queue.replay_dlq(org_id, filters, batch_size) do
       {:ok, %{replayed: replayed, skipped: skipped, exhausted?: exhausted?}} ->
         progress = %{
           progress
@@ -53,7 +61,7 @@ defmodule Flux.Workers.ReplayWorker do
         if exhausted? do
           progress
         else
-          drain(filters, batch_size, progress, job_id)
+          drain(org_id, filters, batch_size, progress, job_id)
         end
 
       {:error, reason} ->
@@ -62,8 +70,8 @@ defmodule Flux.Workers.ReplayWorker do
     end
   end
 
-  defp starting_total do
-    case Queue.dlq_depth() do
+  defp starting_total(org_id) do
+    case Queue.dlq_depth(org_id) do
       {:ok, depth} -> depth
       _ -> 0
     end
@@ -77,8 +85,6 @@ defmodule Flux.Workers.ReplayWorker do
   defp broadcast(job_id, message) do
     Phoenix.PubSub.broadcast(Flux.PubSub, Replay.topic(job_id), message)
   end
-
-  defp record_event(nil, _progress, _filters), do: :ok
 
   defp record_event(org_id, progress, filters) do
     Flux.Alerts.record_event(org_id, %{

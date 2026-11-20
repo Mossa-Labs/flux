@@ -3,13 +3,14 @@ defmodule Flux.Queue.Replay do
   Filtered, progress-tracked bulk replay of dead-lettered messages (MOS-474).
 
   This is the orchestration/facade layer. The actual filtered drain runs in the
-  active queue adapter's `replay_dlq/2` callback (a Pro feature; only EE broker
+  active queue adapter's `replay_dlq/3` callback (a Pro feature; only EE broker
   adapters implement it). `replay_messages/2` normalizes UI filters and enqueues
-  a `Flux.Workers.ReplayWorker` Oban job, which loops `Flux.Queue.replay_dlq/2`
-  in batches and broadcasts progress on the `topic/1` PubSub channel.
+  a `Flux.Workers.ReplayWorker` Oban job, which loops `Flux.Queue.replay_dlq/3`
+  in batches and broadcasts progress on the `topic/1` PubSub channel. A replay
+  only ever touches its own organization's dead letters.
 
   Single-message and selected-message replay still go through the synchronous
-  `Flux.Queue.retry_message/1` (delivery tags are session-bound and cannot cross
+  `Flux.Queue.retry_message/2` (delivery tags are session-bound and cannot cross
   into a background worker); this module is only for whole-DLQ filtered replays.
 
   ## Filters
@@ -17,9 +18,10 @@ defmodule Flux.Queue.Replay do
   A plain map; all keys optional and ANDed. Accepts atom or string keys:
 
     * `time_range` - `%{from: DateTime | iso8601, to: DateTime | iso8601}`
-    * `queue` - exact original-queue match
+    * `queue` - exact original-queue match, as a logical queue name
     * `source` - exact source match
-    * `pipeline_id` - resolved here to the pipeline's `source_queue`
+    * `pipeline_id` - resolved here to the queue the pipeline consumes
+      (`Flux.Pipelines.Pipeline.consumed_queue/1`)
 
   ## Progress
 
@@ -60,8 +62,10 @@ defmodule Flux.Queue.Replay do
     * `:batch_size` - messages drained per `replay_dlq/2` call
       (default `#{@default_batch_size}`).
 
-  Returns `{:ok, %Oban.Job{}}`, or `{:error, :pipeline_not_found}` when a
-  `pipeline_id` filter does not resolve within the organization.
+  Returns `{:ok, %Oban.Job{}}`, `{:error, :pipeline_not_found}` when a
+  `pipeline_id` filter does not resolve within the organization, or
+  `{:error, {:invalid_queue, reason}}` when a `queue` filter isn't a valid
+  logical queue name.
   """
   @spec replay_messages(map(), keyword()) :: {:ok, Oban.Job.t()} | {:error, term()}
   def replay_messages(filters, opts) do
@@ -80,7 +84,7 @@ defmodule Flux.Queue.Replay do
 
   @doc """
   Normalizes a raw UI filter map into the JSON-safe, string-keyed form stored in
-  the worker's Oban args. Resolves `pipeline_id` to its `source_queue`.
+  the worker's Oban args. Resolves `pipeline_id` to the queue it consumes.
 
   Exposed for testing; `replay_messages/2` calls it internally.
   """
@@ -104,13 +108,22 @@ defmodule Flux.Queue.Replay do
   defp resolve_queue(filters, org_id) do
     case blank_to_nil(filters["pipeline_id"]) do
       nil ->
-        {:ok, blank_to_nil(filters["queue"])}
+        validate_queue(blank_to_nil(filters["queue"]))
 
       pipeline_id ->
         case Flux.Pipelines.get_pipeline(to_integer(pipeline_id), org_id) do
           nil -> {:error, :pipeline_not_found}
-          pipeline -> {:ok, pipeline.source_queue}
+          pipeline -> {:ok, Flux.Pipelines.Pipeline.consumed_queue(pipeline)}
         end
+    end
+  end
+
+  defp validate_queue(nil), do: {:ok, nil}
+
+  defp validate_queue(queue) do
+    case Flux.Queue.Naming.validate_logical(queue) do
+      :ok -> {:ok, queue}
+      {:error, reason} -> {:error, {:invalid_queue, reason}}
     end
   end
 
