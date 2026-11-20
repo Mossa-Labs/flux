@@ -72,7 +72,7 @@ defmodule Flux.Integration.SinkDeliveryTest do
   describe "Postgres sink delivery (internal mode)" do
     setup do
       Flux.Repo.query!("""
-      CREATE TABLE IF NOT EXISTS test_sink_events (
+      CREATE TABLE IF NOT EXISTS sink_data.test_sink_events (
         event_type VARCHAR(255),
         user_id VARCHAR(255),
         inserted_at TIMESTAMP,
@@ -81,7 +81,7 @@ defmodule Flux.Integration.SinkDeliveryTest do
       """)
 
       on_exit(fn ->
-        Flux.Repo.query!("DROP TABLE IF EXISTS test_sink_events")
+        Flux.Repo.query!("DROP TABLE IF EXISTS sink_data.test_sink_events")
       end)
 
       :ok
@@ -98,7 +98,9 @@ defmodule Flux.Integration.SinkDeliveryTest do
       assert :ok = Postgres.deliver(data, config, [])
 
       # Verify the row was inserted
-      {:ok, result} = Flux.Repo.query("SELECT event_type, user_id FROM test_sink_events")
+      {:ok, result} =
+        Flux.Repo.query("SELECT event_type, user_id FROM sink_data.test_sink_events")
+
       assert result.num_rows == 1
       assert result.rows == [["user.created", "user-123"]]
     end
@@ -114,7 +116,9 @@ defmodule Flux.Integration.SinkDeliveryTest do
       assert :ok = Postgres.deliver(%{"type" => "user.updated", "user" => "u2"}, config, [])
 
       {:ok, result} =
-        Flux.Repo.query("SELECT event_type, user_id FROM test_sink_events ORDER BY event_type")
+        Flux.Repo.query(
+          "SELECT event_type, user_id FROM sink_data.test_sink_events ORDER BY event_type"
+        )
 
       assert result.num_rows == 2
       assert result.rows == [["user.created", "u1"], ["user.updated", "u2"]]
@@ -130,7 +134,9 @@ defmodule Flux.Integration.SinkDeliveryTest do
       data = %{"payload" => %{"type" => "order.placed", "user_id" => "u-456"}}
       assert :ok = Postgres.deliver(data, config, [])
 
-      {:ok, result} = Flux.Repo.query("SELECT event_type, user_id FROM test_sink_events")
+      {:ok, result} =
+        Flux.Repo.query("SELECT event_type, user_id FROM sink_data.test_sink_events")
+
       assert result.num_rows == 1
       assert result.rows == [["order.placed", "u-456"]]
     end
@@ -147,7 +153,7 @@ defmodule Flux.Integration.SinkDeliveryTest do
 
       {:ok, result} =
         Flux.Repo.query(
-          "SELECT inserted_at, updated_at FROM test_sink_events WHERE event_type = 'test.event'"
+          "SELECT inserted_at, updated_at FROM sink_data.test_sink_events WHERE event_type = 'test.event'"
         )
 
       assert result.num_rows == 1
