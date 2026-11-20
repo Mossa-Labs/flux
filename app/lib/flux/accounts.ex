@@ -511,12 +511,21 @@ defmodule Flux.Accounts do
     end
   end
 
-  def revoke_api_key(id) do
-    case Repo.get(ApiKey, id) do
+  @doc """
+  Revokes the API key with `id`, only if it belongs to `organization_id`.
+
+  Returns `{:error, :not_found}` for a key that doesn't exist or belongs to
+  another organization.
+  """
+  def revoke_api_key(organization_id, id)
+      when is_integer(organization_id) and is_integer(id) do
+    case Repo.get_by(ApiKey, id: id, organization_id: organization_id) do
       nil -> {:error, :not_found}
       api_key -> revoke_api_key(api_key)
     end
   end
+
+  def revoke_api_key(_organization_id, _id), do: {:error, :not_found}
 
   @doc """
   Authenticates a raw API key. Returns `{:ok, %ApiKey{}}` for an active key

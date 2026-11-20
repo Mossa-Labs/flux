@@ -90,7 +90,8 @@ defmodule FluxWeb.SystemSettingsLive do
        |> assign(:usage, load_usage(org_id))
        |> assign_security_settings(org_id)
        |> assign_sso_defaults()
-       |> stream(:teams_stream, teams)}
+       |> stream(:teams_stream, teams)
+       |> attach_hook(:recheck_owner, :handle_event, &recheck_owner/3)}
     else
       Process.send_after(self(), :redirect_to_dashboard, @redirect_after_ms)
       Process.send_after(self(), :tick, @tick_ms)
@@ -542,6 +543,30 @@ defmodule FluxWeb.SystemSettingsLive do
     end
   end
 
+  # Events that only change local form state: no data is read or written, so
+  # they skip the database round trip below. Anything not listed is re-checked,
+  # so a new event is safe by default.
+  @ui_events ~w(validate_branding validate_team validate_member clear_team_form
+                clear_member_form new_team new_member dismiss_api_key
+                confirm_sso_enforcement confirm_sso_delete cancel_sso_confirm)
+
+  # Runs before every handle_event on an authorized page. Demoting, disabling or
+  # removing an owner doesn't close their open page, and this page holds the
+  # writes that matter most (members, API keys, security settings, the license),
+  # so each event re-reads the caller's role from the database, requires it to
+  # still be owner, and hands the handlers that fresh scope.
+  defp recheck_owner(event, _params, socket) when event in @ui_events, do: {:cont, socket}
+
+  defp recheck_owner(_event, _params, socket) do
+    scope = current_scope_from_db(socket)
+
+    if scope && Permissions.can?(scope, :view_system_settings) do
+      {:cont, assign(socket, :current_scope, scope)}
+    else
+      {:halt, put_flash(socket, :error, "You are no longer allowed to change System Settings.")}
+    end
+  end
+
   defp sso_error_message(errors) do
     case errors do
       [{:base, msg} | _] ->
@@ -697,7 +722,13 @@ defmodule FluxWeb.SystemSettingsLive do
     end
   end
 
+  # A visitor who may not view this page still holds a live socket (they see the
+  # 403 and its countdown), and a socket can push any event with any params.
+  # Refuse every event from it before a handler can read or write anything.
   @impl true
+  def handle_event(_event, _params, %{assigns: %{authorized: false}} = socket),
+    do: {:noreply, socket}
+
   def handle_event("activate_license", %{"license" => %{"token" => token}}, socket) do
     case token |> to_string() |> String.trim() |> activate_license() do
       {:ok, license} ->
@@ -718,37 +749,40 @@ defmodule FluxWeb.SystemSettingsLive do
   end
 
   def handle_event("create_api_key", %{"api_key" => params}, socket) do
-    org_id = socket.assigns.org_id
+    with_fresh_permission(socket, :view_system_settings, "manage API keys", fn scope ->
+      org_id = scope.organization_id
 
-    case Accounts.create_api_key(org_id, api_key_attrs(params)) do
-      {:ok, raw, _api_key} ->
-        {:noreply,
-         socket
-         |> assign(:revealed_key, raw)
-         |> assign(:api_keys, Accounts.list_api_keys(org_id))
-         |> assign(:api_key_form, new_api_key_form())
-         |> put_flash(:info, "API key created.")}
+      case Accounts.create_api_key(org_id, api_key_attrs(params)) do
+        {:ok, raw, _api_key} ->
+          {:noreply,
+           socket
+           |> assign(:revealed_key, raw)
+           |> assign(:api_keys, Accounts.list_api_keys(org_id))
+           |> assign(:api_key_form, new_api_key_form())
+           |> put_flash(:info, "API key created.")}
 
-      {:error, changeset} ->
-        {:noreply, assign(socket, :api_key_form, to_form(changeset, as: :api_key))}
-    end
+        {:error, changeset} ->
+          {:noreply, assign(socket, :api_key_form, to_form(changeset, as: :api_key))}
+      end
+    end)
   end
 
   def handle_event("revoke_api_key", %{"id" => id}, socket) do
-    org_id = socket.assigns.org_id
+    with_fresh_permission(socket, :view_system_settings, "manage API keys", fn scope ->
+      org_id = scope.organization_id
 
-    socket =
-      case Accounts.revoke_api_key(id) do
-        {:ok, _} ->
+      socket =
+        with {:ok, id} <- parse_id(id),
+             {:ok, _} <- Accounts.revoke_api_key(org_id, id) do
           socket
           |> assign(:api_keys, Accounts.list_api_keys(org_id))
           |> put_flash(:info, "API key revoked.")
+        else
+          _ -> put_flash(socket, :error, "Could not revoke key.")
+        end
 
-        _ ->
-          put_flash(socket, :error, "Could not revoke key.")
-      end
-
-    {:noreply, socket}
+      {:noreply, socket}
+    end)
   end
 
   def handle_event("dismiss_api_key", _params, socket) do
@@ -1140,39 +1174,13 @@ defmodule FluxWeb.SystemSettingsLive do
      |> assign(:editing_member_id, nil)}
   end
 
-  def handle_event("edit_member", %{"id" => id, "kind" => "org_centric"}, socket) do
-    om = Repo.get!(OrganizationMember, String.to_integer(id)) |> Repo.preload(:user)
-    email = if om.user, do: om.user.email, else: ""
-
-    form =
-      %{"email" => email, "role" => om.role}
-      |> to_form(as: "member")
-
-    {:noreply,
-     socket
-     |> assign(:member_form, form)
-     |> assign(:editing_member_id, {om.id, :org_centric})}
-  end
-
-  def handle_event("edit_member", %{"id" => id, "kind" => "team_centric"}, socket) do
-    scope = socket.assigns.current_scope
-    tm = Structure.get_team_member!(scope, String.to_integer(id))
-    email = if tm.user, do: tm.user.email, else: ""
-
-    form =
-      %{
-        "email" => email,
-        "first_name" => tm.first_name || "",
-        "last_name" => tm.last_name || "",
-        "team_id" => to_string(tm.team_id),
-        "role" => tm.role
-      }
-      |> to_form(as: "member")
-
-    {:noreply,
-     socket
-     |> assign(:member_form, form)
-     |> assign(:editing_member_id, {tm.id, :team_centric})}
+  def handle_event("edit_member", %{"id" => id}, socket) do
+    with_member(socket, id, fn _scope, member ->
+      {:noreply,
+       socket
+       |> assign(:member_form, edit_member_form(member))
+       |> assign(:editing_member_id, member.id)}
+    end)
   end
 
   def handle_event("validate_member", %{"member" => params}, socket) do
@@ -1184,22 +1192,45 @@ defmodule FluxWeb.SystemSettingsLive do
   end
 
   def handle_event("save_member", %{"member" => params}, socket) do
-    scope = socket.assigns.current_scope
+    with_fresh_permission(socket, :manage_team_members, "manage members", fn scope ->
+      save_member(socket, scope, params)
+    end)
+  end
+
+  # remove/disable/enable share the same shape across both RBAC modes: look the
+  # member up (see with_member/3), guard against acting on your own account
+  # (except enable), run the action, then reload the list. The org_centric and
+  # team_centric specifics are isolated in the *_member/1 helpers below. Any
+  # `kind` the client sends is ignored.
+  def handle_event("remove_member", %{"id" => id}, socket) do
+    guarded_member_action(socket, id, "remove", &delete_member/1, "Member removed.")
+  end
+
+  def handle_event("disable_member", %{"id" => id}, socket) do
+    guarded_member_action(socket, id, "disable", &disable_member/1, "Member disabled.")
+  end
+
+  def handle_event("enable_member", %{"id" => id}, socket) do
+    with_member(socket, id, fn _scope, member ->
+      {:ok, _} = enable_member(member)
+      {:noreply, socket |> reload_members() |> put_flash(:info, "Member re-enabled.")}
+    end)
+  end
+
+  defp save_member(socket, scope, params) do
     org_id = scope.organization_id
     rbac_mode = socket.assigns.rbac_mode
     editing = socket.assigns[:editing_member_id]
 
     result =
       if editing do
-        {id, kind} = editing
-
-        case kind do
-          :org_centric ->
-            om = Repo.get!(OrganizationMember, id)
+        # Re-fetched within the organization: the id was stored by edit_member,
+        # but the lookup must not trust it any more than a client-sent one.
+        case fetch_member(scope, rbac_mode, editing) do
+          {:ok, %OrganizationMember{} = om} ->
             Structure.update_organization_member(om, %{role: params["role"] || "member"})
 
-          :team_centric ->
-            tm = Structure.get_team_member!(scope, id)
+          {:ok, %TeamMember{} = tm} ->
             team_id = params["team_id"] && String.to_integer(params["team_id"])
 
             attrs = %{
@@ -1225,6 +1256,9 @@ defmodule FluxWeb.SystemSettingsLive do
               end
 
             Structure.update_team_member(tm, attrs)
+
+          {:error, :not_found} ->
+            {:error, "Member not found."}
         end
       else
         case rbac_mode do
@@ -1293,42 +1327,88 @@ defmodule FluxWeb.SystemSettingsLive do
     end
   end
 
-  # remove/disable/enable share the same shape across both RBAC modes: look the
-  # member up by kind, guard against acting on your own account (except enable),
-  # run the action, then reload the list. The org_centric/team_centric specifics
-  # are isolated in the fetch_member/2 and *_member/1 helpers below.
-  def handle_event("remove_member", %{"id" => id, "kind" => kind}, socket) do
-    guarded_member_action(socket, id, kind, "remove", &delete_member/1, "Member removed.")
-  end
-
-  def handle_event("disable_member", %{"id" => id, "kind" => kind}, socket) do
-    guarded_member_action(socket, id, kind, "disable", &disable_member/1, "Member disabled.")
-  end
-
-  def handle_event("enable_member", %{"id" => id, "kind" => kind}, socket) do
-    member = fetch_member(socket, kind, id)
-    {:ok, _} = enable_member(member)
-    {:noreply, socket |> reload_members() |> put_flash(:info, "Member re-enabled.")}
-  end
-
   # Runs `action` on the member unless it is the current user's own account, in
   # which case it refuses with a "You cannot <verb> your own account." flash.
-  defp guarded_member_action(socket, id, kind, verb, action, success_message) do
-    member = fetch_member(socket, kind, id)
+  defp guarded_member_action(socket, id, verb, action, success_message) do
+    with_member(socket, id, fn _scope, member ->
+      if own_account?(member, socket) do
+        {:noreply, put_flash(socket, :error, "You cannot #{verb} your own account.")}
+      else
+        {:ok, _} = action.(member)
+        {:noreply, socket |> reload_members() |> put_flash(:info, success_message)}
+      end
+    end)
+  end
 
-    if own_account?(member, socket) do
-      {:noreply, put_flash(socket, :error, "You cannot #{verb} your own account.")}
+  # Member events trust nothing from the client but the id. The caller must
+  # still be allowed to manage members, and the lookup is confined to the
+  # organization this page manages, with the member kind taken from the
+  # server's RBAC mode, so another organization's id or a forged `kind` finds
+  # nothing.
+  defp with_member(socket, id, fun) do
+    with_fresh_permission(socket, :manage_team_members, "manage members", fn scope ->
+      with {:ok, id} <- parse_id(id),
+           {:ok, member} <- fetch_member(scope, socket.assigns.rbac_mode, id) do
+        fun.(scope, member)
+      else
+        _ -> {:noreply, put_flash(socket, :error, "Member not found.")}
+      end
+    end)
+  end
+
+  defp fetch_member(scope, :org_centric, id), do: Structure.fetch_organization_member(scope, id)
+  defp fetch_member(scope, :team_centric, id), do: Structure.fetch_team_member(scope, id)
+
+  defp edit_member_form(%OrganizationMember{} = om) do
+    to_form(%{"email" => user_email(om), "role" => om.role}, as: "member")
+  end
+
+  defp edit_member_form(%TeamMember{} = tm) do
+    to_form(
+      %{
+        "email" => user_email(tm),
+        "first_name" => tm.first_name || "",
+        "last_name" => tm.last_name || "",
+        "team_id" => to_string(tm.team_id),
+        "role" => tm.role
+      },
+      as: "member"
+    )
+  end
+
+  defp user_email(%{user: %Accounts.User{email: email}}), do: email
+  defp user_email(_member), do: ""
+
+  # Member and API key writes re-check the permission against the caller's role
+  # as it is now, re-read from the database, the way SSO writes do (see
+  # with_sso_access/2). Demoting or removing an owner doesn't close their open
+  # page, and these are the writes that would let them restore their own
+  # access: re-promoting themselves, or minting a key.
+  defp with_fresh_permission(socket, action, what, fun) do
+    scope = current_scope_from_db(socket)
+
+    if scope && Permissions.can?(scope, :view_system_settings) &&
+         Permissions.can?(scope, action) do
+      fun.(scope)
     else
-      {:ok, _} = action.(member)
-      {:noreply, socket |> reload_members() |> put_flash(:info, success_message)}
+      {:noreply, put_flash(socket, :error, "You are not allowed to #{what}.")}
     end
   end
 
-  defp fetch_member(_socket, "org_centric", id),
-    do: Repo.get!(OrganizationMember, String.to_integer(id))
+  # Database ids are positive bigints; anything else can't name a row, and an
+  # out-of-range integer would make the database driver raise.
+  @max_id 9_223_372_036_854_775_807
 
-  defp fetch_member(socket, "team_centric", id),
-    do: Structure.get_team_member!(socket.assigns.current_scope, String.to_integer(id))
+  defp parse_id(id) when is_integer(id) and id > 0 and id <= @max_id, do: {:ok, id}
+
+  defp parse_id(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {int, ""} -> parse_id(int)
+      _ -> :error
+    end
+  end
+
+  defp parse_id(_id), do: :error
 
   defp own_account?(member, socket),
     do: MembersTab.member_user_id(member) == socket.assigns.current_scope.user.id
