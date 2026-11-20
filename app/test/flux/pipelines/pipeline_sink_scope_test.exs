@@ -137,6 +137,37 @@ defmodule Flux.Pipelines.PipelineSinkScopeTest do
       assert {:ok, rolled_back} = Pipelines.rollback_pipeline(pipeline, 1)
       assert rolled_back.sink_ids == []
     end
+
+    test "records dropped sinks even when the rollback changes nothing else", %{
+      org_id: org_id,
+      own_sink: own
+    } do
+      gone = sink_fixture(org_id)
+      pipeline = pipeline_fixture(org_id, %{sink_ids: [own.id, gone.id]})
+      {:ok, pipeline} = Pipelines.update_pipeline(pipeline, %{sink_ids: [own.id]})
+      {:ok, _} = Sinks.delete_sink(gone)
+
+      # Dropping the deleted sink leaves version 1 identical to version 2.
+      assert {:ok, rolled_back} = Pipelines.rollback_pipeline(pipeline, 1)
+      assert rolled_back.sink_ids == [own.id]
+      assert rolled_back.current_version == 3
+
+      assert [latest | _] = Pipelines.list_pipeline_versions(pipeline.id)
+      assert latest.version == 3
+      assert latest.change_summary =~ "dropped sinks"
+      assert latest.change_summary =~ to_string(gone.id)
+    end
+
+    test "saves no version for a rollback that changes nothing", %{
+      org_id: org_id,
+      own_sink: own
+    } do
+      pipeline = pipeline_fixture(org_id, %{sink_ids: [own.id]})
+
+      assert {:ok, rolled_back} = Pipelines.rollback_pipeline(pipeline, 1)
+      assert rolled_back.current_version == 1
+      assert [%{version: 1}] = Pipelines.list_pipeline_versions(pipeline.id)
+    end
   end
 
   describe "Sinks.get_sinks_by_ids/2" do
