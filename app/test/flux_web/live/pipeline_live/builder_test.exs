@@ -766,6 +766,57 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
       assert pipeline.source_queue == "webhooks.my-webhook"
     end
 
+    test "a webhook path the webhook endpoint would reject is refused", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      for path <- ["/api/" <> String.duplicate("a", 129), "/api/_hidden", "/!!!"] do
+        ir = %{
+          "nodes" => [
+            %{
+              "type" => "source",
+              "label" => "Webhook",
+              "sourceConfig" => %{"type" => "webhook", "webhookPath" => path}
+            }
+          ]
+        }
+
+        render_hook(lv, "update_ir", %{"ir" => Jason.encode!(ir)})
+        html = render_click(lv, "save")
+
+        refute html =~ "Pipeline saved", "saved #{inspect(path)}"
+        assert html =~ "webhook path must end in a name"
+      end
+
+      assert Flux.Pipelines.list_pipelines(scope.organization_id) == []
+    end
+
+    test "the longest webhook path the endpoint accepts can be saved", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+      name = String.duplicate("a", 128)
+
+      ir = %{
+        "nodes" => [
+          %{
+            "type" => "source",
+            "label" => "Webhook",
+            "sourceConfig" => %{"type" => "webhook", "webhookPath" => "/api/" <> name}
+          }
+        ]
+      }
+
+      render_hook(lv, "update_ir", %{"ir" => Jason.encode!(ir)})
+      assert render_click(lv, "save") =~ "Pipeline saved"
+
+      pipeline = List.last(Flux.Pipelines.list_pipelines(scope.organization_id))
+      assert pipeline.source_queue == "webhooks." <> name
+    end
+
     test "a queue source naming another organization's queue is refused", %{
       conn: conn,
       scope: scope
