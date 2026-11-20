@@ -36,6 +36,7 @@ defmodule Flux.Pipeline.RunnerTest do
   defp context(overrides) do
     Enum.into(overrides, %{
       pipeline_id: 1,
+      organization_id: nil,
       version: 1,
       steps: %{},
       destination_queue: nil,
@@ -102,7 +103,11 @@ defmodule Flux.Pipeline.RunnerTest do
       sink_id = sink.id
 
       for i <- 1..3 do
-        Runner.handle_message(:default, message(%{"i" => i}), context(sink_ids: [sink.id]))
+        Runner.handle_message(
+          :default,
+          message(%{"i" => i}),
+          context(sink_ids: [sink.id], organization_id: org_id)
+        )
       end
 
       for _ <- 1..3 do
@@ -116,6 +121,39 @@ defmodule Flux.Pipeline.RunnerTest do
       assert [file] = root |> Path.join("1/*.parquet") |> Path.wildcard()
       rows = file |> Explorer.DataFrame.from_parquet!() |> Explorer.DataFrame.to_columns()
       assert Enum.sort(rows["i"]) == [1, 2, 3]
+    end
+
+    # Defence in depth: even if a foreign sink id already sits in a pipeline row
+    # (written before sinks were checked), the runner must not deliver to it.
+    test "never delivers to another organization's sink", %{org_id: org_id} do
+      alias Flux.Sink.Adapters.Parquet
+
+      other_org_id =
+        Flux.Repo.insert!(%Flux.Structure.Organization{
+          name: "Other",
+          slug: "other-#{System.unique_integer([:positive])}"
+        }).id
+
+      directory = "runner-test-#{System.unique_integer([:positive])}"
+      root = Path.join(Parquet.Paths.base_dir(), directory)
+      on_exit(fn -> File.rm_rf!(root) end)
+
+      foreign =
+        Flux.SinksFixtures.sink_fixture(other_org_id, %{
+          type: "parquet",
+          config: %{"directory" => directory}
+        })
+
+      on_exit(fn -> Parquet.Supervisor.stop_buffer({foreign.id, 1}) end)
+      attach_telemetry([[:flux, :sink, :delivered]])
+
+      Runner.handle_message(
+        :default,
+        message(%{"i" => 1}),
+        context(sink_ids: [foreign.id], organization_id: org_id)
+      )
+
+      refute_receive {:telemetry, [:flux, :sink, :delivered], _, _}, 200
     end
   end
 
