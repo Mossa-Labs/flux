@@ -121,6 +121,8 @@ defmodule Flux.Pipelines do
 
     * `:actor_id` — id of the acting user, recorded as the version's `created_by`.
     * `:change_summary` — overrides the auto-generated change summary.
+    * `:force_version` — when `true`, saves a version even if no versioned
+      field changed, so the summary is kept in the history.
 
   ## Examples
 
@@ -137,7 +139,7 @@ defmodule Flux.Pipelines do
     changes = Flux.Audit.diff(changeset)
 
     result =
-      if versioned_change?(changeset) do
+      if versioned_change?(changeset) or Keyword.get(opts, :force_version, false) do
         versioned_update(pipeline, changeset, opts)
       else
         Repo.update(changeset)
@@ -223,10 +225,13 @@ defmodule Flux.Pipelines do
           sink_ids: sink_ids
         }
 
+        # When dropping sinks leaves the current configuration unchanged, save
+        # a version anyway so the history still says which sinks were dropped.
         opts =
           opts
           |> Keyword.put_new(:change_summary, rollback_summary(version, dropped))
           |> Keyword.put(:audit_action, :pipeline_rolled_back)
+          |> Keyword.put(:force_version, dropped != [])
 
         update_pipeline(pipeline, attrs, opts)
     end
