@@ -7,7 +7,7 @@ edition; Community shows them with an upgrade prompt.
 This file starts after v0.2.6. For earlier releases, see the git history between
 tags.
 
-## Unreleased
+## 0.2.8 — 2026-11-20
 
 ### Upgrade notes
 
@@ -66,6 +66,13 @@ tags.
   - Rolling back: stop the new release, run the database rollback (it decrypts
     again), then start the older release.
   - See [Secret Encryption at Rest](docs/operator_manual.md#secret-encryption-at-rest).
+- **Behind a reverse proxy, set `FLUX_TRUSTED_PROXIES`.** Flux now reads
+  `X-Forwarded-For` only from the proxies it lists. Earlier releases also
+  trusted any peer in a private range without being told to. If an L7 load
+  balancer sits in front of Flux and the variable is unset, Flux sees the
+  proxy's address as the client, and an organization's IP allowlist judges
+  every API request by it. Set it to your proxies' addresses before upgrading.
+  See [IP Allowlist](docs/operator_manual.md#ip-allowlist).
 
 ### Security
 
@@ -77,6 +84,24 @@ tags.
   organization and pipelines refuse any other, and queue names that reach
   outside the organization are refused on every write path. Dead-letter
   listing, retry, discard, replay and depth are scoped to the organization too.
+- **System Settings actions stay in the caller's organization** (MOS-671).
+  Member and API key actions could reach records outside the organization the
+  page manages. They now look records up only within it, and every action
+  re-checks the caller's role first.
+- **A pipeline only uses its own organization's sinks** (MOS-672). A pipeline
+  could reference another organization's sink and deliver to it with that
+  sink's stored credentials. Such a sink is now refused on every write path,
+  skipped at run time, and dropped when rolling back to an older version.
+- **Internal Postgres sinks are confined to the `sink_data` schema** (MOS-673).
+  An internal-mode sink could write to any table the app's database role could
+  reach, including Flux's own. See the upgrade note above.
+- **`X-Forwarded-For` is trusted only from configured proxies** (MOS-603). Any
+  client could choose the IP address Flux saw by sending the header, and so get
+  around an organization's IP allowlist.
+- **Alert-channel secrets are encrypted at rest and write-only** (MOS-662).
+  Slack and webhook URLs are no longer sent to the browser: the form leaves
+  them blank, a blank field keeps the stored value, and testing a rule happens
+  on the server.
 - **Source credentials are encrypted at rest** (MOS-654). Source configs and the
   source credentials the pipeline builder keeps in a pipeline's steps are now
   stored as ciphertext, like sink configs. This covers passwords, SASL passwords,
@@ -85,6 +110,11 @@ tags.
   builder read plaintext as before.
 - Source config redaction now also masks AWS secret keys and session tokens,
   Pub/Sub credentials, MQTT JWTs and gRPC metadata, which it previously missed.
+- Dependency security updates:
+  - ecto 3.14.3 (EEF-CVE-2026-118391)
+  - plug 1.20.4 (EEF-CVE-2026-120287)
+  - idna 8.0.0 (EEF-CVE-2026-117678), with swoosh 1.30.0
+  - phoenix_live_view 1.2.14 (EEF-CVE-2026-126334)
 
 ### Added
 
@@ -95,12 +125,31 @@ tags.
   by incident ID. The OAuth client secret is a new sink secret, encrypted at
   rest and redacted like the others. Existing sinks keep using Events API v2.
   See [PagerDuty](docs/connectors/pagerduty.md#choosing-an-auth-mode).
+- **Single sign-on (SAML)** (Enterprise, MOS-481). Members can sign in with an
+  identity provider such as Okta, Microsoft Entra ID or Google Workspace, from
+  a new "Sign in with SSO" option on the login page. A new Single sign-on tab
+  in System Settings sets it up, maps IdP groups to roles, and can require SSO
+  for the whole organization; turning that on signs out the organization's
+  non-owner members. On Community and Pro the tab shows an upgrade prompt. See
+  [Single sign-on](docs/sso.md).
+
+### Changed
+
+- Dependency upgrades: Broadway 1.3.1, lazy_html 0.1.14, and nimble_options
+  1.2.0, which 0.2.7 held back and Broadway 1.3.1 works with.
 
 ### Fixed
 
 - A changeset error on a list-typed or encrypted field (for example a
   non-numeric `sink_ids` entry) returned a server error from the API, the
   pipeline import task and the alerts page instead of a validation message.
+- A sink or source secret that can't be decrypted with the current vault key
+  no longer breaks every page and query that reads it (MOS-665, MOS-666). The
+  sinks list flags the sink as needing its credentials re-entered, a source
+  with such a secret refuses to start or test and says which secret, and either
+  can still be disabled.
+- Selecting a Redact PII or Classify step in the pipeline builder crashed the
+  page.
 
 ## 0.2.7 — 2026-11-04
 
