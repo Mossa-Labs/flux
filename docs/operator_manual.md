@@ -456,6 +456,34 @@ To roll back, stop the new release, run
 `mix ecto.rollback --step 2` from a source checkout) to decrypt again, then
 start 0.2.7.
 
+The next release places every queue inside its organization (see
+[Source Queues and Message Routing](#source-queues-and-message-routing)). It
+has no database migration, but it is **not** safe to roll out node by node: an
+older node publishes to queues outside any organization, and a newer node
+refuses messages that don't carry their organization. Upgrade in a short
+maintenance window:
+
+1. Find pipelines whose queue names can't be placed in their organization, and
+   rename them:
+
+   ```bash
+   bin/flux eval "Flux.Release.audit_queue_names()"
+   ```
+
+   It reports, and never rewrites, any `source_queue`, `destination_queue` or
+   queue-type source node that starts with `org.`, `amq.` or `flux.`, or uses
+   characters other than letters, digits, `_`, `.` and `-`. Such a pipeline
+   won't start on the new release.
+2. On a broker-backed queue, stop sending webhooks and let running pipelines
+   drain the old queues.
+3. Stop every Flux node, then start the new release on every node.
+4. On a broker-backed queue, check for queues left under the old names (any
+   queue not starting with `org.`) and drain or delete them. A queue shared by
+   several organizations under the old names can't be attributed to one of
+   them; decide what to do with its messages yourself. Also delete any
+   pre-existing queue whose name already starts with `org.`.
+5. Watch `[:flux, :pipeline, :message, :refused]`; it should stay at zero.
+
 ### Starting the Application
 
 ```bash
@@ -524,7 +552,31 @@ Active pipelines auto-start when the application boots. The `Flux.Pipeline.Manag
 
 ### Source Queues and Message Routing
 
-Each pipeline has a `source_queue` field identifying the topic it consumes from (e.g., `webhooks.github`). Messages are published to queues when external systems send webhooks to the FluxWeb endpoint, which validates and publishes payloads to the appropriate queue.
+Each pipeline has a `source_queue` field identifying the queue it consumes from (e.g., `webhooks.github`). Messages are published to queues when external systems send webhooks to the FluxWeb endpoint, which validates and publishes payloads to the appropriate queue.
+
+Queue names are **per organization**. A pipeline's `source_queue` and
+`destination_queue`, and a webhook's `webhooks.<source>` queue, are logical
+names that Flux places inside the organization that owns the pipeline or the
+API key: organization 42's `webhooks.github` is the broker queue
+`org.42.webhooks.github`. Two organizations that use the same name get two
+separate queues, so a pipeline only ever consumes its own organization's
+messages, and a webhook or a destination queue only ever reaches its own
+organization's pipelines.
+
+- Every message carries its organization, and a pipeline drops (acknowledges
+  without processing) any message that doesn't carry its own. Each drop emits
+  `[:flux, :pipeline, :message, :refused]` and logs the pipeline and the
+  reason, never the payload.
+- A logical name starts with a letter or digit, uses only letters, digits,
+  `_`, `.` and `-`, is at most 200 bytes, and doesn't start with `org.`,
+  `amq.` or `flux.`. Flux refuses any other name when a pipeline is created,
+  updated, imported or rolled back.
+- Dead letters are per organization too: the DLQ page, its replay, the
+  dashboard's DLQ count and DLQ-depth alerts only ever see the current
+  organization's dead letters.
+- Anything that publishes straight to a broker-backed queue, outside Flux, must
+  use the `org.<id>.` name and carry the organization the way the queue adapter
+  expects, or the pipeline drops its messages.
 
 ### Pipeline JSON IR Format
 
@@ -736,6 +788,7 @@ Flux emits the following telemetry events that can be consumed by external monit
 | `[:flux, :pipeline, :message, :processed]` | `duration` | `pipeline_id` |
 | `[:flux, :pipeline, :message, :failed]` | -- | `pipeline_id` |
 | `[:flux, :pipeline, :message, :skipped]` | -- | `pipeline_id` |
+| `[:flux, :pipeline, :message, :refused]` | `count` | `pipeline_id`, `organization_id`, `reason` (`:organization_mismatch` or `:missing_organization`) |
 | `[:flux, :queue, :published]` | `count` | `organization_id`, `source`, `queue` |
 | `[:flux, :webhook, :received]` | `field_count` | `organization_id`, `source`, `fingerprint` |
 | `[:flux, :grpc, :received]` | `field_count` | `organization_id`, `source`, `fingerprint` |

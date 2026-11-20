@@ -465,10 +465,29 @@ The required callbacks are:
 
 | Callback | Required | Description |
 |----------|----------|-------------|
-| `publish/3` | Yes | Publish a `Flux.Queue.Message` to a named queue |
+| `publish/3` | Yes | Publish a `Flux.Queue.Message` to a physical queue, carrying its `organization_id` |
 | `ack/1` | Yes | Acknowledge successful processing of a message |
 | `reject/2` | Yes | Reject a message, optionally requeuing it |
 | `producer_spec/1` | No | Return the Broadway producer child spec used by `Flux.Pipeline.Runner` to consume messages |
+| `message_organization_id/1` | With `producer_spec/1` | Read back the organization a consumed `Broadway.Message` was published for |
+| `list_dlq_messages/3`, `get_dlq_depth/1`, `retry_message/2`, `discard_message/2`, `replay_dlq/3` | No | Dead-letter management for one organization (first argument) |
+
+Every queue belongs to one organization. Callers never hand an adapter a queue
+name of their own: `Flux.Queue.publish/4` and `Flux.Queue.producer_spec/3` take
+an organization and a logical name, and pass the adapter the physical name
+from `Flux.Queue.Naming` (organization 42's `webhooks.github` is
+`org.42.webhooks.github`), with `message.organization_id` already set. An
+adapter must:
+
+- carry `organization_id` across the broker, so `message_organization_id/1` can
+  read it back. The runner drops any message that doesn't carry the pipeline's
+  own organization, and won't start a pipeline on an adapter without
+  `message_organization_id/1`;
+- refuse to publish to a queue outside the message's organization
+  (`Flux.Queue.Naming.check_owner/2`);
+- keep each organization's dead letters apart, so that no DLQ callback ever
+  lists, counts, retries, discards or replays another organization's, including
+  by a guessed delivery tag.
 
 ### Step 2: Register the Adapter
 
