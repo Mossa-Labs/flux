@@ -11,6 +11,33 @@ tags.
 
 ### Upgrade notes
 
+- **Queues are now per organization. This release can't be rolled out node by
+  node.** A pipeline's `source_queue` and `destination_queue`, a webhook's
+  `webhooks.<source>` queue and a poll's `polling.<source_id>` queue are now
+  logical names that Flux places inside the owning organization (organization
+  42's `webhooks.github` is the broker queue `org.42.webhooks.github`). Every
+  message carries its organization, and a pipeline drops any message that
+  doesn't carry its own. Before upgrading:
+  1. Run `bin/flux eval "Flux.Release.audit_queue_names()"` and rename every
+     pipeline it lists. A queue name that starts with `org.`, `amq.` or
+     `flux.`, or uses characters other than letters, digits, `_`, `.` and `-`,
+     is now refused, and a pipeline that already has one won't start.
+  2. On a broker-backed queue, drain the old queues, then stop every node
+     before starting the new release.
+  - Messages still in queues under the old names aren't consumed any more.
+    See [Upgrading](docs/operator_manual.md#upgrading) for how to deal with
+    them.
+  - `POST /api/webhooks/:source` now answers 400 for a `source` that isn't a
+    plain name (letters, digits, `_`, `.`, `-`, at most 128), and 403 for an
+    API key that isn't tied to an organization.
+  - Poll jobs need an `organization_id` argument; a job without one is
+    cancelled.
+  - For queue adapter authors: `Flux.Queue.publish/4` and
+    `Flux.Queue.producer_spec/3` take the organization; adapters receive
+    physical queue names, must implement `message_organization_id/1` alongside
+    `producer_spec/1`, and the DLQ callbacks take the organization as their
+    first argument. See the [developer guide](docs/developer_guide.md).
+
 - **Postgres sinks in internal mode now write only to the `sink_data` schema.**
   The sink's table name must be a plain name (letters, digits, underscores)
   and resolves inside `sink_data`, never to another schema. External mode is
@@ -39,6 +66,14 @@ tags.
 
 ### Security
 
+- **Queues are isolated per organization** (MOS-674). Queue names used to be
+  shared by every organization, so a pipeline in one organization could consume
+  another organization's webhooks, and a webhook, poll or destination queue
+  could publish into another organization's pipelines. Queue names are now
+  placed inside the owning organization on the server, messages carry their
+  organization and pipelines refuse any other, and queue names that reach
+  outside the organization are refused on every write path. Dead-letter
+  listing, retry, discard, replay and depth are scoped to the organization too.
 - **Source credentials are encrypted at rest** (MOS-654). Source configs and the
   source credentials the pipeline builder keeps in a pipeline's steps are now
   stored as ciphertext, like sink configs. This covers passwords, SASL passwords,

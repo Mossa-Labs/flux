@@ -185,7 +185,7 @@ Accept a JSON payload from an external source and publish it to the queue for pi
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `source` | string | Source identifier (e.g., `github`, `stripe`, `custom`). Determines the queue name: `webhooks.<source>` |
+| `source` | string | Source identifier (e.g., `github`, `stripe`, `custom`). Determines the queue name: `webhooks.<source>`. Starts with a letter or digit, uses only letters, digits, `_`, `.` and `-`, and is at most 128 characters. |
 
 #### Request Headers
 
@@ -210,6 +210,18 @@ Arbitrary JSON payload. The entire body becomes the message payload.
   "queue": "webhooks.github"
 }
 ```
+
+**400 Bad Request** -- `source` can't name a queue:
+
+```json
+{
+  "status": "error",
+  "error": "invalid_source",
+  "message": "source must start with a letter or digit and contain only letters, digits, '_', '.' and '-' (at most 128)"
+}
+```
+
+**403 Forbidden** -- The API key isn't tied to an organization (`"error": "organization_required"`).
 
 **500 Internal Server Error** -- Queue publish failed:
 
@@ -260,6 +272,7 @@ When a webhook is received, Flux creates a `Flux.Queue.Message` struct with the 
 | `id` | string | Base64url-encoded 16-byte random ID |
 | `payload` | map | The original JSON request body |
 | `source` | string | Source identifier from the URL (e.g., `github`) |
+| `organization_id` | integer | The organization of the API key that sent the webhook |
 | `correlation_id` | string \| nil | Value of `X-Correlation-ID` header, or `nil` |
 | `metadata` | map | Auto-populated request metadata (see below) |
 | `inserted_at` | DateTime | UTC timestamp when the message was created |
@@ -284,3 +297,9 @@ Messages are published to a queue named `webhooks.<source>`, where `<source>` is
 - `POST /api/webhooks/stripe` publishes to queue `webhooks.stripe`
 
 Pipelines consume from these queues by setting their `source_queue` field to match (e.g., `webhooks.github`).
+
+The queue belongs to the organization of the API key that sent the webhook.
+Only that organization's pipelines consume it: another organization's pipeline
+with `source_queue: "webhooks.github"` reads its own, separate queue. The
+`queue` in the response is the name your pipelines use, without the
+organization.
