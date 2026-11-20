@@ -228,7 +228,8 @@ defmodule FluxWeb.SystemSettingsSSOTest do
     lv |> element("#sso-enforce-on") |> render_click()
     html = lv |> element("#sso-enforce-confirm") |> render_click()
 
-    assert html =~ "not allowed to manage single sign-on"
+    # Refused by the page-wide owner re-check before the SSO handler runs.
+    assert html =~ "no longer allowed to change System Settings"
     refute_received {:sso, :set_enforcement, _}
   end
 
