@@ -7,31 +7,41 @@ defmodule Flux.Workers.PollerTest do
 
   setup do
     Memory.clear()
-    :ok
+
+    org =
+      Flux.Repo.insert!(%Flux.Structure.Organization{
+        name: "Org #{System.unique_integer([:positive])}",
+        slug: "org-#{System.unique_integer([:positive])}"
+      })
+
+    %{org_id: org.id}
   end
 
   describe "perform/1" do
-    test "publishes fetched data to queue (placeholder data)" do
+    test "publishes fetched data to the organization's queue (placeholder data)", %{
+      org_id: org_id
+    } do
       # Test with no URL (placeholder data)
-      args = %{"source_id" => "test-source"}
+      args = %{"source_id" => "test-source", "organization_id" => org_id}
 
       assert :ok = perform_job(Poller, args)
 
-      messages = Memory.get_messages("polling.test-source")
+      messages = Memory.get_messages(org_id, "polling.test-source")
       assert length(messages) == 1
 
       [message] = messages
+      assert message.organization_id == org_id
       assert message.source == "poller:test-source"
       assert message.metadata.poll_type == "scheduled"
       assert message.payload.placeholder == true
     end
 
-    test "includes polled_at timestamp in metadata" do
-      args = %{"source_id" => "timestamp-test"}
+    test "includes polled_at timestamp in metadata", %{org_id: org_id} do
+      args = %{"source_id" => "timestamp-test", "organization_id" => org_id}
 
       assert :ok = perform_job(Poller, args)
 
-      [message] = Memory.get_messages("polling.timestamp-test")
+      [message] = Memory.get_messages(org_id, "polling.timestamp-test")
       assert is_binary(message.metadata.polled_at)
     end
 
@@ -56,12 +66,36 @@ defmodule Flux.Workers.PollerTest do
       assert Ecto.Changeset.get_field(changeset, :max_attempts) == 3
     end
 
-    test "sets the poller source and scheduled poll_type metadata" do
-      assert :ok = perform_job(Poller, %{"source_id" => "meta-src"})
+    test "sets the poller source and scheduled poll_type metadata", %{org_id: org_id} do
+      assert :ok = perform_job(Poller, %{"source_id" => "meta-src", "organization_id" => org_id})
 
-      [message] = Memory.get_messages("polling.meta-src")
+      [message] = Memory.get_messages(org_id, "polling.meta-src")
       assert message.source == "poller:meta-src"
       assert message.metadata.poll_type == "scheduled"
+    end
+
+    test "cancels a job without a valid organization, publishing nothing", %{org_id: org_id} do
+      for args <- [
+            %{"source_id" => "no-org"},
+            %{"source_id" => "no-org", "organization_id" => nil},
+            %{"source_id" => "no-org", "organization_id" => "#{org_id}"},
+            %{"source_id" => "no-org", "organization_id" => 0}
+          ] do
+        assert {:cancel, :organization_required} = perform_job(Poller, args)
+      end
+
+      assert {:cancel, :organization_not_found} =
+               perform_job(Poller, %{
+                 "source_id" => "no-org",
+                 "organization_id" => org_id + 1_000_000
+               })
+
+      assert :sys.get_state(Memory).queues == %{}
+    end
+
+    test "cancels a job whose source can't name a queue", %{org_id: org_id} do
+      assert {:cancel, {:invalid_queue, :invalid_characters}} =
+               perform_job(Poller, %{"source_id" => "has space", "organization_id" => org_id})
     end
 
     # NOTE: the URL-fetch branches of fetch_data/2 (2xx success, non-2xx error,

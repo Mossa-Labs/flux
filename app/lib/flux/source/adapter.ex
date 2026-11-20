@@ -7,7 +7,12 @@ defmodule Flux.Source.Adapter do
   events onto the internal queue — the same durable queue a pipeline's Broadway
   runner already consumes from. The internal/core queue backend is unchanged
   (Memory in dev, RabbitMQ in production); sources publish **into** it via
-  `Flux.Queue.publish/3`, they are never a queue backend themselves.
+  `Flux.Queue.publish/4`, they are never a queue backend themselves.
+
+  Every source belongs to one organization, and publishes into that
+  organization's queues only: `Flux.Queue.publish(organization_id, queue_name,
+  message, opts)`, with the organization taken from the `:organization_id`
+  ingestion option, never from the source's config.
 
   Sources fall into two shapes:
 
@@ -22,7 +27,9 @@ defmodule Flux.Source.Adapter do
   A pipeline links to a source by consuming the queue the source publishes to —
   `queue_name/1` is the single source of truth for that convention (e.g.
   `"webhooks.github"`, `"polling.orders"`, `"kafka.events"`), so every source
-  type wires to pipelines the same way.
+  type wires to pipelines the same way. These are *logical* names (see
+  `Flux.Queue.Naming`): `Flux.Queue` places them inside the source's
+  organization, so the same name in two organizations is two separate queues.
 
   Adapters shipped with Community: `Flux.Source.Adapters.Webhook`,
   `Flux.Source.Adapters.Poll`. Pro/EE adapters (e.g. Kafka) ship in the
@@ -35,11 +42,14 @@ defmodule Flux.Source.Adapter do
   @type validation_result :: :ok | {:error, [String.t()]}
 
   @doc """
-  The internal queue name a pipeline should consume from for this source.
+  The logical internal queue name a pipeline should consume from for this source.
 
   This is the convention that links a source to the pipelines fed by it. The
   config carries whatever identifier the type keys on (e.g. `"name"` /
-  `"source"` for webhook, `"source_id"` for poll, topic/group for Kafka).
+  `"source"` for webhook, `"source_id"` for poll, topic/group for Kafka). The
+  result must be a valid logical name (`Flux.Queue.Naming.validate_logical/1`);
+  wrap parts that come from an external system in
+  `Flux.Queue.Naming.sanitize_segment/1`.
   """
   @callback queue_name(source_config()) :: String.t()
 
@@ -48,9 +58,11 @@ defmodule Flux.Source.Adapter do
 
   Active sources (e.g. Kafka) return a `Supervisor.child_spec()` for a process
   that consumes the external system and publishes onto `queue_name/1` via
-  `Flux.Queue.publish/3`. Passive sources (webhook, poll) return `nil`.
+  `Flux.Queue.publish/4`. Passive sources (webhook, poll) return `nil`.
 
-  `opts` carries runtime context such as `:source_id` and `:organization_id`.
+  `opts` carries runtime context: `:source_id` and `:organization_id`. The
+  process must publish into `:organization_id`'s queues, and refuse to start
+  without one.
   """
   @callback ingestion_spec(source_config(), keyword()) :: Supervisor.child_spec() | nil
 

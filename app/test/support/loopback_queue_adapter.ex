@@ -17,11 +17,13 @@ defmodule Flux.Test.LoopbackQueue do
 
   alias Flux.Pipeline.Producers.Memory, as: MemoryProducer
   alias Flux.Queue.Adapters.Memory
+  alias Flux.Queue.Naming
 
   @impl true
   def publish(queue, message, _opts) do
-    MemoryProducer.push_message(to_string(queue), message.payload)
-    :ok
+    with :ok <- Naming.check_owner(queue, message.organization_id) do
+      MemoryProducer.deliver(to_string(queue), message)
+    end
   end
 
   @impl true
@@ -32,4 +34,7 @@ defmodule Flux.Test.LoopbackQueue do
 
   @impl true
   def producer_spec(opts), do: Memory.producer_spec(opts)
+
+  @impl true
+  def message_organization_id(message), do: Memory.message_organization_id(message)
 end

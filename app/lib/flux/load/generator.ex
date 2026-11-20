@@ -2,7 +2,7 @@ defmodule Flux.Load.Generator do
   @moduledoc """
   Synthetic message generator for the load harness.
 
-  Injects messages through `Flux.Pipeline.Producers.Memory.push_message/2`, which
+  Injects messages through `Flux.Pipeline.Producers.Memory.push_message/3`, which
   is an async PubSub broadcast with no producer-side backpressure — so the
   generator paces itself.
 
@@ -28,14 +28,21 @@ defmodule Flux.Load.Generator do
 
   ## Options
 
-    * `:queues` (required) — list of source-queue names to fan messages across.
+    * `:organization_id` (required) — the organization whose queues receive the
+      messages.
+    * `:queues` (required) — list of logical source-queue names to fan messages
+      across.
     * `:gen_fun` (required) — `index -> map`, builds each message payload.
     * `:rate` — target messages/sec; `0` (default) means max throughput.
     * `:count` — stop after this many messages (default: unbounded).
     * `:duration_ms` — stop after this many ms (default: unbounded).
   """
   def run(opts) do
-    queues = opts |> Keyword.fetch!(:queues) |> List.to_tuple()
+    org_id = Keyword.fetch!(opts, :organization_id)
+
+    queues =
+      opts |> Keyword.fetch!(:queues) |> Enum.map(&{org_id, &1}) |> List.to_tuple()
+
     gen_fun = Keyword.fetch!(opts, :gen_fun)
     rate = Keyword.get(opts, :rate, 0)
     count = Keyword.get(opts, :count)
@@ -89,8 +96,8 @@ defmodule Flux.Load.Generator do
 
   defp push_n(queues, gen_fun, sent, n) do
     idx = sent + 1
-    queue = elem(queues, rem(sent, tuple_size(queues)))
-    MemoryProducer.push_message(queue, gen_fun.(idx))
+    {org_id, queue} = elem(queues, rem(sent, tuple_size(queues)))
+    MemoryProducer.push_message(org_id, queue, gen_fun.(idx))
     push_n(queues, gen_fun, idx, n - 1)
   end
 

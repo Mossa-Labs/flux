@@ -33,18 +33,31 @@ defmodule Flux.Pipeline.RunnerTest do
     ref
   end
 
+  # The organization a bare handle_message/3 context runs as. Tests that touch
+  # the database (sinks) pass a real organization instead.
+  @org_id 4242
+
   defp context(overrides) do
     Enum.into(overrides, %{
       pipeline_id: 1,
-      organization_id: nil,
+      organization_id: @org_id,
       version: 1,
       steps: %{},
       destination_queue: nil,
-      sink_ids: []
+      sink_ids: [],
+      queue_adapter: Memory
     })
   end
 
-  defp message(data), do: %Message{data: data, acknowledger: {__MODULE__, :ack, :ok}}
+  # A consumed message, tagged by the Memory producer with the organization it
+  # was published for.
+  defp message(data, org_id \\ @org_id) do
+    %Message{
+      data: data,
+      metadata: %{organization_id: org_id},
+      acknowledger: {__MODULE__, :ack, :ok}
+    }
+  end
 
   # Broadway acknowledger so `ack_immediately/1` in the :skip path has somewhere
   # to go without booting a full pipeline.
@@ -66,16 +79,17 @@ defmodule Flux.Pipeline.RunnerTest do
       ctx = context(destination_queue: "downstream.queue", steps: %{})
       Runner.handle_message(:default, message(%{"value" => 7}), ctx)
 
-      assert [msg] = Memory.get_messages("downstream.queue")
+      assert [msg] = Memory.get_messages(@org_id, "downstream.queue")
       assert msg.payload == %{"value" => 7}
       assert msg.source == "pipeline"
+      assert msg.organization_id == @org_id
     end
 
     test "does not publish when destination queue is nil or empty" do
       Runner.handle_message(:default, message(%{"x" => 1}), context(destination_queue: nil))
       Runner.handle_message(:default, message(%{"x" => 1}), context(destination_queue: ""))
 
-      assert Memory.get_messages("") == []
+      assert :sys.get_state(Memory).queues == %{}
     end
 
     test "does not fan out to sinks when sink_ids is empty" do
@@ -105,7 +119,7 @@ defmodule Flux.Pipeline.RunnerTest do
       for i <- 1..3 do
         Runner.handle_message(
           :default,
-          message(%{"i" => i}),
+          message(%{"i" => i}, org_id),
           context(sink_ids: [sink.id], organization_id: org_id)
         )
       end
@@ -149,11 +163,63 @@ defmodule Flux.Pipeline.RunnerTest do
 
       Runner.handle_message(
         :default,
-        message(%{"i" => 1}),
+        message(%{"i" => 1}, org_id),
         context(sink_ids: [foreign.id], organization_id: org_id)
       )
 
       refute_receive {:telemetry, [:flux, :sink, :delivered], _, _}, 200
+    end
+  end
+
+  describe "handle_message/3 — organization check" do
+    test "drops a message published for another organization" do
+      attach_telemetry([
+        [:flux, :pipeline, :message, :refused],
+        [:flux, :pipeline, :message, :processed]
+      ])
+
+      ctx = context(pipeline_id: 11, destination_queue: "out")
+      result = Runner.handle_message(:default, message(%{"secret" => 1}, 9999), ctx)
+
+      assert result.data == nil
+      assert result.status == :ok
+
+      assert_receive {:telemetry, [:flux, :pipeline, :message, :refused], %{count: 1}, meta}
+      assert meta == %{pipeline_id: 11, organization_id: @org_id, reason: :organization_mismatch}
+      refute_receive {:telemetry, [:flux, :pipeline, :message, :processed], _, _}, 50
+      assert Memory.get_messages(@org_id, "out") == []
+    end
+
+    test "drops a message that carries no organization" do
+      attach_telemetry([[:flux, :pipeline, :message, :refused]])
+
+      no_org = %Message{data: %{"a" => 1}, acknowledger: {__MODULE__, :ack, :ok}}
+      result = Runner.handle_message(:default, no_org, context(pipeline_id: 12))
+
+      assert result.data == nil
+      assert_receive {:telemetry, [:flux, :pipeline, :message, :refused], _, meta}
+      assert meta.reason == :missing_organization
+    end
+
+    test "drops every message when the context names no queue adapter" do
+      attach_telemetry([[:flux, :pipeline, :message, :refused]])
+
+      ctx = Map.delete(context(pipeline_id: 13), :queue_adapter)
+      result = Runner.handle_message(:default, message(%{"a" => 1}), ctx)
+
+      assert result.data == nil
+      assert_receive {:telemetry, [:flux, :pipeline, :message, :refused], _, meta}
+      assert meta.reason == :missing_organization
+    end
+
+    test "never logs the refused payload" do
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          Runner.handle_message(:default, message(%{"card" => "4242-SECRET"}, 9999), context([]))
+        end)
+
+      assert log =~ "refused a message: organization_mismatch"
+      refute log =~ "4242-SECRET"
     end
   end
 
@@ -204,7 +270,7 @@ defmodule Flux.Pipeline.RunnerTest do
       ctx = context(destination_queue: "parsed.queue")
       Runner.handle_message(:default, message(~s({"n":1})), ctx)
 
-      assert [msg] = Memory.get_messages("parsed.queue")
+      assert [msg] = Memory.get_messages(@org_id, "parsed.queue")
       assert msg.payload == %{"n" => 1}
     end
 
@@ -212,7 +278,7 @@ defmodule Flux.Pipeline.RunnerTest do
       ctx = context(destination_queue: "raw.queue")
       Runner.handle_message(:default, message("not json"), ctx)
 
-      assert [msg] = Memory.get_messages("raw.queue")
+      assert [msg] = Memory.get_messages(@org_id, "raw.queue")
       assert msg.payload == %{"raw" => "not json"}
     end
 
@@ -220,7 +286,7 @@ defmodule Flux.Pipeline.RunnerTest do
       ctx = context(destination_queue: "list.queue")
       Runner.handle_message(:default, message([1, 2, 3]), ctx)
 
-      assert [msg] = Memory.get_messages("list.queue")
+      assert [msg] = Memory.get_messages(@org_id, "list.queue")
       assert msg.payload == %{"raw" => [1, 2, 3]}
     end
   end
@@ -268,7 +334,7 @@ defmodule Flux.Pipeline.RunnerTest do
       pid = start_supervised!({Runner, pipeline})
       assert is_pid(pid)
 
-      Flux.Pipeline.Producers.Memory.push_message("boot.source", %{"amount" => 5})
+      Flux.Pipeline.Producers.Memory.push_message(org_id, "boot.source", %{"amount" => 5})
 
       assert_receive {:telemetry, [:flux, :pipeline, :message, :processed], _, _}, 2_000
     end
@@ -294,9 +360,47 @@ defmodule Flux.Pipeline.RunnerTest do
         pipeline_fixture(org_id, %{source_queue: "webhooks.github", steps: steps})
 
       start_supervised!({Runner, pipeline})
-      Flux.Pipeline.Producers.Memory.push_message("webhooks.github", %{"event" => "push"})
+      Flux.Pipeline.Producers.Memory.push_message(org_id, "webhooks.github", %{"event" => "push"})
 
       assert_receive {:telemetry, [:flux, :pipeline, :message, :processed], _, _}, 2_000
+    end
+
+    test "consumes only its own organization's queue", %{org_id: org_id} do
+      attach_telemetry([[:flux, :pipeline, :message, :processed]])
+
+      pipeline = pipeline_fixture(org_id, %{source_queue: "webhooks.github"})
+      start_supervised!({Runner, pipeline})
+
+      other_org_id =
+        Flux.Repo.insert!(%Flux.Structure.Organization{
+          name: "Other",
+          slug: "other-#{System.unique_integer([:positive])}"
+        }).id
+
+      Flux.Pipeline.Producers.Memory.push_message(other_org_id, "webhooks.github", %{"x" => 1})
+      refute_receive {:telemetry, [:flux, :pipeline, :message, :processed], _, _}, 200
+    end
+
+    # A row written before queue names were checked: the runner refuses to
+    # start rather than consume or publish outside the organization.
+    test "refuses to start on a queue name outside the organization", %{org_id: org_id} do
+      base = %Flux.Pipelines.Pipeline{
+        id: System.unique_integer([:positive]),
+        organization_id: org_id,
+        source_queue: "webhooks.github",
+        config: %{},
+        steps: %{"version" => "1.0", "steps" => []},
+        sink_ids: []
+      }
+
+      assert {:error, {:source_queue, {:invalid_queue, :reserved_prefix}}} =
+               Runner.start_link(%{base | source_queue: "org.1.webhooks.github"})
+
+      assert {:error, {:destination_queue, {:invalid_queue, :reserved_prefix}}} =
+               Runner.start_link(%{base | destination_queue: "flux.events"})
+
+      assert {:error, {:source_queue, :organization_required}} =
+               Runner.start_link(%{base | organization_id: nil})
     end
   end
 end

@@ -71,7 +71,8 @@ defmodule Flux.Source.Manager do
       false
     else
       config = Map.put(source.config, "type", source.type)
-      Flux.Source.ingestion_spec(source.type, config, source_id: source.id) == nil
+      opts = [source_id: source.id, organization_id: source.organization_id]
+      Flux.Source.ingestion_spec(source.type, config, opts) == nil
     end
   end
 end

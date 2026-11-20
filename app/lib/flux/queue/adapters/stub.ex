@@ -22,7 +22,7 @@ defmodule Flux.Queue.Adapters.Stub do
   end
 
   @impl Flux.Queue.Adapter
-  def publish(_queue, %Message{} = _message, _opts \\ []), do: pro_required()
+  def publish(_queue, %Message{} = _message, _opts), do: pro_required()
 
   @impl Flux.Queue.Adapter
   def ack(%Message{} = _message), do: pro_required()
@@ -34,6 +34,9 @@ defmodule Flux.Queue.Adapters.Stub do
   def producer_spec(_opts) do
     raise "Active queue type requires Flux Pro. Configure `config :flux, Flux.Queue, type: \"memory\"` for Community, or upgrade to Pro to use RabbitMQ/Kafka."
   end
+
+  @impl Flux.Queue.Adapter
+  def message_organization_id(_message), do: :error
 
   @impl Flux.Queue.Adapter
   def list_dlq_messages(_count, _offset), do: dlq_required()

@@ -28,6 +28,10 @@ defmodule Flux.Queue.Adapters.StubTest do
     assert_raise RuntimeError, ~r/Flux Pro/, fn -> Stub.producer_spec(queue: "q") end
   end
 
+  test "message_organization_id/1 can't attribute a message" do
+    assert :error = Stub.message_organization_id(%Broadway.Message{data: %{}, acknowledger: nil})
+  end
+
   test "list_dlq_messages/2 returns pro_required for :dlq" do
     assert {:error, {:pro_required, :dlq}} = Stub.list_dlq_messages(50, 0)
   end

@@ -18,6 +18,7 @@ defmodule FluxWeb.API.WebhookController do
   alias Flux.Observability.SchemaFingerprint
   alias Flux.Queue
   alias Flux.Queue.Message
+  alias Flux.Source.Adapters.Webhook
 
   require Logger
 
@@ -32,25 +33,38 @@ defmodule FluxWeb.API.WebhookController do
   ## Response
 
     * 202 Accepted - Message queued successfully
-    * 400 Bad Request - Invalid payload
+    * 400 Bad Request - Invalid payload, or a `source` that can't name a queue
+    * 403 Forbidden - The API key isn't tied to an organization
     * 429 Too Many Requests - Organization is over its usage quota
     * 500 Internal Server Error - Queue publish failed
 
+  The message is queued in the API key's organization only: only that
+  organization's pipelines can consume it, whatever `source` is.
   """
   def create(conn, %{"source" => source} = params) do
     org_id = conn.assigns.current_scope.organization_id
-    payload = Map.delete(params, "source")
+
+    cond do
+      not Webhook.valid_source?(source) -> invalid_source(conn)
+      not (is_integer(org_id) and org_id > 0) -> organization_required(conn)
+      true -> accept(conn, org_id, source, Map.delete(params, "source"))
+    end
+  end
+
+  defp accept(conn, org_id, source, payload) do
     correlation_id = get_correlation_id(conn)
 
     message =
       Message.new(payload,
         source: source,
+        organization_id: org_id,
         correlation_id: correlation_id,
         metadata: build_metadata(conn)
       )
 
     # Queue-name convention is owned by the Webhook source adapter so every
     # ingestion path derives it from one place (see Flux.Source.Adapters.Webhook).
+    # The name is logical; Flux.Queue places it in the caller's organization.
     queue_name = Flux.Source.queue_name("webhook", %{"source" => source})
 
     # Usage quota is a Pro feature; the Community provider always returns `:ok`,
@@ -61,8 +75,29 @@ defmodule FluxWeb.API.WebhookController do
     end
   end
 
+  defp invalid_source(conn) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{
+      status: "error",
+      error: "invalid_source",
+      message:
+        "source must start with a letter or digit and contain only letters, digits, '_', '.' and '-' (at most 128)"
+    })
+  end
+
+  defp organization_required(conn) do
+    conn
+    |> put_status(:forbidden)
+    |> json(%{
+      status: "error",
+      error: "organization_required",
+      message: "This API key isn't tied to an organization"
+    })
+  end
+
   defp publish(conn, queue_name, message, source, org_id, correlation_id) do
-    case Queue.publish(queue_name, message) do
+    case Queue.publish(org_id, queue_name, message, []) do
       :ok ->
         # `messages_ingested` hook point: a Pro metering handler attaches here.
         :telemetry.execute(

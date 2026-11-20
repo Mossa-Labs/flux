@@ -1,21 +1,31 @@
 defmodule FluxWeb.API.WebhookControllerTest do
   use FluxWeb.ConnCase, async: false
 
+  alias Flux.Accounts
   alias Flux.Queue.Adapters.Memory
+  alias Flux.Structure.Organization
 
   setup do
     Memory.clear()
-    :ok
+
+    org =
+      Flux.Repo.insert!(%Organization{
+        name: "Org #{System.unique_integer([:positive])}",
+        slug: "org-#{System.unique_integer([:positive])}"
+      })
+
+    {:ok, key, _} = Accounts.create_api_key(org.id, %{name: "ingest", role: "admin"})
+    %{org_id: org.id, key: key}
   end
 
   describe "POST /api/webhooks/:source" do
-    test "accepts valid JSON payload", %{conn: conn} do
+    test "accepts valid JSON payload", %{conn: conn, key: key, org_id: org_id} do
       payload = %{"event" => "user.created", "data" => %{"id" => 123}}
 
       conn =
         conn
         |> put_req_header("content-type", "application/json")
-        |> put_req_header("x-api-key", "test-api-key")
+        |> put_req_header("x-api-key", key)
         |> post(~p"/api/webhooks/test_source", payload)
 
       assert %{"status" => "accepted", "message_id" => id, "queue" => queue} =
@@ -25,38 +35,68 @@ defmodule FluxWeb.API.WebhookControllerTest do
       assert queue == "webhooks.test_source"
 
       # Verify message was published
-      messages = Memory.get_messages("webhooks.test_source")
+      messages = Memory.get_messages(org_id, "webhooks.test_source")
       assert length(messages) == 1
       assert hd(messages).source == "test_source"
+      assert hd(messages).organization_id == org_id
     end
 
-    test "includes correlation ID when provided", %{conn: conn} do
+    test "queues the message in the API key's organization only", %{
+      conn: conn,
+      key: key,
+      org_id: org_id
+    } do
+      conn
+      |> put_req_header("x-api-key", key)
+      |> post(~p"/api/webhooks/stripe", %{"event" => "charge"})
+      |> json_response(202)
+
+      assert [_] = Memory.get_messages(org_id, "webhooks.stripe")
+      assert :sys.get_state(Memory).queues |> Map.keys() == ["org.#{org_id}.webhooks.stripe"]
+    end
+
+    test "refuses a key that isn't tied to an organization", %{conn: conn} do
+      # The legacy global key resolves to the oldest organization; with none,
+      # there is nowhere to queue the message.
+      Flux.Repo.delete_all(Organization)
+
+      body =
+        conn
+        |> put_req_header("x-api-key", "test-api-key")
+        |> post(~p"/api/webhooks/github", %{"event" => "push"})
+        |> json_response(403)
+
+      assert body["error"] == "organization_required"
+      assert :sys.get_state(Memory).queues == %{}
+    end
+
+    test "includes correlation ID when provided", %{conn: conn, key: key, org_id: org_id} do
       correlation_id = "req-12345"
 
       conn =
         conn
         |> put_req_header("content-type", "application/json")
-        |> put_req_header("x-api-key", "test-api-key")
+        |> put_req_header("x-api-key", key)
         |> put_req_header("x-correlation-id", correlation_id)
         |> post(~p"/api/webhooks/github", %{"action" => "push"})
 
       assert json_response(conn, 202)
 
-      [message] = Memory.get_messages("webhooks.github")
+      [message] = Memory.get_messages(org_id, "webhooks.github")
       assert message.correlation_id == correlation_id
     end
 
-    test "captures request metadata", %{conn: conn} do
+    test "captures request metadata", %{conn: conn, key: key, org_id: org_id} do
       conn =
         conn
         |> put_req_header("content-type", "application/json")
-        |> put_req_header("x-api-key", "test-api-key")
+        |> put_req_header("x-api-key", key)
         |> put_req_header("user-agent", "TestAgent/1.0")
         |> post(~p"/api/webhooks/stripe", %{"type" => "payment.succeeded"})
 
       assert json_response(conn, 202)
 
-      [message] = Memory.get_messages("webhooks.stripe")
+      [message] = Memory.get_messages(org_id, "webhooks.stripe")
       assert message.metadata.user_agent == "TestAgent/1.0"
       assert message.metadata.content_type == "application/json"
       assert is_binary(message.metadata.received_at)
@@ -81,7 +121,7 @@ defmodule FluxWeb.API.WebhookControllerTest do
       assert json_response(conn, 401)["error"] == "Invalid API key"
     end
 
-    test "handles different source names", %{conn: _conn} do
+    test "handles different source names", %{key: key, org_id: org_id} do
       sources = ["github", "stripe", "custom-source", "source_with_underscores"]
 
       for source <- sources do
@@ -90,29 +130,33 @@ defmodule FluxWeb.API.WebhookControllerTest do
         response_conn =
           build_conn()
           |> put_req_header("content-type", "application/json")
-          |> put_req_header("x-api-key", "test-api-key")
+          |> put_req_header("x-api-key", key)
           |> post(~p"/api/webhooks/#{source}", %{"test" => true})
 
         assert json_response(response_conn, 202)["queue"] == "webhooks.#{source}"
-        assert length(Memory.get_messages("webhooks.#{source}")) == 1
+        assert length(Memory.get_messages(org_id, "webhooks.#{source}")) == 1
       end
     end
 
-    test "removes source from payload before publishing", %{conn: conn} do
+    test "removes source from payload before publishing", %{conn: conn, key: key, org_id: org_id} do
       conn =
         conn
         |> put_req_header("content-type", "application/json")
-        |> put_req_header("x-api-key", "test-api-key")
+        |> put_req_header("x-api-key", key)
         |> post(~p"/api/webhooks/test", %{"event" => "created", "value" => 42})
 
       assert json_response(conn, 202)
 
-      [message] = Memory.get_messages("webhooks.test")
+      [message] = Memory.get_messages(org_id, "webhooks.test")
       assert message.payload == %{"event" => "created", "value" => 42}
       refute Map.has_key?(message.payload, "source")
     end
 
-    test "emits [:flux, :queue, :published] telemetry on success", %{conn: conn} do
+    test "emits [:flux, :queue, :published] telemetry on success", %{
+      conn: conn,
+      key: key,
+      org_id: org_id
+    } do
       ref = make_ref()
       parent = self()
 
@@ -129,16 +173,17 @@ defmodule FluxWeb.API.WebhookControllerTest do
 
       conn
       |> put_req_header("content-type", "application/json")
-      |> put_req_header("x-api-key", "test-api-key")
+      |> put_req_header("x-api-key", key)
       |> post(~p"/api/webhooks/github", %{"event" => "push"})
       |> json_response(202)
 
       assert_receive {:published, ^ref, %{count: 1},
-                      %{source: "github", queue: "webhooks.github"}}
+                      %{source: "github", queue: "webhooks.github", organization_id: ^org_id}}
     end
 
     test "emits [:flux, :webhook, :received] with a shape fingerprint (not the payload)", %{
-      conn: conn
+      conn: conn,
+      key: key
     } do
       ref = make_ref()
       parent = self()
@@ -156,7 +201,7 @@ defmodule FluxWeb.API.WebhookControllerTest do
 
       conn
       |> put_req_header("content-type", "application/json")
-      |> put_req_header("x-api-key", "test-api-key")
+      |> put_req_header("x-api-key", key)
       |> post(~p"/api/webhooks/github", %{"action" => "opened", "number" => 42})
       |> json_response(202)
 
@@ -167,7 +212,11 @@ defmodule FluxWeb.API.WebhookControllerTest do
       refute Map.has_key?(metadata, :payload)
     end
 
-    test "returns 429 + Retry-After when the org is over quota", %{conn: conn} do
+    test "returns 429 + Retry-After when the org is over quota", %{
+      conn: conn,
+      key: key,
+      org_id: org_id
+    } do
       Flux.Metering.Registry.set_active(Flux.MeteringTestProvider)
       Application.put_env(:flux, :test_metering_quota, {:error, {:quota_exceeded, 30}})
 
@@ -179,12 +228,12 @@ defmodule FluxWeb.API.WebhookControllerTest do
       conn =
         conn
         |> put_req_header("content-type", "application/json")
-        |> put_req_header("x-api-key", "test-api-key")
+        |> put_req_header("x-api-key", key)
         |> post(~p"/api/webhooks/github", %{"event" => "push"})
 
       assert json_response(conn, 429)["error"] == "quota_exceeded"
       assert get_resp_header(conn, "retry-after") == ["30"]
-      assert Memory.get_messages("webhooks.github") == []
+      assert Memory.get_messages(org_id, "webhooks.github") == []
     end
   end
 end
