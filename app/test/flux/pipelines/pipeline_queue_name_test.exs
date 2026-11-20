@@ -177,6 +177,61 @@ defmodule Flux.Pipelines.PipelineQueueNameTest do
     end
   end
 
+  describe "Flux.Release.queue_name_findings/1" do
+    test "lists pipelines and versions whose queue names can't be placed in the organization",
+         %{org_id: org_id} do
+      good = pipeline_fixture(org_id, %{source_queue: "webhooks.ok"})
+
+      # Rows written before queue names were checked.
+      bad =
+        Repo.insert!(%Flux.Pipelines.Pipeline{
+          name: "legacy-#{System.unique_integer([:positive])}",
+          source_queue: "org.1.webhooks.stripe",
+          destination_queue: "has space",
+          steps: steps_with_source(%{"type" => "queue", "queue" => "amq.x"}),
+          organization_id: org_id
+        })
+
+      Repo.insert!(%PipelineVersion{
+        pipeline_id: good.id,
+        version: 50,
+        name: good.name,
+        source_queue: "flux.events",
+        config: %{},
+        steps: %{"version" => "1.0", "steps" => []},
+        sink_ids: []
+      })
+
+      findings = Flux.Release.queue_name_findings(Repo)
+
+      assert %{table: "pipelines", id: bad.id, field: :source_queue, reason: :reserved_prefix} in Enum.map(
+               findings,
+               &Map.take(&1, [:table, :id, :field, :reason])
+             )
+
+      assert Enum.any?(
+               findings,
+               &match?(%{id: id, field: :destination_queue} when id == bad.id, &1)
+             )
+
+      assert Enum.any?(
+               findings,
+               &match?(%{id: id, field: :source_node_queue} when id == bad.id, &1)
+             )
+
+      assert Enum.any?(
+               findings,
+               &match?(
+                 %{table: "pipeline_versions", pipeline_id: id, organization_id: ^org_id}
+                 when id == good.id,
+                 &1
+               )
+             )
+
+      refute Enum.any?(findings, &match?(%{table: "pipelines", id: id} when id == good.id, &1))
+    end
+  end
+
   defp steps_with_source(source_config) do
     %{
       "version" => "1.0",
