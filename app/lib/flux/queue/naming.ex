@@ -29,7 +29,7 @@ defmodule Flux.Queue.Naming do
   """
 
   @max_logical_bytes 200
-  # Room for a source-type prefix (`"rabbitmq_external."`, `"kafka.<group>."`)
+  # Room for a source-type prefix (such as `"<type>."` or `"<type>.<group>."`)
   # in front of one sanitized segment, inside the logical-name limit.
   @segment_bytes 120
   @reserved_prefixes ~w(org. amq. flux.)
