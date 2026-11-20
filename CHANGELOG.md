@@ -22,14 +22,17 @@ tags.
      pipeline it lists. A queue name that starts with `org.`, `amq.` or
      `flux.`, or uses characters other than letters, digits, `_`, `.` and `-`,
      is now refused, and a pipeline that already has one won't start.
-  2. On a broker-backed queue, drain the old queues, then stop every node
-     before starting the new release.
+  2. On a broker-backed queue, drain the old queues, then stop every node.
+  3. While every node is stopped, delete any broker queue whose name already
+     starts with `org.` (a pipeline chose that name; the new release would
+     consume it as that organization's queue). Then start the new release.
   - Messages still in queues under the old names aren't consumed any more.
     See [Upgrading](docs/operator_manual.md#upgrading) for how to deal with
     them.
   - `POST /api/webhooks/:source` now answers 400 for a `source` that isn't a
     plain name (letters, digits, `_`, `.`, `-`, at most 128), and 403 for an
-    API key that isn't tied to an organization.
+    API key that isn't tied to an organization. The pipeline builder refuses
+    to save a webhook path whose last segment the endpoint would reject.
   - Poll jobs need an `organization_id` argument; a job without one is
     cancelled.
   - For queue adapter authors: `Flux.Queue.publish/4` and

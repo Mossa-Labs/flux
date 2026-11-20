@@ -476,13 +476,19 @@ maintenance window:
    won't start on the new release.
 2. On a broker-backed queue, stop sending webhooks and let running pipelines
    drain the old queues.
-3. Stop every Flux node, then start the new release on every node.
-4. On a broker-backed queue, check for queues left under the old names (any
-   queue not starting with `org.`) and drain or delete them. A queue shared by
+3. Stop every Flux node.
+4. While every node is still stopped, on a broker-backed queue, delete every
+   queue whose name already starts with `org.`. Before this release nothing
+   used that prefix, so such a queue was named by a pipeline, not by Flux;
+   the new release would consume it as that organization's queue. Record what
+   it holds first if you need it. Don't do this after step 5: by then the
+   release uses `org.` queues itself.
+5. Start the new release on every node.
+6. On a broker-backed queue, drain or delete the queues pipelines consumed
+   under the old names (they don't start with `org.`). A queue shared by
    several organizations under the old names can't be attributed to one of
-   them; decide what to do with its messages yourself. Also delete any
-   pre-existing queue whose name already starts with `org.`.
-5. Watch `[:flux, :pipeline, :message, :refused]`; it should stay at zero.
+   them; decide what to do with its messages yourself.
+7. Watch `[:flux, :pipeline, :message, :refused]`; it should stay at zero.
 
 ### Starting the Application
 
