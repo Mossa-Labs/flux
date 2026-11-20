@@ -120,12 +120,89 @@ defmodule Flux.Sink.Adapters.PostgresTest do
     end
   end
 
+  describe "deliver/3 — internal mode can't reach Flux's own tables" do
+    # Internal mode writes with the app's own database connection, so the table
+    # name a user types must never resolve to one of Flux's tables (members, API
+    # keys, users...). It is confined to the sink_data schema.
+    setup do
+      # Shaped like Flux's own tables (Ecto timestamps), so on an unconfined
+      # sink the insert would succeed.
+      Flux.Repo.query!("""
+      CREATE TABLE public.sink_victim (
+        id bigserial PRIMARY KEY,
+        role text,
+        inserted_at timestamptz,
+        updated_at timestamptz
+      )
+      """)
+
+      :ok
+    end
+
+    test "a bare name resolves to the sink_data table, never the public one of the same name" do
+      Flux.Repo.query!("""
+      CREATE TABLE sink_data.sink_victim (
+        id bigserial PRIMARY KEY,
+        role text,
+        inserted_at timestamptz,
+        updated_at timestamptz
+      )
+      """)
+
+      config = %{"table" => "sink_victim", "columns" => %{"role" => "role"}}
+
+      assert :ok = Postgres.deliver(%{"role" => "owner"}, config, [])
+      assert %{rows: [[1]]} = Flux.Repo.query!("SELECT count(*) FROM sink_data.sink_victim")
+      assert %{rows: [[0]]} = Flux.Repo.query!("SELECT count(*) FROM public.sink_victim")
+    end
+
+    test "a quote in a column name is refused and writes nothing" do
+      Flux.Repo.query!(
+        "CREATE TABLE sink_data.sink_cols (role text, inserted_at timestamptz, updated_at timestamptz)"
+      )
+
+      config = %{"table" => "sink_cols", "columns" => %{"role" => ~s[role" text); --]}}
+
+      assert {:error, _} = Postgres.deliver(%{"role" => "owner"}, config, [])
+      assert %{rows: [[0]]} = Flux.Repo.query!("SELECT count(*) FROM sink_data.sink_cols")
+    end
+
+    test "validate_config requires a plain table name in internal mode only" do
+      for bad <- ["public.events", "events\n", "1events", String.duplicate("a", 64), ~s(a"b)] do
+        assert {:error, [msg]} =
+                 Postgres.validate_config(%{"table" => bad, "columns" => %{"a" => "a"}})
+
+        assert msg =~ "plain table name"
+      end
+
+      assert :ok = Postgres.validate_config(%{"table" => "events_2", "columns" => %{"a" => "a"}})
+
+      assert :ok =
+               Postgres.validate_config(%{
+                 "mode" => "external",
+                 "database_url" => "postgres://u:p@h/db",
+                 "table" => "public.events",
+                 "columns" => %{"a" => "a"}
+               })
+    end
+
+    for table <- ["sink_victim", "public.sink_victim", ~s(public"."sink_victim)] do
+      test "refuses to write #{inspect(table)} outside the sink_data schema" do
+        config = %{"table" => unquote(table), "columns" => %{"role" => "role"}}
+
+        assert {:error, _} = Postgres.deliver(%{"role" => "owner"}, config, [])
+
+        assert %{rows: [[0]]} = Flux.Repo.query!("SELECT count(*) FROM public.sink_victim")
+      end
+    end
+  end
+
   describe "deliver/3 — internal mode" do
     setup do
-      # A temp table lives only for this connection and is rolled back with the
-      # sandbox, so each test starts clean without a migration.
+      # Created inside the sandbox transaction, so it is rolled back after each
+      # test and every test starts clean without a migration.
       Flux.Repo.query!("""
-      CREATE TEMP TABLE sink_events (
+      CREATE TABLE sink_data.sink_events (
         id bigserial PRIMARY KEY,
         event_type text,
         user_id text,
@@ -139,7 +216,7 @@ defmodule Flux.Sink.Adapters.PostgresTest do
     end
 
     defp count_rows do
-      %{rows: [[count]]} = Flux.Repo.query!("SELECT count(*) FROM sink_events")
+      %{rows: [[count]]} = Flux.Repo.query!("SELECT count(*) FROM sink_data.sink_events")
       count
     end
 
@@ -154,7 +231,7 @@ defmodule Flux.Sink.Adapters.PostgresTest do
       assert :ok = Postgres.deliver(data, config, [])
 
       assert %{rows: [["signup", "u-1"]]} =
-               Flux.Repo.query!("SELECT event_type, user_id FROM sink_events")
+               Flux.Repo.query!("SELECT event_type, user_id FROM sink_data.sink_events")
     end
 
     test "maps a missing nested path to NULL" do
@@ -166,7 +243,7 @@ defmodule Flux.Sink.Adapters.PostgresTest do
       assert :ok = Postgres.deliver(%{"type" => "ping"}, config, [])
 
       assert %{rows: [["ping", nil]]} =
-               Flux.Repo.query!("SELECT event_type, user_id FROM sink_events")
+               Flux.Repo.query!("SELECT event_type, user_id FROM sink_data.sink_events")
     end
 
     test "auto-populates inserted_at/updated_at timestamps" do
@@ -175,7 +252,7 @@ defmodule Flux.Sink.Adapters.PostgresTest do
       assert :ok = Postgres.deliver(%{"type" => "ts"}, config, [])
 
       assert %{rows: [[inserted, updated]]} =
-               Flux.Repo.query!("SELECT inserted_at, updated_at FROM sink_events")
+               Flux.Repo.query!("SELECT inserted_at, updated_at FROM sink_data.sink_events")
 
       refute is_nil(inserted)
       refute is_nil(updated)
