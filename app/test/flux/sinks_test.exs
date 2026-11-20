@@ -72,12 +72,12 @@ defmodule Flux.SinksTest do
     end
   end
 
-  describe "get_sinks_by_ids/1" do
+  describe "get_sinks_by_ids/2" do
     test "returns enabled sinks matching the given ids", %{org_id: org_id} do
       s1 = sink_fixture(org_id, %{enabled: true})
       s2 = sink_fixture(org_id, %{enabled: true})
 
-      result = Sinks.get_sinks_by_ids([s1.id, s2.id])
+      result = Sinks.get_sinks_by_ids([s1.id, s2.id], org_id)
       assert length(result) == 2
       assert s1 in result
       assert s2 in result
@@ -87,17 +87,17 @@ defmodule Flux.SinksTest do
       enabled = sink_fixture(org_id, %{enabled: true})
       disabled = sink_fixture(org_id, %{enabled: false})
 
-      result = Sinks.get_sinks_by_ids([enabled.id, disabled.id])
+      result = Sinks.get_sinks_by_ids([enabled.id, disabled.id], org_id)
       assert enabled in result
       refute disabled in result
     end
 
-    test "returns empty list for non-existent ids" do
-      assert Sinks.get_sinks_by_ids([-1, -2]) == []
+    test "returns empty list for non-existent ids", %{org_id: org_id} do
+      assert Sinks.get_sinks_by_ids([-1, -2], org_id) == []
     end
 
-    test "returns empty list for empty input" do
-      assert Sinks.get_sinks_by_ids([]) == []
+    test "returns empty list for empty input", %{org_id: org_id} do
+      assert Sinks.get_sinks_by_ids([], org_id) == []
     end
   end
 
