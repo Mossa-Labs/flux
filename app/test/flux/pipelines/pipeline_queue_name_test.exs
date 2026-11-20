@@ -158,11 +158,11 @@ defmodule Flux.Pipelines.PipelineQueueNameTest do
       config = %{"type" => "rabbitmq_external", "queue" => "Orders Queue"}
 
       pipeline = %Pipeline{
-        source_queue: "rabbitmq_external.Orders_Queue",
+        source_queue: "external.orders",
         steps: steps_with_source(config)
       }
 
-      assert Pipeline.consumed_queue(pipeline) == "rabbitmq_external.Orders_Queue"
+      assert Pipeline.consumed_queue(pipeline) == "external.orders"
     end
 
     test "falls back to source_queue without a source node queue" do

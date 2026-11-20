@@ -13,8 +13,8 @@ defmodule Flux.Queue.NamingTest do
             "default",
             "a",
             "9lives",
-            "kafka.group-1.topic_A",
-            "sqs.orders.fifo",
+            "ingest.group-1.topic_A",
+            "orders.v2.archive",
             String.duplicate("a", 200)
           ] do
         assert :ok = Naming.validate_logical(name), "expected #{inspect(name)} to be valid"
@@ -139,7 +139,7 @@ defmodule Flux.Queue.NamingTest do
 
       assert byte_size(a) <= 120
       assert a != b
-      assert :ok = Naming.validate_logical("rabbitmq_external." <> a)
+      assert :ok = Naming.validate_logical("external." <> a)
     end
   end
 end
