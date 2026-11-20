@@ -11,6 +11,18 @@ tags.
 
 ### Upgrade notes
 
+- **Postgres sinks in internal mode now write only to the `sink_data` schema.**
+  The sink's table name must be a plain name (letters, digits, underscores)
+  and resolves inside `sink_data`, never to another schema. External mode is
+  unchanged. Before upgrading:
+  1. Create the schema: `CREATE SCHEMA IF NOT EXISTS sink_data;`. The release
+     migration also creates it, but that needs the `CREATE` privilege on the
+     database. If the app's database role doesn't have it, create the schema
+     as an administrator and grant the role `USAGE, CREATE` on it.
+  2. Move each internal-mode target table, for example
+     `ALTER TABLE events SET SCHEMA sink_data;`.
+  - Deliveries to a table that hasn't been moved fail and are logged, not
+    retried, so move the tables before the new release starts processing.
 - **Stop every node before you migrate. This release can't be rolled out node
   by node.** Two data migrations encrypt existing source configs and the source
   credentials in pipeline steps (including every version snapshot). They
