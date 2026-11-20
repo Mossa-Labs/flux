@@ -765,6 +765,30 @@ defmodule FluxWeb.PipelineLive.BuilderTest do
       pipeline = List.last(Flux.Pipelines.list_pipelines(scope.organization_id))
       assert pipeline.source_queue == "webhooks.my-webhook"
     end
+
+    test "a queue source naming another organization's queue is refused", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, lv, _html} = live(conn, ~p"/pipelines/builder")
+
+      ir = %{
+        "nodes" => [
+          %{
+            "type" => "source",
+            "label" => "Queue",
+            "sourceConfig" => %{"type" => "queue", "queue" => "org.1.webhooks.stripe"}
+          }
+        ]
+      }
+
+      render_hook(lv, "update_ir", %{"ir" => Jason.encode!(ir)})
+      html = render_click(lv, "save")
+
+      refute html =~ "Pipeline saved"
+      assert html =~ "reserved prefix"
+      assert Flux.Pipelines.list_pipelines(scope.organization_id) == []
+    end
   end
 
   describe "a source credential that can't be decrypted (MOS-665)" do

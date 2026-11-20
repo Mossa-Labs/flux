@@ -45,6 +45,9 @@ defmodule Flux.Pipelines.Pipeline do
     |> validate_required([:name, :source_queue, :organization_id])
     |> validate_inclusion(:status, @statuses)
     |> validate_steps()
+    |> validate_queue_name(:source_queue)
+    |> validate_queue_name(:destination_queue)
+    |> validate_source_node_queue()
     |> validate_sinks_in_organization()
     # Attach the org-scoped name uniqueness error to :name (not :organization_id,
     # which is the default for a field-list constraint and reads as the confusing
@@ -95,6 +98,46 @@ defmodule Flux.Pipelines.Pipeline do
   end
 
   def source_node_queue(_steps), do: nil
+
+  # Queue names are logical: the server places them inside the pipeline's own
+  # organization (see `Flux.Queue.Naming`). A name that can't be placed there —
+  # a reserved prefix such as another organization's `org.<id>.`, or one a
+  # broker can't use — is refused on every write path: the API, the builder,
+  # import, and rollback to an older version.
+  defp validate_queue_name(changeset, field) do
+    validate_change(changeset, field, fn ^field, value ->
+      case Flux.Queue.Naming.validate_logical(value) do
+        :ok -> []
+        {:error, reason} -> [{field, Flux.Queue.Naming.error_message(reason)}]
+      end
+    end)
+  end
+
+  defp validate_source_node_queue(changeset) do
+    case get_change(changeset, :steps) do
+      steps when is_map(steps) ->
+        case source_node_queue(steps) do
+          queue when is_binary(queue) and queue != "" ->
+            case Flux.Queue.Naming.validate_logical(queue) do
+              :ok ->
+                changeset
+
+              {:error, reason} ->
+                add_error(
+                  changeset,
+                  :steps,
+                  "source queue #{Flux.Queue.Naming.error_message(reason)}"
+                )
+            end
+
+          _ ->
+            changeset
+        end
+
+      _ ->
+        changeset
+    end
+  end
 
   # The runner delivers to a pipeline's sinks with their stored, decrypted
   # credentials, so a pipeline may only reference its own organization's sinks.
