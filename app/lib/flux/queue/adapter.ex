@@ -12,6 +12,17 @@ defmodule Flux.Queue.Adapter do
   Pro/EE adapters (RabbitMQ, Kafka) ship in the commercial edition and register
   at boot; in Community builds a Pro type identifier is backed by
   `Flux.Queue.Adapters.Stub`, which returns `{:error, {:pro_required, _}}`.
+
+  ## Organizations
+
+  Every queue belongs to one organization. Callers name queues with logical
+  names; the `Flux.Queue` facade turns them into *physical* names inside the
+  organization's namespace (see `Flux.Queue.Naming`) before calling an adapter,
+  so adapters only ever see physical names such as `"org.42.webhooks.stripe"`.
+
+  An adapter must also carry each message's `organization_id` across the
+  broker, so that a consuming pipeline can check it (see
+  `c:message_organization_id/1`).
   """
 
   alias Flux.Queue.Message
@@ -62,6 +73,17 @@ defmodule Flux.Queue.Adapter do
           exhausted?: boolean()
         }
 
+  @type organization_id :: pos_integer()
+
+  @doc """
+  Publishes `message` to the physical queue `queue`.
+
+  `Flux.Queue.publish/4` is the only caller: `queue` is already inside the
+  organization's namespace and `message.organization_id` is set. The adapter
+  must carry `organization_id` across the broker so `c:message_organization_id/1`
+  can read it back, and should refuse a queue outside that organization's
+  namespace (`Flux.Queue.Naming.check_owner/2`).
+  """
   @callback publish(queue_name(), Message.t(), publish_opts()) :: :ok | error()
 
   @callback ack(Message.t()) :: :ok | error()
@@ -72,8 +94,22 @@ defmodule Flux.Queue.Adapter do
   Returns the Broadway producer child spec for this adapter, used by
   `Flux.Pipeline.Runner` to consume messages. Community's Memory adapter
   and EE's RabbitMQ/Kafka adapters each provide their own implementation.
+
+  `opts` carries `:queue` (the physical queue to consume), `:organization_id`
+  (its organization), `:pipeline_id` and `:prefetch_count`. An adapter that
+  implements this callback must also implement `c:message_organization_id/1`.
   """
   @callback producer_spec(opts :: keyword()) :: {module(), keyword()} | nil
+
+  @doc """
+  Reads the organization a consumed message was published for.
+
+  Called by `Flux.Pipeline.Runner` on every message its producer emits, before
+  the message is processed; the runner refuses any message that doesn't carry
+  the pipeline's own organization. Returns `:error` when the message carries no
+  readable organization. Must not raise.
+  """
+  @callback message_organization_id(Broadway.Message.t()) :: {:ok, organization_id()} | :error
 
   @doc """
   Dead-letter queue management. These are Pro features: only the EE broker
@@ -105,6 +141,7 @@ defmodule Flux.Queue.Adapter do
 
   @optional_callbacks [
     producer_spec: 1,
+    message_organization_id: 1,
     list_dlq_messages: 2,
     get_dlq_depth: 0,
     retry_message: 1,

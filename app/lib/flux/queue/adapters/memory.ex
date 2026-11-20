@@ -5,10 +5,13 @@ defmodule Flux.Queue.Adapters.Memory do
   Messages are stored in a GenServer. This adapter is NOT suitable for
   production use as messages are lost on restart.
 
+  Queues are keyed by their physical name (see `Flux.Queue.Naming`), and a
+  publish is refused unless the queue is inside the message's organization.
+
   ## Testing Utilities
 
-      # Get all messages for a queue
-      Flux.Queue.Adapters.Memory.get_messages("my_queue")
+      # Get all messages in organization 42's "my_queue" queue
+      Flux.Queue.Adapters.Memory.get_messages(42, "my_queue")
 
       # Clear all messages (useful in test setup)
       Flux.Queue.Adapters.Memory.clear()
@@ -20,6 +23,7 @@ defmodule Flux.Queue.Adapters.Memory do
   @behaviour Flux.Queue.Adapter
 
   alias Flux.Queue.Message
+  alias Flux.Queue.Naming
 
   # Client API
 
@@ -37,8 +41,12 @@ defmodule Flux.Queue.Adapters.Memory do
   end
 
   @impl Flux.Queue.Adapter
-  def publish(queue, %Message{} = message, _opts \\ []) do
-    GenServer.call(__MODULE__, {:publish, to_string(queue), message})
+  def publish(queue, %Message{} = message, _opts) do
+    queue = to_string(queue)
+
+    with :ok <- Naming.check_owner(queue, message.organization_id) do
+      GenServer.call(__MODULE__, {:publish, queue, message})
+    end
   end
 
   @impl Flux.Queue.Adapter
@@ -48,6 +56,15 @@ defmodule Flux.Queue.Adapters.Memory do
 
     {Flux.Pipeline.Producers.Memory, pipeline_id: pipeline_id, source_queue: queue}
   end
+
+  # The Memory producer tags every message it emits with the organization it
+  # was published for (see `Flux.Pipeline.Producers.Memory.deliver/2`).
+  @impl Flux.Queue.Adapter
+  def message_organization_id(%Broadway.Message{metadata: %{organization_id: id}})
+      when is_integer(id) and id > 0,
+      do: {:ok, id}
+
+  def message_organization_id(_message), do: :error
 
   @impl Flux.Queue.Adapter
   def ack(%Message{} = message) do
@@ -60,13 +77,14 @@ defmodule Flux.Queue.Adapters.Memory do
   end
 
   @doc """
-  Returns all messages currently in the specified queue.
+  Returns all messages currently in organization `org_id`'s logical queue
+  `queue`.
 
   Messages are returned in the order they were published (oldest first).
   """
-  @spec get_messages(String.t() | atom()) :: [Message.t()]
-  def get_messages(queue) do
-    GenServer.call(__MODULE__, {:get_messages, to_string(queue)})
+  @spec get_messages(pos_integer(), String.t()) :: [Message.t()]
+  def get_messages(org_id, queue) do
+    GenServer.call(__MODULE__, {:get_messages, Naming.physical!(org_id, queue)})
   end
 
   @doc """

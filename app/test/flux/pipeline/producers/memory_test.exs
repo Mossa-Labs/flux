@@ -19,27 +19,46 @@ defmodule Flux.Pipeline.Producers.MemoryTest do
 
     @impl true
     def handle_events(events, _from, test_pid) do
-      for event <- events, do: send(test_pid, {:event, event.data})
+      for event <- events, do: send(test_pid, {:event, event.data, event.metadata})
       {:noreply, [], test_pid}
     end
   end
 
-  defp start_producer(source_queue) do
+  @org 42
+
+  # The producer consumes a physical queue, the way `Flux.Queue.producer_spec/3`
+  # starts it.
+  defp start_producer(logical_queue, org \\ @org) do
     start_supervised!(
       {Memory,
-       [pipeline_id: "p-#{System.unique_integer([:positive])}", source_queue: source_queue]}
+       [
+         pipeline_id: "p-#{System.unique_integer([:positive])}",
+         source_queue: Flux.Queue.Naming.physical!(org, logical_queue)
+       ]}
     )
   end
 
-  describe "push_message/2 and dispatch under demand" do
-    test "a pushed message is delivered to a subscribed consumer" do
+  describe "push_message/3 and dispatch under demand" do
+    test "a pushed message is delivered to a subscribed consumer, tagged with its organization" do
       queue = "mem.queue.#{System.unique_integer([:positive])}"
       producer = start_producer(queue)
       start_supervised!({Collector, {producer, self()}})
 
-      Memory.push_message(queue, %{"event" => "push"})
+      Memory.push_message(@org, queue, %{"event" => "push"})
 
-      assert_receive {:event, %{"event" => "push"}}, 1_000
+      assert_receive {:event, %{"event" => "push"}, %{organization_id: @org}}, 1_000
+    end
+
+    test "another organization's queue of the same name is never received" do
+      queue = "mem.shared.#{System.unique_integer([:positive])}"
+      producer = start_producer(queue)
+      start_supervised!({Collector, {producer, self()}})
+
+      Memory.push_message(@org + 1, queue, %{"n" => "foreign"})
+      Memory.push_message(@org, queue, %{"n" => "own"})
+
+      assert_receive {:event, %{"n" => "own"}, _}, 1_000
+      refute_received {:event, %{"n" => "foreign"}, _}
     end
 
     test "messages buffered before demand are delivered in FIFO order" do
@@ -47,15 +66,15 @@ defmodule Flux.Pipeline.Producers.MemoryTest do
       producer = start_producer(queue)
 
       # Push before any consumer subscribes — these buffer in the producer's queue.
-      Memory.push_message(queue, %{"n" => 1})
-      Memory.push_message(queue, %{"n" => 2})
-      Memory.push_message(queue, %{"n" => 3})
+      Memory.push_message(@org, queue, %{"n" => 1})
+      Memory.push_message(@org, queue, %{"n" => 2})
+      Memory.push_message(@org, queue, %{"n" => 3})
 
       start_supervised!({Collector, {producer, self()}})
 
-      assert_receive {:event, %{"n" => 1}}, 1_000
-      assert_receive {:event, %{"n" => 2}}, 1_000
-      assert_receive {:event, %{"n" => 3}}, 1_000
+      assert_receive {:event, %{"n" => 1}, _}, 1_000
+      assert_receive {:event, %{"n" => 2}, _}, 1_000
+      assert_receive {:event, %{"n" => 3}, _}, 1_000
     end
 
     test "only messages for the producer's own queue are received" do
@@ -64,11 +83,25 @@ defmodule Flux.Pipeline.Producers.MemoryTest do
       producer = start_producer(queue)
       start_supervised!({Collector, {producer, self()}})
 
-      Memory.push_message(other, %{"n" => "wrong"})
-      Memory.push_message(queue, %{"n" => "right"})
+      Memory.push_message(@org, other, %{"n" => "wrong"})
+      Memory.push_message(@org, queue, %{"n" => "right"})
 
-      assert_receive {:event, %{"n" => "right"}}, 1_000
-      refute_received {:event, %{"n" => "wrong"}}
+      assert_receive {:event, %{"n" => "right"}, _}, 1_000
+      refute_received {:event, %{"n" => "wrong"}, _}
+    end
+  end
+
+  describe "deliver/2" do
+    test "delivers a published message tagged with its organization and id" do
+      queue = "mem.deliver.#{System.unique_integer([:positive])}"
+      producer = start_producer(queue)
+      start_supervised!({Collector, {producer, self()}})
+
+      message = Flux.Queue.Message.new(%{"a" => 1}, source: "t", organization_id: @org)
+      Memory.deliver(Flux.Queue.Naming.physical!(@org, queue), message)
+
+      assert_receive {:event, %{"a" => 1}, metadata}, 1_000
+      assert metadata == %{organization_id: @org, message_id: message.id}
     end
   end
 

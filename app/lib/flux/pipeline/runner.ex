@@ -25,23 +25,32 @@ defmodule Flux.Pipeline.Runner do
 
   @doc """
   Starts a Broadway pipeline for the given pipeline configuration.
+
+  The pipeline consumes, and publishes to, queues inside its own organization
+  only: `Flux.Queue` places its logical queue names in the organization's
+  namespace. Returns `{:error, {:source_queue | :destination_queue, reason}}`
+  without starting anything when a queue can't be placed there.
   """
   def start_link(%Pipeline{} = pipeline) do
-    configure_detector(pipeline)
+    with {:ok, producer} <- producer_config(pipeline),
+         :ok <- validate_destination(pipeline) do
+      configure_detector(pipeline)
 
-    Broadway.start_link(__MODULE__,
-      name: via_tuple(pipeline.id),
-      producer: producer_config(pipeline),
-      processors: processors_config(pipeline),
-      context: %{
-        pipeline_id: pipeline.id,
-        organization_id: pipeline.organization_id,
-        version: pipeline.current_version,
-        steps: steps_with_context(pipeline),
-        destination_queue: pipeline.destination_queue,
-        sink_ids: pipeline.sink_ids || []
-      }
-    )
+      Broadway.start_link(__MODULE__,
+        name: via_tuple(pipeline.id),
+        producer: producer,
+        processors: processors_config(pipeline),
+        context: %{
+          pipeline_id: pipeline.id,
+          organization_id: pipeline.organization_id,
+          version: pipeline.current_version,
+          steps: steps_with_context(pipeline),
+          destination_queue: pipeline.destination_queue,
+          sink_ids: pipeline.sink_ids || [],
+          queue_adapter: Flux.Queue.adapter()
+        }
+      )
+    end
   end
 
   # Injects pipeline context (id + organization) into every step's config so
@@ -99,15 +108,23 @@ defmodule Flux.Pipeline.Runner do
   defp producer_config(pipeline) do
     producer = Map.get(pipeline.config, "producer", %{})
     concurrency = Map.get(producer, "concurrency", 1)
-    source_config = extract_source_config(pipeline)
-    queue = source_config["queue"] || pipeline.source_queue
-    prefetch_count = source_config["prefetchCount"] || 50
+    prefetch_count = extract_source_config(pipeline)["prefetchCount"] || 50
+    queue = Pipeline.consumed_queue(pipeline)
+    opts = [pipeline_id: pipeline.id, prefetch_count: prefetch_count]
 
-    {:ok, adapter} = Flux.Queue.Registry.active()
+    case Flux.Queue.producer_spec(pipeline.organization_id, queue, opts) do
+      {:ok, spec} -> {:ok, [module: spec, concurrency: concurrency]}
+      {:error, reason} -> {:error, {:source_queue, reason}}
+    end
+  end
 
-    spec_opts = [pipeline_id: pipeline.id, queue: queue, prefetch_count: prefetch_count]
+  defp validate_destination(%Pipeline{destination_queue: queue}) when queue in [nil, ""], do: :ok
 
-    [module: adapter.producer_spec(spec_opts), concurrency: concurrency]
+  defp validate_destination(%Pipeline{destination_queue: queue}) do
+    case Flux.Queue.Naming.validate_logical(queue) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:destination_queue, {:invalid_queue, reason}}}
+    end
   end
 
   defp extract_source_config(pipeline) do
@@ -194,8 +211,48 @@ defmodule Flux.Pipeline.Runner do
     [default: [concurrency: concurrency]]
   end
 
+  # Every message must carry the pipeline's own organization before anything
+  # reads it. A message without one, or with another organization's, is dropped
+  # (acked), not failed: a failed message is dead-lettered into this
+  # organization's DLQ, and `handle_failed/2` logs its data, so failing it would
+  # show a foreign payload to this organization.
   @impl true
-  def handle_message(_processor, %Message{data: data} = message, context) do
+  def handle_message(processor, %Message{} = message, context) do
+    %{organization_id: organization_id} = context
+
+    case Flux.Queue.message_organization_id(Map.get(context, :queue_adapter), message) do
+      {:ok, ^organization_id} when is_integer(organization_id) ->
+        process_message(processor, message, context)
+
+      {:ok, _other} ->
+        refuse(message, context, :organization_mismatch)
+
+      :error ->
+        refuse(message, context, :missing_organization)
+    end
+  end
+
+  defp refuse(message, context, reason) do
+    %{pipeline_id: pipeline_id, organization_id: organization_id} = context
+
+    :telemetry.execute(
+      [:flux, :pipeline, :message, :refused],
+      %{count: 1},
+      %{pipeline_id: pipeline_id, organization_id: organization_id, reason: reason}
+    )
+
+    # Ids and the reason only: the payload may belong to another organization.
+    Logger.error("Pipeline #{pipeline_id} refused a message: #{reason}",
+      pipeline_id: pipeline_id,
+      reason: reason
+    )
+
+    message
+    |> Message.put_data(nil)
+    |> Message.ack_immediately()
+  end
+
+  defp process_message(_processor, %Message{data: data} = message, context) do
     %{
       pipeline_id: pipeline_id,
       organization_id: organization_id,
@@ -219,7 +276,7 @@ defmodule Flux.Pipeline.Runner do
         )
 
         record_metrics(pipeline_id, transformed_data)
-        maybe_publish(transformed_data, destination_queue)
+        maybe_publish(transformed_data, destination_queue, organization_id, pipeline_id)
         deliver_to_sinks(transformed_data, sink_ids, organization_id, pipeline_id)
 
         message
@@ -292,12 +349,24 @@ defmodule Flux.Pipeline.Runner do
 
   defp record_metrics(_pipeline_id, _data), do: :ok
 
-  defp maybe_publish(_data, nil), do: :ok
-  defp maybe_publish(_data, ""), do: :ok
+  defp maybe_publish(_data, nil, _organization_id, _pipeline_id), do: :ok
+  defp maybe_publish(_data, "", _organization_id, _pipeline_id), do: :ok
 
-  defp maybe_publish(data, destination_queue) do
-    message = Flux.Queue.Message.new(data, source: "pipeline")
-    Flux.Queue.publish(destination_queue, message, [])
+  # A destination queue is always inside the pipeline's own organization.
+  defp maybe_publish(data, destination_queue, organization_id, pipeline_id) do
+    message =
+      Flux.Queue.Message.new(data, source: "pipeline", metadata: %{"pipeline_id" => pipeline_id})
+
+    case Flux.Queue.publish(organization_id, destination_queue, message, []) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning(
+          "Pipeline #{pipeline_id} couldn't publish to its destination queue: #{inspect(reason)}",
+          pipeline_id: pipeline_id
+        )
+    end
   end
 
   defp deliver_to_sinks(_data, [], _organization_id, _pipeline_id), do: :ok

@@ -4,59 +4,89 @@ defmodule Flux.Queue.Adapters.MemoryTest do
   alias Flux.Queue.Adapters.Memory
   alias Flux.Queue.Message
 
+  @org 42
+
   setup do
     # Clear the memory adapter before each test
     Memory.clear()
     :ok
   end
 
+  # The adapter receives physical queue names and stamped messages from
+  # `Flux.Queue.publish/4`; these helpers build the same.
+  defp message(payload, org \\ @org),
+    do: Message.new(payload, source: "test", organization_id: org)
+
+  defp queue(name, org \\ @org), do: "org.#{org}.#{name}"
+
   describe "publish/3" do
     test "stores message in queue" do
-      message = Message.new(%{test: "data"}, source: "test")
+      assert :ok = Memory.publish(queue("test_queue"), message(%{test: "data"}), [])
 
-      assert :ok = Memory.publish("test_queue", message)
-
-      messages = Memory.get_messages("test_queue")
+      messages = Memory.get_messages(@org, "test_queue")
       assert length(messages) == 1
       assert hd(messages).payload == %{test: "data"}
     end
 
     test "supports multiple queues" do
-      msg1 = Message.new(%{queue: 1}, source: "test")
-      msg2 = Message.new(%{queue: 2}, source: "test")
+      Memory.publish(queue("queue_1"), message(%{queue: 1}), [])
+      Memory.publish(queue("queue_2"), message(%{queue: 2}), [])
 
-      Memory.publish("queue_1", msg1)
-      Memory.publish("queue_2", msg2)
+      assert length(Memory.get_messages(@org, "queue_1")) == 1
+      assert length(Memory.get_messages(@org, "queue_2")) == 1
+    end
 
-      assert length(Memory.get_messages("queue_1")) == 1
-      assert length(Memory.get_messages("queue_2")) == 1
+    test "keeps each organization's queue of the same name apart" do
+      Memory.publish(queue("shared"), message(%{org: 42}), [])
+      Memory.publish(queue("shared", 43), message(%{org: 43}, 43), [])
+
+      assert [%{payload: %{org: 42}}] = Memory.get_messages(@org, "shared")
+      assert [%{payload: %{org: 43}}] = Memory.get_messages(43, "shared")
     end
 
     test "preserves message order" do
       for i <- 1..5 do
-        Memory.publish("ordered", Message.new(%{order: i}, source: "test"))
+        Memory.publish(queue("ordered"), message(%{order: i}), [])
       end
 
-      messages = Memory.get_messages("ordered")
+      messages = Memory.get_messages(@org, "ordered")
       orders = Enum.map(messages, & &1.payload.order)
 
       assert orders == [1, 2, 3, 4, 5]
     end
 
-    test "accepts atom queue names" do
-      message = Message.new(%{test: true}, source: "test")
+    test "refuses a queue outside the message's organization" do
+      assert {:error, :organization_mismatch} =
+               Memory.publish(queue("q", 43), message(%{}), [])
 
-      assert :ok = Memory.publish(:atom_queue, message)
+      assert {:error, :organization_mismatch} = Memory.publish("q", message(%{}), [])
 
-      messages = Memory.get_messages(:atom_queue)
-      assert length(messages) == 1
+      assert {:error, :organization_required} =
+               Memory.publish(queue("q"), Message.new(%{}, source: "test"), [])
+
+      assert Memory.get_messages(43, "q") == []
+      assert Memory.get_messages(@org, "q") == []
+    end
+  end
+
+  describe "message_organization_id/1" do
+    test "reads the organization the Memory producer tagged" do
+      tagged = %Broadway.Message{data: %{}, metadata: %{organization_id: @org}, acknowledger: nil}
+      assert {:ok, @org} = Memory.message_organization_id(tagged)
+    end
+
+    test "is :error when the message carries no organization" do
+      for metadata <- [%{}, %{organization_id: nil}, %{organization_id: "42"}] do
+        message = %Broadway.Message{data: %{}, metadata: metadata, acknowledger: nil}
+        assert :error = Memory.message_organization_id(message)
+      end
     end
   end
 
   describe "ack/1" do
     test "removes message from pending" do
-      message = Message.new(%{test: "data"}, source: "test")
-      Memory.publish("test_queue", message)
+      message = message(%{test: "data"})
+      Memory.publish(queue("test_queue"), message, [])
 
       assert :ok = Memory.ack(message)
     end
@@ -64,45 +94,43 @@ defmodule Flux.Queue.Adapters.MemoryTest do
 
   describe "reject/2" do
     test "with requeue=true moves message back to queue" do
-      message = Message.new(%{test: "data"}, source: "test")
-      Memory.publish("test_queue", message)
+      message = message(%{test: "data"})
+      Memory.publish(queue("test_queue"), message, [])
 
       assert :ok = Memory.reject(message, true)
 
       # Should still be in queue after requeue (original + requeued)
-      messages = Memory.get_messages("test_queue")
+      messages = Memory.get_messages(@org, "test_queue")
       assert length(messages) == 2
     end
 
     test "with requeue=false discards message" do
-      message = Message.new(%{test: "data"}, source: "test")
-      Memory.publish("test_queue", message)
+      message = message(%{test: "data"})
+      Memory.publish(queue("test_queue"), message, [])
 
       assert :ok = Memory.reject(message, false)
     end
 
     test "reject unknown message with requeue returns error" do
-      message = Message.new(%{unknown: true}, source: "test")
-
-      assert {:error, :not_found} = Memory.reject(message, true)
+      assert {:error, :not_found} = Memory.reject(message(%{unknown: true}), true)
     end
   end
 
-  describe "get_messages/1" do
+  describe "get_messages/2" do
     test "returns empty list for unknown queue" do
-      assert Memory.get_messages("nonexistent") == []
+      assert Memory.get_messages(@org, "nonexistent") == []
     end
   end
 
   describe "clear/0" do
     test "removes all messages from all queues" do
-      Memory.publish("queue_1", Message.new(%{a: 1}, source: "test"))
-      Memory.publish("queue_2", Message.new(%{b: 2}, source: "test"))
+      Memory.publish(queue("queue_1"), message(%{a: 1}), [])
+      Memory.publish(queue("queue_2"), message(%{b: 2}), [])
 
       Memory.clear()
 
-      assert Memory.get_messages("queue_1") == []
-      assert Memory.get_messages("queue_2") == []
+      assert Memory.get_messages(@org, "queue_1") == []
+      assert Memory.get_messages(@org, "queue_2") == []
     end
   end
 end

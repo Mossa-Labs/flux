@@ -8,10 +8,24 @@ defmodule Flux.Source.Adapters.Webhook do
   ingestion process (`ingestion_spec/2` returns `nil`).
 
   This adapter centralizes the `"webhooks.<source>"` queue-name convention so
-  the controller and any pipeline wiring derive it from one place.
+  the controller and any pipeline wiring derive it from one place. The name is
+  logical: `Flux.Queue` places it inside the organization of the API key that
+  posted the webhook.
   """
 
   @behaviour Flux.Source.Adapter
+
+  # One segment of a logical queue name (see `Flux.Queue.Naming`), short enough
+  # that "webhooks.<source>" always fits.
+  @source_format ~r/\A[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\z/
+
+  @doc """
+  Returns `true` if `source` can name a webhook source: it starts with a letter
+  or digit, has only letters, digits, `_`, `.` and `-`, and is at most 128 bytes.
+  """
+  @spec valid_source?(term()) :: boolean()
+  def valid_source?(source) when is_binary(source), do: Regex.match?(@source_format, source)
+  def valid_source?(_source), do: false
 
   @impl Flux.Source.Adapter
   def queue_name(config) do
@@ -24,8 +38,17 @@ defmodule Flux.Source.Adapters.Webhook do
   @impl Flux.Source.Adapter
   def validate_config(config) do
     case source_name(config) do
-      name when is_binary(name) and name != "" -> :ok
-      _ -> {:error, ["source is required"]}
+      name when is_binary(name) and name != "" ->
+        if valid_source?(name),
+          do: :ok,
+          else:
+            {:error,
+             [
+               "source must start with a letter or digit and contain only letters, digits, '_', '.' and '-'"
+             ]}
+
+      _ ->
+        {:error, ["source is required"]}
     end
   end
 

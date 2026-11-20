@@ -14,19 +14,19 @@ defmodule Flux.Workers.Poller do
 
   To schedule a polling job:
 
-      %{"source_id" => "my-source", "url" => "https://api.example.com/data"}
+      %{
+        "source_id" => "my-source",
+        "organization_id" => organization_id,
+        "url" => "https://api.example.com/data"
+      }
       |> Flux.Workers.Poller.new(schedule_in: 60)
       |> Oban.insert()
 
-  For recurring polls, use Oban's cron feature in config:
-
-      config :flux, Oban,
-        plugins: [
-          {Oban.Plugins.Cron,
-           crontab: [
-             {"*/5 * * * *", Flux.Workers.Poller, args: %{source_id: "scheduled-source"}}
-           ]}
-        ]
+  `organization_id` is required: the polled data is queued in that
+  organization's `polling.<source_id>` queue, and only its pipelines can
+  consume it. A job without a valid organization is cancelled. Jobs are only
+  ever built on the server, which takes the organization from the source it
+  polls for, never from user input.
 
   """
 
@@ -35,8 +35,12 @@ defmodule Flux.Workers.Poller do
     max_attempts: 3,
     unique: [period: 60, states: [:available, :scheduled, :executing]]
 
+  import Ecto.Query, only: [from: 2]
+
   alias Flux.Queue
   alias Flux.Queue.Message
+  alias Flux.Repo
+  alias Flux.Structure.Organization
 
   require Logger
 
@@ -49,15 +53,41 @@ defmodule Flux.Workers.Poller do
     source_id = Map.fetch!(args, "source_id")
     url = Map.get(args, "url")
 
-    Logger.info("Polling source", source_id: source_id, url: url)
-
     # Queue-name convention is owned by the Poll source adapter (see
     # Flux.Source.Adapters.Poll) so all ingestion paths share one definition.
+    # The name is logical; Flux.Queue places it in the job's organization.
     queue_name = Flux.Source.queue_name("poll", %{"source_id" => source_id})
 
+    with {:ok, org_id} <- organization(args),
+         :ok <- valid_queue(queue_name) do
+      Logger.info("Polling source", source_id: source_id, url: url)
+      poll(org_id, source_id, queue_name, url, args)
+    else
+      {:cancel, reason} = cancel ->
+        Logger.error("Poll cancelled", source_id: source_id, reason: inspect(reason))
+        cancel
+    end
+  end
+
+  defp organization(%{"organization_id" => id}) when is_integer(id) and id > 0 do
+    if Repo.exists?(from(o in Organization, where: o.id == ^id)),
+      do: {:ok, id},
+      else: {:cancel, :organization_not_found}
+  end
+
+  defp organization(_args), do: {:cancel, :organization_required}
+
+  defp valid_queue(queue_name) do
+    case Flux.Queue.Naming.validate_logical(queue_name) do
+      :ok -> :ok
+      {:error, reason} -> {:cancel, {:invalid_queue, reason}}
+    end
+  end
+
+  defp poll(org_id, source_id, queue_name, url, args) do
     with {:ok, data} <- fetch_data(url, args),
          message <- build_message(source_id, data),
-         :ok <- Queue.publish(queue_name, message) do
+         :ok <- Queue.publish(org_id, queue_name, message, []) do
       Logger.info("Poll completed successfully",
         source_id: source_id,
         message_id: message.id

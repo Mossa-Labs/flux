@@ -61,6 +61,7 @@ defmodule Flux.Load.Scenario do
 
       {sent, _gen_ms} =
         Generator.run(
+          organization_id: org_id,
           queues: [pipeline.source_queue],
           gen_fun: Keyword.get(opts, :gen_fun, &default_payload/1),
           rate: Keyword.get(opts, :rate, 0),
@@ -103,6 +104,7 @@ defmodule Flux.Load.Scenario do
 
       {sent, _gen_ms} =
         Generator.run(
+          organization_id: org_id,
           queues: queues,
           gen_fun: Keyword.get(opts, :gen_fun, &default_payload/1),
           rate: Keyword.get(opts, :rate, 0),

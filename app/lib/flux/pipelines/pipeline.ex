@@ -64,6 +64,38 @@ defmodule Flux.Pipelines.Pipeline do
   defp castable_fields(%__MODULE__{id: nil}), do: [:organization_id | @fields]
   defp castable_fields(%__MODULE__{}), do: @fields
 
+  @doc """
+  The logical queue a pipeline consumes.
+
+  A queue-type source node's `queue` wins over `source_queue`; any other source
+  type (a webhook, a poll, an external broker whose own queue is also called
+  `queue`) is fed through `source_queue`. The organization is applied later,
+  by `Flux.Queue`.
+  """
+  @spec consumed_queue(%__MODULE__{}) :: String.t() | nil
+  def consumed_queue(%__MODULE__{} = pipeline) do
+    case source_node_queue(pipeline.steps) do
+      queue when is_binary(queue) and queue != "" -> queue
+      _ -> pipeline.source_queue
+    end
+  end
+
+  @doc false
+  # The `queue` of a pipeline's queue-type source node, if any. Other source
+  # types also call a field `queue` (an external broker's own queue name), so
+  # only a queue-type (or untyped) node counts.
+  def source_node_queue(%{"nodes" => nodes}) when is_list(nodes) do
+    case Enum.find(nodes, &match?(%{"type" => "source"}, &1)) do
+      %{"sourceConfig" => %{"queue" => queue} = config} ->
+        if Map.get(config, "type") in [nil, "queue"], do: queue
+
+      _ ->
+        nil
+    end
+  end
+
+  def source_node_queue(_steps), do: nil
+
   # The runner delivers to a pipeline's sinks with their stored, decrypted
   # credentials, so a pipeline may only reference its own organization's sinks.
   # Checked here because sink_ids reaches the changeset from several paths: the
