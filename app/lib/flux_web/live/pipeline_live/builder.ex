@@ -3292,10 +3292,27 @@ defmodule FluxWeb.PipelineLive.Builder do
   end
 
   defp validate_source_config(config) do
-    with :ok <- check_aws_server_credentials(config) do
-      validate_required_source_fields(config)
+    with :ok <- check_aws_server_credentials(config),
+         :ok <- validate_required_source_fields(config) do
+      check_webhook_path(config)
     end
   end
+
+  # A webhook pipeline consumes `webhooks.<slug of the path's last segment>`,
+  # and only a source the webhook endpoint accepts can ever publish there.
+  # Refuse a path whose slug it would reject (too long, or not starting with a
+  # letter or digit), so the pipeline isn't saved listening to an endpoint that
+  # answers every request with 400.
+  defp check_webhook_path(%{"type" => "webhook", "webhookPath" => path}) do
+    if Flux.Source.Adapters.Webhook.valid_source?(slugify_source_id(path)),
+      do: :ok,
+      else:
+        {:error,
+         "The webhook path must end in a name that starts with a letter or digit " <>
+           "and is at most 128 characters."}
+  end
+
+  defp check_webhook_path(_config), do: :ok
 
   # With server AWS credentials disabled, an SQS or Kinesis source can't be saved
   # signing as the server: IAM role auth, or a node saved before the switch.
