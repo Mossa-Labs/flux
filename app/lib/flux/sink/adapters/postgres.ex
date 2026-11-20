@@ -19,6 +19,14 @@ defmodule Flux.Sink.Adapters.Postgres do
         "conflict_target" => ["id"]                  # Optional: columns for conflict detection
       }
 
+  ## Internal Mode
+
+  Internal mode writes into the Flux database itself, using the app's own
+  connection. It is confined to the `sink_data` schema (see
+  `internal_schema/0`): the table name is always a plain identifier resolved
+  inside that schema, never a Flux application table. The operator creates the
+  target tables there, e.g. `CREATE TABLE sink_data.events (...)`.
+
   ## External Mode
 
   For external databases, add connection config:
@@ -48,6 +56,15 @@ defmodule Flux.Sink.Adapters.Postgres do
 
   @default_pool_size 5
 
+  # Internal mode runs with the app's own database role, so the user-supplied
+  # table name must never reach Flux's own tables (members, API keys, users,
+  # Oban jobs...). It is confined to this schema and must be a plain identifier.
+  @internal_schema "sink_data"
+  @plain_identifier ~r/\A[A-Za-z_][A-Za-z0-9_]{0,62}\z/
+
+  @doc "The schema internal-mode sinks write into."
+  def internal_schema, do: @internal_schema
+
   @impl Flux.Sink.Adapter
   def deliver(data, config, _opts) do
     table = Map.fetch!(config, "table")
@@ -73,12 +90,26 @@ defmodule Flux.Sink.Adapters.Postgres do
   end
 
   defp validate_table(config) do
+    internal? = Map.get(config, "mode", "internal") == "internal"
+
     case Map.get(config, "table") do
-      nil -> {:error, "table is required"}
-      t when is_binary(t) and byte_size(t) > 0 -> :ok
-      _ -> {:error, "table must be a non-empty string"}
+      nil ->
+        {:error, "table is required"}
+
+      t when is_binary(t) and byte_size(t) > 0 ->
+        if internal? and not plain_identifier?(t),
+          do:
+            {:error,
+             "table must be a plain table name (letters, digits, underscores); " <>
+               "internal mode writes to the #{@internal_schema} schema"},
+          else: :ok
+
+      _ ->
+        {:error, "table must be a non-empty string"}
     end
   end
+
+  defp plain_identifier?(name), do: is_binary(name) and Regex.match?(@plain_identifier, name)
 
   defp validate_columns(config) do
     case Map.get(config, "columns") do
@@ -113,8 +144,9 @@ defmodule Flux.Sink.Adapters.Postgres do
 
     case mode do
       "internal" ->
-        case Flux.Repo.query("SELECT 1") do
-          {:ok, _} -> :ok
+        case Flux.Repo.query("SELECT 1 FROM pg_namespace WHERE nspname = $1", [@internal_schema]) do
+          {:ok, %{num_rows: 1}} -> :ok
+          {:ok, _} -> {:error, {:missing_schema, @internal_schema}}
           {:error, reason} -> {:error, reason}
         end
 
@@ -179,8 +211,19 @@ defmodule Flux.Sink.Adapters.Postgres do
     end)
   end
 
+  # Refuses anything but a plain identifier even when the config was never
+  # validated (e.g. a sink saved before this check existed).
+  defp insert_internal(table, _row, _config) when not is_binary(table) or table == "",
+    do: {:error, {:invalid_table, table}}
+
   defp insert_internal(table, row, config) do
-    conflict_opts = build_conflict_opts(config)
+    if plain_identifier?(table),
+      do: do_insert_internal(table, row, config),
+      else: {:error, {:invalid_table, table}}
+  end
+
+  defp do_insert_internal(table, row, config) do
+    conflict_opts = [{:prefix, @internal_schema} | build_conflict_opts(config)]
 
     try do
       case Flux.Repo.insert_all(table, [row], conflict_opts) do

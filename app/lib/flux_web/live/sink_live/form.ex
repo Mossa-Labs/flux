@@ -751,7 +751,10 @@ defmodule FluxWeb.SinkLive.Form do
         field={@form[:config_mode]}
         type="select"
         label="Mode"
-        options={[{"Internal (Flux DB)", "internal"}, {"External Database", "external"}]}
+        options={[
+          {"Internal (Flux DB, sink_data schema)", "internal"},
+          {"External Database", "external"}
+        ]}
       />
       <.input
         field={@form[:config_table]}

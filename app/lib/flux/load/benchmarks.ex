@@ -254,9 +254,11 @@ defmodule Flux.Load.Benchmarks do
   def postgres_sink_delivery(opts) do
     org_id = Keyword.get_lazy(opts, :organization_id, &Scenario.ensure_org/0)
     table = "bench_sink_#{System.unique_integer([:positive])}"
+    # Internal-mode sinks write into this schema only.
+    qualified = "#{Flux.Sink.Adapters.Postgres.internal_schema()}.#{table}"
 
     Flux.Repo.query!(
-      "CREATE TABLE #{table} (id bigint, value int, inserted_at timestamptz, updated_at timestamptz)"
+      "CREATE TABLE #{qualified} (id bigint, value int, inserted_at timestamptz, updated_at timestamptz)"
     )
 
     {:ok, sink} =
@@ -285,11 +287,11 @@ defmodule Flux.Load.Benchmarks do
         )
 
       Process.sleep(1_000)
-      %{rows: [[inserted]]} = Flux.Repo.query!("SELECT count(*) FROM #{table}")
+      %{rows: [[inserted]]} = Flux.Repo.query!("SELECT count(*) FROM #{qualified}")
       %{result | extra: Map.put(result.extra, :rows_inserted, inserted)}
     after
       safe(fn -> Flux.Sinks.delete_sink(sink) end)
-      safe(fn -> Flux.Repo.query!("DROP TABLE IF EXISTS #{table}") end)
+      safe(fn -> Flux.Repo.query!("DROP TABLE IF EXISTS #{qualified}") end)
     end
   end
 
