@@ -238,9 +238,9 @@ Insert data directly into a PostgreSQL table.
 
 | Field | Description |
 |-------|-------------|
-| Mode | Internal (app's own database) or External (separate DB) |
+| Mode | Internal (the app's own database, `sink_data` schema only) or External (separate DB) |
 | Database URL | Connection URL (external mode only) |
-| Table | Target table name |
+| Table | Target table name. In internal mode, a plain name (letters, digits, underscores) of a table in the `sink_data` schema, which the operator creates, for example `CREATE TABLE sink_data.events (...)` |
 | Column Mapping | Map data fields to table columns (supports nested paths with dot notation) |
 | On Conflict | Strategy for duplicate keys: `nothing`, `replace_all`, or `raise` |
 
