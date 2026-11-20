@@ -79,20 +79,40 @@ defmodule Flux.Sinks do
   end
 
   @doc """
-  Gets sinks by their IDs.
+  Gets an organization's sinks by their IDs.
 
-  Returns only sinks that exist and are enabled.
+  Returns only sinks that exist, are enabled, and belong to `organization_id`:
+  an id of another organization's sink is silently dropped, never delivered to.
   """
-  def get_sinks_by_ids(ids) when is_list(ids) do
+  def get_sinks_by_ids(ids, organization_id)
+      when is_list(ids) and is_integer(organization_id) do
     Sink
-    |> where([s], s.id in ^ids and s.enabled == true)
+    |> where([s], s.organization_id == ^organization_id and s.id in ^ids and s.enabled == true)
     |> Repo.all()
   end
+
+  def get_sinks_by_ids(_ids, _organization_id), do: []
+
+  @doc """
+  Returns the subset of `ids` that are sinks of `organization_id`, enabled or
+  not, as a `MapSet`. Used to check that a pipeline only references its own
+  organization's sinks.
+  """
+  def owned_sink_ids(ids, organization_id)
+      when is_list(ids) and is_integer(organization_id) do
+    Sink
+    |> where([s], s.organization_id == ^organization_id and s.id in ^ids)
+    |> select([s], s.id)
+    |> Repo.all()
+    |> MapSet.new()
+  end
+
+  def owned_sink_ids(_ids, _organization_id), do: MapSet.new()
 
   @doc """
   Gets an organization's sinks by name.
 
-  Unlike `get_sinks_by_ids/1`, this resolves a sink regardless of its `enabled`
+  Unlike `get_sinks_by_ids/2`, this resolves a sink regardless of its `enabled`
   flag: it backs pipeline import (resolving `sink_names` → ids), where a
   present-but-disabled sink should still satisfy the reference — the imported
   pipeline starts stopped and the operator controls enabling.
@@ -143,7 +163,7 @@ defmodule Flux.Sinks do
 
   # Logs one warning per affected sink so an operator can find the rows to fix.
   # Only key names and the sink id are logged, never ciphertext. Not called on
-  # the delivery path (`get_sinks_by_ids/1`): there, each failed delivery is
+  # the delivery path (`get_sinks_by_ids/2`): there, each failed delivery is
   # already logged with the sink id and `:undecryptable_secret`.
   defp warn_undecryptable(sinks) when is_list(sinks) do
     Enum.each(sinks, &warn_undecryptable/1)

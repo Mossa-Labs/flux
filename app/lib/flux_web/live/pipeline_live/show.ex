@@ -38,7 +38,7 @@ defmodule FluxWeb.PipelineLive.Show do
   defp load_pipeline(socket, pipeline) do
     sinks =
       if pipeline.sink_ids && length(pipeline.sink_ids) > 0 do
-        Sinks.get_sinks_by_ids(pipeline.sink_ids)
+        Sinks.get_sinks_by_ids(pipeline.sink_ids, pipeline.organization_id)
       else
         []
       end

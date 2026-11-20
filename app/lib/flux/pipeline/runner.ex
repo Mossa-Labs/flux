@@ -35,6 +35,7 @@ defmodule Flux.Pipeline.Runner do
       processors: processors_config(pipeline),
       context: %{
         pipeline_id: pipeline.id,
+        organization_id: pipeline.organization_id,
         version: pipeline.current_version,
         steps: steps_with_context(pipeline),
         destination_queue: pipeline.destination_queue,
@@ -48,14 +49,19 @@ defmodule Flux.Pipeline.Runner do
   # the Enterprise redact/classify steps tag their telemetry/audit by org — get it
   # without threading a separate context through the interpreter. Behavior-neutral
   # for the plain Community steps (map/filter/rename/script ignore unknown keys).
-  defp steps_with_context(%Pipeline{steps: %{"steps" => steps} = ir} = pipeline)
-       when is_list(steps) do
+  #
+  # The injected values win over anything the step's own config says: step
+  # config is user-supplied, and a step claiming another organization's id would
+  # tag its telemetry and audit events with that organization.
+  @doc false
+  def steps_with_context(%Pipeline{steps: %{"steps" => steps} = ir} = pipeline)
+      when is_list(steps) do
     ctx = %{"pipeline_id" => pipeline.id, "organization_id" => pipeline.organization_id}
 
     updated =
       Enum.map(steps, fn
         %{"config" => config} = step when is_map(config) ->
-          Map.put(step, "config", Map.merge(ctx, config))
+          Map.put(step, "config", Map.merge(config, ctx))
 
         %{"type" => type} = step when type in ["native", "ai"] ->
           Map.put(step, "config", ctx)
@@ -67,7 +73,7 @@ defmodule Flux.Pipeline.Runner do
     Map.put(ir, "steps", updated)
   end
 
-  defp steps_with_context(%Pipeline{steps: steps}), do: steps
+  def steps_with_context(%Pipeline{steps: steps}), do: steps
 
   def child_spec(%Pipeline{} = pipeline) do
     %{
@@ -192,6 +198,7 @@ defmodule Flux.Pipeline.Runner do
   def handle_message(_processor, %Message{data: data} = message, context) do
     %{
       pipeline_id: pipeline_id,
+      organization_id: organization_id,
       version: version,
       steps: steps,
       destination_queue: destination_queue,
@@ -213,7 +220,7 @@ defmodule Flux.Pipeline.Runner do
 
         record_metrics(pipeline_id, transformed_data)
         maybe_publish(transformed_data, destination_queue)
-        deliver_to_sinks(transformed_data, sink_ids, pipeline_id)
+        deliver_to_sinks(transformed_data, sink_ids, organization_id, pipeline_id)
 
         message
         |> Message.put_data(transformed_data)
@@ -293,10 +300,12 @@ defmodule Flux.Pipeline.Runner do
     Flux.Queue.publish(destination_queue, message, [])
   end
 
-  defp deliver_to_sinks(_data, [], _pipeline_id), do: :ok
+  defp deliver_to_sinks(_data, [], _organization_id, _pipeline_id), do: :ok
 
-  defp deliver_to_sinks(data, sink_ids, pipeline_id) do
-    sinks = Flux.Sinks.get_sinks_by_ids(sink_ids)
+  # Sinks are looked up within the pipeline's own organization, so a foreign
+  # sink id in a pipeline row is skipped rather than delivered to.
+  defp deliver_to_sinks(data, sink_ids, organization_id, pipeline_id) do
+    sinks = Flux.Sinks.get_sinks_by_ids(sink_ids, organization_id)
 
     for sink <- sinks do
       Task.start(fn ->

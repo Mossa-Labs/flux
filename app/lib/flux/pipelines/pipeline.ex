@@ -41,20 +41,11 @@ defmodule Flux.Pipelines.Pipeline do
   @doc false
   def changeset(pipeline, attrs) do
     pipeline
-    |> cast(attrs, [
-      :name,
-      :description,
-      :source_queue,
-      :destination_queue,
-      :status,
-      :config,
-      :steps,
-      :sink_ids,
-      :organization_id
-    ])
+    |> cast(attrs, castable_fields(pipeline))
     |> validate_required([:name, :source_queue, :organization_id])
     |> validate_inclusion(:status, @statuses)
     |> validate_steps()
+    |> validate_sinks_in_organization()
     # Attach the org-scoped name uniqueness error to :name (not :organization_id,
     # which is the default for a field-list constraint and reads as the confusing
     # "Organization has already been taken").
@@ -63,6 +54,38 @@ defmodule Flux.Pipelines.Pipeline do
       message: "is already used by another pipeline"
     )
     |> foreign_key_constraint(:organization_id)
+  end
+
+  @fields ~w(name description source_queue destination_queue status config steps sink_ids)a
+
+  # A pipeline's organization is set once, when it is created. Every create
+  # caller fills it in on the server (from the caller's scope or the API key's
+  # organization), and no update may move a pipeline to another organization.
+  defp castable_fields(%__MODULE__{id: nil}), do: [:organization_id | @fields]
+  defp castable_fields(%__MODULE__{}), do: @fields
+
+  # The runner delivers to a pipeline's sinks with their stored, decrypted
+  # credentials, so a pipeline may only reference its own organization's sinks.
+  # Checked here because sink_ids reaches the changeset from several paths: the
+  # API, the builder, import, and rollback to an older version.
+  defp validate_sinks_in_organization(changeset) do
+    case get_change(changeset, :sink_ids) do
+      ids when is_list(ids) and ids != [] ->
+        org_id = get_field(changeset, :organization_id)
+        owned = Flux.Sinks.owned_sink_ids(ids, org_id)
+
+        if Enum.all?(ids, &MapSet.member?(owned, &1)),
+          do: changeset,
+          else:
+            add_error(
+              changeset,
+              :sink_ids,
+              "references a sink that doesn't exist in this organization"
+            )
+
+      _ ->
+        changeset
+    end
   end
 
   defp validate_steps(changeset) do

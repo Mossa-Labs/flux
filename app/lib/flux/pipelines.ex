@@ -207,18 +207,25 @@ defmodule Flux.Pipelines do
         {:error, :version_not_found}
 
       snapshot ->
+        # A version can name a sink that has since been deleted (or, in a row
+        # written before sinks were checked, one of another organization). Keep
+        # only the organization's own sinks so the rollback still applies, and
+        # say which were dropped.
+        {sink_ids, dropped} =
+          owned_sink_ids_only(snapshot.sink_ids || [], pipeline.organization_id)
+
         attrs = %{
           name: snapshot.name,
           source_queue: snapshot.source_queue,
           destination_queue: snapshot.destination_queue,
           config: snapshot.config,
           steps: snapshot.steps,
-          sink_ids: snapshot.sink_ids || []
+          sink_ids: sink_ids
         }
 
         opts =
           opts
-          |> Keyword.put_new(:change_summary, "Rolled back to version #{version}")
+          |> Keyword.put_new(:change_summary, rollback_summary(version, dropped))
           |> Keyword.put(:audit_action, :pipeline_rolled_back)
 
         update_pipeline(pipeline, attrs, opts)
@@ -396,4 +403,16 @@ defmodule Flux.Pipelines do
 
   defp steps_list(%{"steps" => steps}) when is_list(steps), do: steps
   defp steps_list(_), do: []
+
+  defp owned_sink_ids_only(ids, organization_id) do
+    owned = Flux.Sinks.owned_sink_ids(ids, organization_id)
+    Enum.split_with(ids, &MapSet.member?(owned, &1))
+  end
+
+  defp rollback_summary(version, []), do: "Rolled back to version #{version}"
+
+  defp rollback_summary(version, dropped) do
+    "Rolled back to version #{version} (dropped sinks that no longer exist: " <>
+      Enum.map_join(dropped, ", ", &to_string/1) <> ")"
+  end
 end
