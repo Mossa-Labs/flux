@@ -120,6 +120,25 @@ defmodule Flux.Structure do
   end
 
   @doc """
+  Fetches an organization membership by its id, only within the scope's organization.
+
+  Returns `{:ok, member}` with `:user` preloaded, or `{:error, :not_found}` when
+  the membership doesn't exist, belongs to another organization, or the scope
+  has no organization. The two cases are deliberately indistinguishable.
+  """
+  def fetch_organization_member(%Scope{organization_id: org_id}, id)
+      when is_integer(org_id) and is_integer(id) do
+    from(om in OrganizationMember,
+      where: om.id == ^id and om.organization_id == ^org_id,
+      preload: [:user]
+    )
+    |> Repo.one()
+    |> found()
+  end
+
+  def fetch_organization_member(_scope, _id), do: {:error, :not_found}
+
+  @doc """
   Returns all organization members for an organization (for :org_centric mode).
   """
   def list_organization_members(organization_id) do
@@ -494,16 +513,35 @@ defmodule Flux.Structure do
   either does not exist or belongs to another organization.
   """
   def get_team_member!(%Scope{organization_id: org_id}, id) when is_integer(org_id) do
+    org_id |> team_member_in_org(id) |> Repo.one!()
+  end
+
+  @doc """
+  Fetches a team member whose team is in the scope's organization.
+
+  Returns `{:ok, team_member}` with `:user` and `:team` preloaded, or
+  `{:error, :not_found}` when the member doesn't exist, belongs to another
+  organization, or the scope has no organization. The two cases are
+  deliberately indistinguishable.
+  """
+  def fetch_team_member(%Scope{organization_id: org_id}, id)
+      when is_integer(org_id) and is_integer(id) do
+    org_id |> team_member_in_org(id) |> Repo.one() |> found()
+  end
+
+  def fetch_team_member(_scope, _id), do: {:error, :not_found}
+
+  defp team_member_in_org(org_id, id) do
     from(tm in TeamMember,
       join: t in Team,
       on: tm.team_id == t.id,
       where: tm.id == ^id and t.organization_id == ^org_id,
       preload: [:user, :team]
     )
-    |> Repo.one!()
   end
 
-  def get_team_member!(_scope, id), do: get_team_member!(id)
+  defp found(nil), do: {:error, :not_found}
+  defp found(record), do: {:ok, record}
 
   @doc """
   Creates a team_member.

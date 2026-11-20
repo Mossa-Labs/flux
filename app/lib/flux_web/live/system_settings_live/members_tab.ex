@@ -117,7 +117,6 @@ defmodule FluxWeb.SystemSettingsLive.MembersTab do
           type="button"
           phx-click="edit_member"
           phx-value-id={member_id(@member)}
-          phx-value-kind={@rbac_mode}
           class="btn btn-ghost btn-sm btn-square"
           title="Edit role"
           aria-label="Edit role"
@@ -129,7 +128,6 @@ defmodule FluxWeb.SystemSettingsLive.MembersTab do
           type="button"
           phx-click="disable_member"
           phx-value-id={member_id(@member)}
-          phx-value-kind={@rbac_mode}
           class="btn btn-ghost btn-sm btn-square text-warning"
           title="Disable"
           aria-label="Disable"
@@ -142,7 +140,6 @@ defmodule FluxWeb.SystemSettingsLive.MembersTab do
           type="button"
           phx-click="enable_member"
           phx-value-id={member_id(@member)}
-          phx-value-kind={@rbac_mode}
           class="btn btn-ghost btn-sm btn-square text-success"
           title="Re-enable"
           aria-label="Re-enable"
@@ -154,7 +151,6 @@ defmodule FluxWeb.SystemSettingsLive.MembersTab do
           type="button"
           phx-click="remove_member"
           phx-value-id={member_id(@member)}
-          phx-value-kind={@rbac_mode}
           class="btn btn-ghost btn-sm btn-square text-error"
           title="Remove"
           aria-label="Remove"
